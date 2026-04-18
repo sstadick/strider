@@ -1,71 +1,63 @@
 # sherpa
 
-Guided, chunked code generation for Neovim powered by pi.
+Sherpa is a Neovim plugin for guided, chunked code generation powered by pi.
 
-## Idea
+It keeps the user in Neovim, lets pi make one bounded change at a time, jumps to touched files, and pauses for questions or revisions before continuing.
 
-Sherpa is a thin Neovim frontend over a pi backend.
+## Requirements
 
-The goal is to make agentic coding feel more like pair programming:
+- Neovim 0.10+
+- `pi` installed and available on `$PATH`
+- a configured pi model/provider
 
-1. describe the feature
-2. let pi pick one small chunk
-3. jump to the file being touched
-4. make the edit
-5. pause for questions, revisions, or adjustments
-6. continue with `next`
+## Install
 
-This is intentionally not inline completion and not full-autopilot agent mode.
-It is a guided stepper.
+### lazy.nvim
 
-## MVP
+```lua
+{
+  dir = "~/dev/sherpa",
+  config = function()
+    require("sherpa").setup()
+  end,
+}
+```
 
-Build the smallest useful loop:
+### packpath
 
-- Neovim plugin starts pi in RPC mode
-- pi extension owns workflow state
-- user starts a guided task with a goal
-- pi creates or tracks a short plan
-- pi executes one chunk at a time
-- plugin jumps to touched files and shows status
-- user can say `q`, `next`, `revise`, or `status`
+Clone the repository into your Neovim package path and call:
 
-## Working model
+```lua
+require("sherpa").setup()
+```
 
-### pi extension responsibilities
+## Commands
 
-- track workflow state
-- register commands like `/guide`, `/question`, `/next`, `/revise`, `/status`
-- persist step state across session resume
-- shape prompts so the model edits one bounded chunk at a time
+- `:SherpaStart {goal}`
+- `:SherpaQ {question}`
+- `:SherpaRevise {feedback}`
+- `:SherpaNext`
+- `:SherpaStatus`
 
-### Neovim plugin responsibilities
+## Development
 
-- spawn `pi --mode rpc`
-- send prompts and custom commands
-- watch RPC events for file edits and queue status
-- jump to files when `read` / `edit` / `write` tools target them
-- present lightweight UX for question/next/revise/status
+Sherpa loads the extension in `pi/sherpa-stepper.ts`.
 
-## Repo layout
+From the repo root, you can start pi with just this extension loaded:
 
-- `docs/architecture.md` - system sketch and message flow
-- `docs/plan.md` - phased implementation plan
-- `pi/sherpa-stepper.ts` - pi extension sketch
-- `lua/sherpa/` - Neovim client sketch
-- `plugin/sherpa.lua` - user commands
+```bash
+pi --no-extensions --extension ./pi/sherpa-stepper.ts
+```
 
-## First milestone
+To mirror Sherpa's backend setup more closely, start pi in RPC mode:
 
-1. start pi from Neovim
-2. send a prompt
-3. stream back events
-4. detect target file from tool execution events
-5. expose `:SherpaStart`, `:SherpaQ`, `:SherpaNext`, `:SherpaRevise`, `:SherpaStatus`
+```bash
+pi --mode rpc --no-extensions --extension ./pi/sherpa-stepper.ts
+```
 
 ## Notes
 
-- RPC is the right first transport for a Neovim plugin
-- rich custom UI should live in Neovim, not in pi extension UI
-- chunking behavior should come from extension-side workflow rules
-- `:SherpaQ` is a non-progressing question turn about the current chunk
+- Sherpa starts pi in RPC mode and loads `pi/sherpa-stepper.ts`.
+- Assistant output is written to a scratch log buffer.
+- File jumps currently follow `read`, `edit`, and `write` tool calls.
+- Each chunk ends with a pause so you can ask questions, request revisions, or advance with `:SherpaNext`.

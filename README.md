@@ -1,8 +1,8 @@
 # sherpa
 
-Sherpa is a Neovim plugin for guided, chunked code generation powered by pi.
+Sherpa is a Neovim plugin for linear, chunked code generation powered by pi.
 
-It keeps the user in Neovim, lets pi make one bounded change at a time, jumps to touched files, and pauses for questions or revisions before continuing.
+It keeps the user in Neovim, executes one bounded chunk at a time, jumps to touched files, and pauses between accepted checkpoints.
 
 ## Requirements
 
@@ -12,38 +12,28 @@ It keeps the user in Neovim, lets pi make one bounded change at a time, jumps to
 
 ## Install
 
-### lazy.nvim
+### Local plugin development
+
+Add the repository to your runtime path and load the plugin:
 
 ```lua
-{
-  dir = "~/dev/sherpa",
-  config = function()
-    require("sherpa").setup()
-  end,
-}
-```
-
-### packpath
-
-Clone the repository into your Neovim package path and call:
-
-```lua
+vim.opt.rtp:append(vim.fn.expand("~/dev/sherpa"))
+vim.cmd("runtime plugin/sherpa.lua")
 require("sherpa").setup()
 ```
 
 ## Commands
 
-- `:SherpaStart {goal}`
-- `:SherpaQ {question}`
-- `:SherpaRevise {feedback}`
-- `:SherpaNext`
-- `:SherpaStatus`
+- `:SherpaQ {request}` — start or continue the current linear chunk flow
+- `:SherpaNext` — accept the current chunk and continue to the next one
+- `:SherpaChangeNext` — jump to the next changed line in the current chunk
+- `:SherpaChangePrev` — jump to the previous changed line in the current chunk
 
 ## Development
 
 Sherpa loads the extension in `pi/sherpa-stepper.ts`.
 
-From the repo root, you can start pi with just this extension loaded:
+From the repo root, you can start pi with only this extension loaded:
 
 ```bash
 pi --no-extensions --extension ./pi/sherpa-stepper.ts
@@ -57,7 +47,11 @@ pi --mode rpc --no-extensions --extension ./pi/sherpa-stepper.ts
 
 ## Notes
 
-- Sherpa starts pi in RPC mode and loads `pi/sherpa-stepper.ts`.
+- Sherpa uses pi's built-in session history and labels accepted chunks as checkpoints.
 - Assistant output is written to a scratch log buffer.
 - File jumps currently follow `read`, `edit`, and `write` tool calls.
-- Each chunk ends with a pause so you can ask questions, request revisions, or advance with `:SherpaNext`.
+- Sherpa keeps an open chunk state and shows when a chunk is waiting for `:SherpaNext`.
+- Sherpa asks the model to work in the smallest reviewable chunks it can manage.
+- A chunk may mutate exactly one file. If another file needs changes, that becomes the next chunk.
+- Final chunks can end the workflow cleanly without asking for another chunk after acceptance.
+- Code restoration is not implemented yet; checkpoints are history anchors for now, not workspace restores.

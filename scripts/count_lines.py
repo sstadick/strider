@@ -1,45 +1,86 @@
 #!/usr/bin/env python3
 
+"""Count lines or bytes for files under a directory tree."""
+
 from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 SKIP_DIRS = {".git", ".hg", ".svn", "__pycache__"}
+COMMANDS = {"lines", "bytes"}
+DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def iter_files(root: Path) -> list[Path]:
-    files: list[Path] = []
+def should_skip(path: Path) -> bool:
+    """Return whether a path should be excluded from scanning."""
+    return any(part in SKIP_DIRS for part in path.parts)
+
+
+def iter_files(root: Path) -> Iterable[Path]:
+    """Yield scannable files under ``root`` in a stable order."""
     for path in sorted(root.rglob("*")):
-        if not path.is_file():
+        if not path.is_file() or should_skip(path):
             continue
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        files.append(path)
-    return files
+        yield path
 
 
 def count_lines(path: Path) -> int:
+    """Count text lines in a file using UTF-8 with replacement for errors."""
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         return sum(1 for _ in handle)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Count the number of lines in each file under a directory."
-    )
+def count_bytes(path: Path) -> int:
+    """Return the file size in bytes."""
+    return path.stat().st_size
+
+
+def add_path_argument(parser: argparse.ArgumentParser) -> None:
+    """Add the optional scan path argument to a subcommand parser."""
     parser.add_argument(
         "path",
         nargs="?",
-        default=Path(__file__).resolve().parents[1],
+        default=DEFAULT_ROOT,
         type=Path,
         help="Directory to scan. Defaults to the repository root.",
     )
-    return parser.parse_args()
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for line and byte counting."""
+    parser = argparse.ArgumentParser(
+        description="Count lines or bytes in each file under a directory."
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    lines_parser = subparsers.add_parser("lines", help="Count lines in files.")
+    add_path_argument(lines_parser)
+
+    bytes_parser = subparsers.add_parser("bytes", help="Count bytes in files.")
+    add_path_argument(bytes_parser)
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments, defaulting to the ``lines`` subcommand."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args or args[0] not in COMMANDS:
+        args.insert(0, "lines")
+    return build_parser().parse_args(args)
+
+
+def get_counter(command: str):
+    """Return the counting function for the selected command."""
+    if command == "bytes":
+        return count_bytes
+    return count_lines
 
 
 def main() -> int:
+    """Run the selected counting command and print per-file totals."""
     args = parse_args()
     root = args.path.resolve()
 
@@ -48,20 +89,21 @@ def main() -> int:
         return 1
 
     if root.is_file():
-        files = [root]
+        files = [] if should_skip(root) else [root]
         base = root.parent
     else:
         files = iter_files(root)
         base = root
 
+    counter = get_counter(args.command)
     total = 0
     for path in files:
-        lines = count_lines(path)
-        total += lines
-        print(f"{lines:>6}  {path.relative_to(base)}")
+        value = counter(path)
+        total += value
+        print(f"{value:>6}  {path.relative_to(base)}")
 
     print(f"{'-' * 6}  {'-' * 20}")
-    print(f"{total:>6}  total")
+    print(f"{total:>6}  total {args.command}")
     return 0
 
 

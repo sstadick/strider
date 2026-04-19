@@ -8,7 +8,8 @@ The product should feel like disciplined pair programming:
 - work in bounded chunks
 - keep the user in Neovim
 - jump to touched files
-- pause for questions, revisions, or approval before continuing
+- stay linear by default
+- pause for another question or chunk acceptance before continuing
 
 ## Code Conventions
 
@@ -26,7 +27,7 @@ The product should feel like disciplined pair programming:
 
 ## Product rules
 
-- `:SherpaQ` is a non-progressing question turn about the current chunk.
-- `:SherpaRevise` modifies the current chunk without advancing.
-- `:SherpaNext` advances only after the current chunk has paused.
+- `:SherpaQ` starts or continues the current linear chunk flow.
+- `:SherpaNext` accepts the current chunk and advances linearly.
+- Accepted chunks should be recorded in pi's built-in history for future restoration work.
 - The agent should stop after each bounded chunk and wait for user input.

@@ -4,22 +4,18 @@ end
 
 vim.g.loaded_sherpa = 1
 
-vim.api.nvim_create_user_command("SherpaStart", function(opts)
-  require("sherpa").start(opts.args)
-end, { nargs = "+", desc = "Start a guided Sherpa task" })
-
 vim.api.nvim_create_user_command("SherpaQ", function(opts)
   require("sherpa").question(opts.args)
-end, { nargs = "+", desc = "Ask Sherpa about the current chunk" })
+end, { nargs = "+", desc = "Start or continue a Sherpa chunk flow" })
 
 vim.api.nvim_create_user_command("SherpaNext", function()
   require("sherpa").next_step()
-end, { desc = "Advance Sherpa to the next chunk" })
+end, { desc = "Accept the current Sherpa chunk and continue" })
 
-vim.api.nvim_create_user_command("SherpaRevise", function(opts)
-  require("sherpa").revise(opts.args)
-end, { nargs = "+", desc = "Revise the current Sherpa chunk" })
+vim.api.nvim_create_user_command("SherpaChangeNext", function()
+  require("sherpa").next_change()
+end, { desc = "Jump to the next changed line in the current chunk" })
 
-vim.api.nvim_create_user_command("SherpaStatus", function()
-  require("sherpa").status()
-end, { desc = "Show Sherpa status" })
+vim.api.nvim_create_user_command("SherpaChangePrev", function()
+  require("sherpa").prev_change()
+end, { desc = "Jump to the previous changed line in the current chunk" })

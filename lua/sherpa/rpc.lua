@@ -24,6 +24,12 @@ local function append_tool(tool_name, args)
     ui.append({ string.format("[tool] %s %s", tool_name, path) })
     return
   end
+
+  if tool_name == "bash" and args and args.command then
+    ui.append_block("tool", string.format("bash\n%s", args.command))
+    return
+  end
+
   ui.append({ string.format("[tool] %s", tool_name) })
 end
 
@@ -42,6 +48,15 @@ local function text_content(message)
     return nil
   end
   return table.concat(parts, "\n")
+end
+
+local function strip_sherpa_footer(text)
+  if not text then
+    return nil
+  end
+  local cleaned = text:gsub("\n?<SHERPA_STATUS>.-</SHERPA_STATUS>%s*$", "")
+  cleaned = vim.trim(cleaned)
+  return cleaned ~= "" and cleaned or text
 end
 
 local function is_absolute_path(path)
@@ -68,7 +83,7 @@ local function handle_response(event)
 end
 
 local function handle_message_end(event)
-  local text = text_content(event.message)
+  local text = strip_sherpa_footer(text_content(event.message))
   if not text then
     return
   end
@@ -93,15 +108,62 @@ local function finish_tool_path(session, event)
   return path
 end
 
-local function changed_line(event)
-  if event.toolName == "write" then
-    return 1
-  end
+local function first_changed_line(event)
   local details = event.result and event.result.details
-  if details and details.firstChangedLine then
-    return tonumber(details.firstChangedLine) or 1
+  return details and tonumber(details.firstChangedLine) or 1
+end
+
+local function changed_lines(event)
+  local details = event.result and event.result.details
+  local start = first_changed_line(event)
+  local diff = details and details.diff
+  if not diff then
+    return { { line = start, kind = "added" } }
   end
-  return 1
+
+  local changes = {}
+  local seen = {}
+  local anchor = start
+
+  local function add_change(line, kind)
+    local target = tonumber(line) or start
+    local key = string.format("%s:%d", kind, target)
+    if seen[key] then
+      return
+    end
+    seen[key] = true
+    table.insert(changes, { line = target, kind = kind })
+  end
+
+  for _, line in ipairs(vim.split(diff, "\n", { plain = true })) do
+    local added = tonumber(line:match("^%+%s*(%d+)%s"))
+    if added then
+      anchor = added
+      add_change(added, "added")
+    else
+      local context = tonumber(line:match("^%s+(%d+)%s"))
+      if context then
+        anchor = context
+      else
+        local removed = tonumber(line:match("^%-%s*(%d+)%s"))
+        if removed then
+          add_change(anchor, "removed")
+        end
+      end
+    end
+  end
+
+  if #changes == 0 then
+    return { { line = start, kind = "added" } }
+  end
+
+  table.sort(changes, function(a, b)
+    if a.line == b.line then
+      return a.kind < b.kind
+    end
+    return a.line < b.line
+  end)
+  return changes
 end
 
 local function handle_tool_start(event)
@@ -123,9 +185,17 @@ local function handle_tool_end(event)
   if not path then
     return
   end
-  if event.toolName == "edit" or event.toolName == "write" then
+  if event.toolName == "edit" then
+    local lines = changed_lines(event)
     state.record_file(path)
-    ui.jump_to_file(path, changed_line(event))
+    ui.jump_to_file(path, first_changed_line(event))
+    ui.highlight_lines(path, lines)
+    return
+  end
+  if event.toolName == "write" then
+    state.record_file(path)
+    ui.jump_to_file(path, 1)
+    ui.highlight_range(path, 1)
   end
 end
 
@@ -140,7 +210,18 @@ local function handle_extension_ui(event)
     return
   end
   if event.method == "setStatus" then
+    local session = state.get_session()
+    local previous = session.status[event.statusKey]
     state.set_status(event.statusKey, event.statusText)
+    if event.statusKey == "sherpa" and event.statusText ~= previous then
+      if event.statusText == "complete" then
+        ui.append({ "[sherpa] Workflow complete", "" })
+      elseif event.statusText and event.statusText:find("final%-awaiting%-next", 1, false) then
+        ui.append({ "[sherpa] Final chunk awaiting :SherpaNext", "" })
+      elseif event.statusText and event.statusText:find("awaiting-next", 1, true) then
+        ui.append({ "[sherpa] Awaiting :SherpaNext", "" })
+      end
+    end
     return
   end
   if event.method == "setWidget" then

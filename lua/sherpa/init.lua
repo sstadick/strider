@@ -41,20 +41,9 @@ function M.setup(opts)
   state.setup(opts or {})
 end
 
-function M.start(goal)
-  if not goal or goal == "" then
-    ui.notify("Usage: :SherpaStart <goal>", vim.log.levels.WARN)
-    return
-  end
-  send("/guide " .. goal, goal)
-end
-
 function M.question(question)
-  if not active_session() then
-    return
-  end
   if not question or question == "" then
-    ui.notify("Usage: :SherpaQ <question>", vim.log.levels.WARN)
+    ui.notify("Usage: :SherpaQ <request>", vim.log.levels.WARN)
     return
   end
   send("/question " .. question, question)
@@ -64,27 +53,15 @@ function M.next_step()
   if not active_session() then
     return
   end
-  send("/next", "Continue with the next chunk.")
+  send("/next", "Accept chunk and continue.")
 end
 
-function M.revise(feedback)
-  if not active_session() then
-    return
-  end
-  if not feedback or feedback == "" then
-    ui.notify("Usage: :SherpaRevise <feedback>", vim.log.levels.WARN)
-    return
-  end
-  send("/revise " .. feedback, "Revise: " .. feedback)
+function M.next_change()
+  ui.jump_to_chunk_change(1)
 end
 
-function M.status()
-  if not active_session() then
-    return
-  end
-  ui.show_status()
-  ui.show_log()
-  send("/status")
+function M.prev_change()
+  ui.jump_to_chunk_change(-1)
 end
 
 return M

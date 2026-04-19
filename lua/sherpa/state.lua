@@ -17,7 +17,10 @@ local defaults = {
 local function new_session(cwd)
   return {
     assistant_text = nil,
+    chunk_lines = {},
+    chunk_path = nil,
     cwd = cwd,
+    highlight_buf = nil,
     job_id = nil,
     last_summary = nil,
     last_touched_file = nil,

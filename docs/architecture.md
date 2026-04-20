@@ -34,6 +34,7 @@ Owns:
 - file jumps and range highlighting
 - scratch log buffer
 - dedicated `sherpa://review` pane
+- floating `sherpa://prompt` / `sherpa://comment` input editors
 - local review/session state
 
 ### 2. pi extension
@@ -43,7 +44,6 @@ Lives in `pi/sherpa-stepper.ts`.
 Owns:
 - prompt shaping for `search`, `teach/review`, `patch`, and `work`
 - read-only guardrails for search/review
-- legacy linear workflow state that may still be reused internally
 - widget/status updates for Neovim
 
 ## Core flows
@@ -127,6 +127,20 @@ Purpose:
 - useful for debugging and history
 - can be reopened with `:SherpaLog`
 - not the primary pairing surface during review
+
+### Input editor
+
+Buffer names:
+- `sherpa://prompt` — used by `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, `:SherpaWork`
+- `sherpa://comment` — used by `:SherpaComment`
+
+A centered floating scratch buffer that opens when any text-input command is
+called with no arguments. Renders per-command guidance as `Comment`-highlighted
+virtual lines plus a `<C-s> to submit · <Esc><Esc> to cancel` hint.
+Non-empty arguments still dispatch directly — the editor is purely for the
+no-args path. For `:SherpaReview`, the editor has two modes: when no review is
+active, the first word is parsed as a scope key; when a review is active, the
+text is treated as a question about the current review item.
 
 ## RPC events used by the plugin
 

@@ -2,7 +2,7 @@
 
 Sherpa is a Neovim plugin for guided code generation, search, review, and patch flows powered by pi.
 
-It keeps the user in Neovim, jumps to touched files or reviewed ranges, and supports both linear chunking and explicit review flows.
+It keeps the user in Neovim and jumps to touched files or reviewed ranges. Review is the primary walkthrough surface; the four product flows are `SherpaSearch`, `SherpaReview`, `SherpaPatch`, and `SherpaWork`.
 
 ## Requirements
 
@@ -61,7 +61,7 @@ Review scopes:
 - visual selection — use `:'<,'>SherpaReview {question}` on a range instead of a named scope
 
 Rules of thumb:
-- `:SherpaReview` with no args starts a file review
+- `:SherpaReview` with no args opens the review popup. With no active review, the first word picks the scope (`file | diff | last | searches | branch <ref>`); with an active review, the popup asks a question about the current item.
 - `:SherpaReview diff` starts diff review
 - `:SherpaReview searches` reviews the latest search results
 - `:SherpaReview why does this matter?` asks about the current active review item

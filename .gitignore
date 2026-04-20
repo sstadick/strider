@@ -5,3 +5,4 @@ dist/
 .tmp/
 __pycache__/
 *.pyc
+recordings/_workspace/

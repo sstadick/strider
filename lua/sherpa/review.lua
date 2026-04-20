@@ -110,21 +110,75 @@ local function parse_hunk(line)
   return start_line, start_line + count - 1
 end
 
-local function diff_items()
-  local session = state.get_session()
-  if not session then
-    return {}
-  end
-  local cwd = session.cwd
-  local cmd = string.format("git -C %s diff --unified=0 --no-color", vim.fn.shellescape(cwd))
+local function git_run(cwd, args)
+  local cmd = string.format("git -C %s %s", vim.fn.shellescape(cwd), args)
   local output = vim.fn.systemlist(cmd)
   if vim.v.shell_error ~= 0 then
-    return {}
+    return nil
+  end
+  return output
+end
+
+local function git_first_line(cwd, args)
+  local output = git_run(cwd, args)
+  if not output or #output == 0 then
+    return nil
+  end
+  local line = vim.trim(output[1] or "")
+  if line == "" then
+    return nil
+  end
+  return line
+end
+
+local function ref_exists(cwd, ref)
+  local cmd = string.format(
+    "git -C %s rev-parse --verify --quiet %s",
+    vim.fn.shellescape(cwd),
+    vim.fn.shellescape(ref)
+  )
+  vim.fn.systemlist(cmd)
+  return vim.v.shell_error == 0
+end
+
+local function detect_base_branch(cwd)
+  if vim.fn.executable("gh") == 1 then
+    local gh_cmd = "cd " .. vim.fn.shellescape(cwd)
+      .. " && gh pr view --json baseRefName -q .baseRefName 2>/dev/null"
+    local gh_output = vim.fn.systemlist(gh_cmd)
+    if vim.v.shell_error == 0 and gh_output[1] and vim.trim(gh_output[1]) ~= "" then
+      local base = vim.trim(gh_output[1])
+      local remote_ref = "origin/" .. base
+      if ref_exists(cwd, remote_ref) then
+        return remote_ref
+      end
+      if ref_exists(cwd, base) then
+        return base
+      end
+    end
   end
 
+  local head_ref = git_first_line(cwd, "symbolic-ref --quiet refs/remotes/origin/HEAD")
+  if head_ref then
+    local stripped = head_ref:gsub("^refs/remotes/", "")
+    if ref_exists(cwd, stripped) then
+      return stripped
+    end
+  end
+
+  for _, candidate in ipairs({ "origin/main", "origin/master", "main", "master" }) do
+    if ref_exists(cwd, candidate) then
+      return candidate
+    end
+  end
+
+  return nil
+end
+
+local function parse_diff_output(output)
   local items = {}
   local current_path = nil
-  for _, line in ipairs(output) do
+  for _, line in ipairs(output or {}) do
     if vim.startswith(line, "+++") then
       current_path = normalize_diff_path(line:match("^%+%+%+%s+(.+)$"))
     elseif vim.startswith(line, "@@") and current_path then
@@ -135,6 +189,44 @@ local function diff_items()
     end
   end
   return items
+end
+
+local function diff_items()
+  local session = state.get_session()
+  if not session then
+    return {}
+  end
+  local output = git_run(session.cwd, "diff --unified=0 --no-color")
+  if not output then
+    return {}
+  end
+  return parse_diff_output(output)
+end
+
+local function branch_diff_items(base)
+  local session = state.get_session()
+  if not session then
+    return {}, nil
+  end
+  local cwd = session.cwd
+  local base_ref = base and base ~= "" and base or detect_base_branch(cwd)
+  if not base_ref then
+    ui.notify("Sherpa: could not determine base branch for review", vim.log.levels.WARN)
+    return {}, nil
+  end
+  if not ref_exists(cwd, base_ref) then
+    ui.notify("Sherpa: base ref not found: " .. base_ref, vim.log.levels.WARN)
+    return {}, base_ref
+  end
+  local args = string.format(
+    "diff --unified=0 --no-color %s...HEAD",
+    vim.fn.shellescape(base_ref)
+  )
+  local output = git_run(cwd, args)
+  if not output then
+    return {}, base_ref
+  end
+  return parse_diff_output(output), base_ref
 end
 
 local function current_item(review)
@@ -350,6 +442,14 @@ function M.build_items(scope, opts)
     return diff_items()
   end
 
+  if scope == "branch" then
+    local items, base = branch_diff_items(opts.base)
+    if base then
+      opts.resolved_base = base
+    end
+    return items
+  end
+
   if scope == "search" then
     return search.to_review_items(search.last_result_set())
   end
@@ -384,16 +484,21 @@ function M.start(scope, opts)
 
   ui.clear_comment_markers()
   ui.hide_log()
+  local source = scope
+  if scope == "branch" and opts.resolved_base then
+    source = "branch (" .. opts.resolved_base .. ")"
+  end
   session.review = {
     active = true,
     awaiting_summary = false,
+    base = opts.resolved_base,
     comments = {},
     current_index = 1,
     focus = opts.focus,
     items = items,
-    source = scope,
+    source = source,
     summary = nil,
-    title = opts.title or ("Sherpa review: " .. scope),
+    title = opts.title or ("Sherpa review: " .. source),
   }
   ui.show_review()
   M.focus_item(items[1])

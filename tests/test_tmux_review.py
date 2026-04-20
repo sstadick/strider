@@ -1,7 +1,32 @@
+import subprocess
 import unittest
 from pathlib import Path
 
+from tests.support.project_copy import FixtureProject
 from tests.support.tmux_nvim import TmuxNvimHarness
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _init_branch_repo(root: Path, base: str = "main") -> None:
+    _git(root, "init", "-q", "-b", base)
+    _git(root, "config", "user.email", "sherpa-test@example.com")
+    _git(root, "config", "user.name", "Sherpa Test")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "base commit")
+    _git(root, "checkout", "-q", "-b", "feature/review")
+    main_tsx = root / "src" / "main.tsx"
+    text = main_tsx.read_text()
+    main_tsx.write_text(text + "\n// sherpa branch review marker\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "feature change")
 
 
 class TmuxReviewTests(unittest.TestCase):
@@ -84,6 +109,37 @@ class TmuxReviewTests(unittest.TestCase):
             final_review_text = "\n".join(h.buffer_lines("sherpa://review"))
             self.assertIn("Review summary", final_review_text)
             self.assertIn("I found unresolved review comments", final_review_text)
+
+    def test_branch_review_builds_items_from_base_diff(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            _init_branch_repo(project_root, base="main")
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaReview branch main")
+                h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+
+                review_text = "\n".join(h.buffer_lines("sherpa://review"))
+                self.assertIn("source: `branch (main)`", review_text)
+                self.assertIn("src/main.tsx", review_text)
+
+                item_count = h.expr(
+                    "luaeval(\"#require('sherpa.state').get_session().review.items\")"
+                )
+                self.assertEqual("1", item_count)
+
+                first_item_path = h.expr(
+                    "luaeval(\"require('sherpa.state').get_session().review.items[1].path\")"
+                )
+                self.assertTrue(first_item_path.endswith("src/main.tsx"), first_item_path)
+
+    def test_branch_review_warns_on_unknown_base(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            _init_branch_repo(project_root, base="main")
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaReview branch does-not-exist")
+                # No active review should start when the base ref is missing.
+                self.assertFalse(
+                    h.lua_bool("require('sherpa.review').has_active_review()")
+                )
 
 
 if __name__ == "__main__":

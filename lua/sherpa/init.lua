@@ -7,9 +7,11 @@ local ui = require("sherpa.ui")
 local M = {}
 
 local review_scopes = {
+  branch = "branch",
   diff = "diff",
   file = "file",
   last = "last",
+  pr = "branch",
   search = "search",
   searches = "search",
   selection = "selection",
@@ -175,7 +177,14 @@ function M.review(args, opts)
   local range = range_from_opts(opts)
   local scope, focus = parse_scope(args, range ~= nil)
   if scope then
+    local base = nil
+    if scope == "branch" and focus and focus ~= "" then
+      local first, rest = focus:match("^(%S+)%s*(.-)$")
+      base = first
+      focus = trimmed(rest)
+    end
     start_review(scope, {
+      base = base,
       endLine = range and range.endLine or nil,
       focus = focus,
       path = range and range.path or nil,

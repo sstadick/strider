@@ -1,3 +1,5 @@
+local review = require("sherpa.review")
+local search = require("sherpa.search")
 local state = require("sherpa.state")
 local ui = require("sherpa.ui")
 
@@ -21,6 +23,13 @@ end
 local function append_tool(tool_name, args)
   local path = args and args.path
   if path then
+    if tool_name == "read" then
+      local start_line = tonumber(args.offset) or 1
+      local limit = tonumber(args.limit)
+      local suffix = limit and string.format(":%d-%d", start_line, start_line + limit - 1) or string.format(":%d", start_line)
+      ui.append({ string.format("[tool] %s %s%s", tool_name, path, suffix) })
+      return
+    end
     ui.append({ string.format("[tool] %s %s", tool_name, path) })
     return
   end
@@ -79,16 +88,79 @@ local function handle_response(event)
   if event.success then
     return
   end
+  ui.finish_activity(event.errorMessage or "Sherpa RPC request failed", "error")
   ui.notify(event.errorMessage or "Sherpa RPC request failed", vim.log.levels.ERROR)
 end
 
-local function handle_message_end(event)
-  local text = strip_sherpa_footer(text_content(event.message))
-  if not text then
+local function handle_message_update(event)
+  local delta = event.assistantMessageEvent
+  if not delta or delta.type ~= "text_delta" then
     return
   end
+  local pending = state.peek_pending_request()
+  if not pending or pending.operation ~= "teach" then
+    return
+  end
+  local session = state.get_session()
+  session.assistant_text = (session.assistant_text or "") .. (delta.delta or "")
+  review.capture_assistant_text(session.assistant_text, { partial = true })
+end
+
+local function has_tool_use(message)
+  if not message or message.role ~= "assistant" then
+    return false
+  end
+  for _, item in ipairs(message.content or {}) do
+    if item.type == "tool_use" or item.type == "toolCall" then
+      return true
+    end
+  end
+  return false
+end
+
+local function handle_message_end(event)
+  local message = event.message
+  local text = strip_sherpa_footer(text_content(message))
+  local pending = state.peek_pending_request()
+  local session = state.get_session()
+
+  -- Do not consume pending on tool-call turns or user messages.
+  -- Only the final text-bearing assistant message should consume it.
+  if has_tool_use(message) then
+    return
+  end
+  if not message or message.role ~= "assistant" then
+    return
+  end
+
+  pending = state.consume_pending_request()
+  session.assistant_text = nil
+
+  if not text then
+    ui.finish_activity("Sherpa request complete (no text)", "success")
+    return
+  end
+
+  if pending and pending.operation == "search" then
+    local result_set = search.handle_response(text, pending.metadata)
+    local summary = search.summary_text(result_set)
+    state.set_summary(summary)
+    ui.append_block("assistant", summary)
+    ui.finish_activity(summary, "success")
+    return
+  end
+
   state.set_summary(text:gsub("\n", " "))
   ui.append_block("assistant", text)
+  if pending and pending.operation == "teach" then
+    review.capture_assistant_text(text)
+  end
+  ui.finish_activity("Sherpa request complete", "success")
+end
+
+local function workflow_kind()
+  local session = state.get_session()
+  return session and session.status["sherpa-kind"] or nil
 end
 
 local function track_tool_path(session, event)
@@ -166,6 +238,17 @@ local function changed_lines(event)
   return changes
 end
 
+local function read_range(event)
+  local start = tonumber(event.args and event.args.offset) or 1
+  local limit = tonumber(event.args and event.args.limit)
+  if not limit then
+    local text = event.result and event.result.content and event.result.content[1] and event.result.content[1].text
+    local line_count = text and #vim.split(text, "\n", { plain = true }) or 30
+    limit = math.min(math.max(line_count, 1), 40)
+  end
+  return start, start + limit - 1
+end
+
 local function handle_tool_start(event)
   local session = state.get_session()
   append_tool(event.toolName, event.args)
@@ -183,6 +266,13 @@ local function handle_tool_end(event)
   local session = state.get_session()
   local path = finish_tool_path(session, event)
   if not path then
+    return
+  end
+  if event.toolName == "read" and workflow_kind() == "teach" then
+    local start_line, end_line = read_range(event)
+    state.record_file(path)
+    ui.jump_to_file(path, start_line)
+    ui.highlight_range(path, start_line, end_line)
     return
   end
   if event.toolName == "edit" then
@@ -232,6 +322,10 @@ end
 local function dispatch(event)
   if event.type == "response" then
     handle_response(event)
+    return
+  end
+  if event.type == "message_update" then
+    handle_message_update(event)
     return
   end
   if event.type == "message_end" then

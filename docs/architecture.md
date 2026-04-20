@@ -1,17 +1,24 @@
-# Architecture sketch
+# Architecture
 
 ## Current product model
 
-Sherpa is now explicitly linear.
+Sherpa is now built around four primary user flows:
 
-The only user controls are:
-- `:SherpaQ {request}`
+- `:SherpaSearch {prompt}`
+- `:SherpaReview [scope] [prompt]`
+- `:'<,'>SherpaPatch {prompt}`
+- `:SherpaWork {prompt}`
+
+Supporting navigation:
+
 - `:SherpaNext`
+- `:SherpaPrev`
+- `:SherpaComment {text}`
+- `:SherpaComments`
+- `:SherpaReviewItems`
 
-`SherpaQ` starts the workflow and continues it.
-`SherpaNext` accepts the current chunk, records a checkpoint, and asks pi for the next bounded chunk.
-
-Sherpa still relies on pi's built-in session history so future work can add code restoration and richer history navigation, but the current UX does not expose branching.
+The main product is no longer centered on a linear `Q` loop.
+Review is the primary walkthrough surface.
 
 ## Components
 
@@ -22,125 +29,155 @@ Lives in `lua/sherpa/`.
 Owns:
 - process lifecycle for `pi --mode rpc`
 - RPC transport
-- editor UX
-- file jumping and chunk highlighting
 - command bindings
-- conversation log buffer
+- quickfix and picker UX
+- file jumps and range highlighting
+- scratch log buffer
+- dedicated `sherpa://review` pane
+- local review/session state
 
 ### 2. pi extension
 
 Lives in `pi/sherpa-stepper.ts`.
 
 Owns:
-- linear workflow state
-- checkpoint labeling
-- persistence
-- prompt shaping for one-chunk-at-a-time behavior
+- prompt shaping for `search`, `teach/review`, `patch`, and `work`
+- read-only guardrails for search/review
+- legacy linear workflow state that may still be reused internally
+- widget/status updates for Neovim
 
-## Core flow
+## Core flows
 
-### Start or continue
+### Search
 
-1. user runs `:SherpaQ <request>`
-2. plugin sends `/question <request>`
-3. if Sherpa is idle, the extension starts a linear flow and treats the request as the initial goal
-4. if Sherpa is active, the extension treats the request as guidance for the current chunk
-5. pi makes at most one bounded chunk of progress and stops
-6. plugin updates the log, jumps to touched files, and highlights the changed chunk
+1. user runs `:SherpaSearch <prompt>`
+2. plugin sends `/search <prompt>`
+3. extension constrains the model to structured search output
+4. plugin parses result lines
+5. single match jumps directly to the file
+6. multiple matches open telescope/fzf when available, otherwise quickfix
 
-### Accept and continue
+## Review
 
-1. user runs `:SherpaNext`
-2. plugin sends `/next`
-3. extension labels the last assistant chunk as an accepted checkpoint using pi's built-in history labels
-4. extension advances the linear chunk counter
-5. pi performs one more bounded chunk and stops again
+1. user runs `:SherpaReview file|diff|last|searches`
+2. plugin builds local review items
+3. Sherpa opens the dedicated review pane and highlights the active range
+4. plugin sends `/teach ...` for the active review item
+5. assistant explanation is written both to the log and the review pane
+6. `:SherpaNext` / `:SherpaPrev` move through items
+7. unresolved comments are summarized back to the agent at review end
 
-## History model
+Important UX rule:
+- the review pane is the primary explanation surface
+- the log is secondary transcript/history
 
-Sherpa uses pi's session history as the source of truth.
+### Patch
 
-For now, accepted chunks are represented as labels on assistant messages, for example:
-- `chunk-1`
-- `chunk-2`
-- `chunk-3`
+1. user visually selects a range
+2. user runs `:SherpaPatch <prompt>`
+3. plugin sends `/patch ...` with file, line range, and excerpt context
+4. tool events update the file jump and edit highlighting
+5. edited ranges remain highlighted after the patch
 
-This keeps Sherpa compatible with pi's built-in history and `/tree` model without pretending that code state can be restored yet.
+### Work
 
-Important limitation:
-- session history can branch
-- the working tree on disk does not automatically rewind
-- therefore Sherpa currently presents a linear workflow only
+1. user runs `:SherpaWork <prompt>`
+2. plugin sends `/work <prompt>`
+3. assistant may make broader changes than patch mode
+4. user reviews the result with `:SherpaReview diff` or `:SherpaReview last`
 
-## RPC events we care about
+## Review state model
+
+Sherpa keeps local review state in the Neovim session.
+A review session tracks:
+- review items
+- current index
+- local comments
+- per-item explanation text
+- end-of-review summary state
+
+Comments are local today, but the data shape leaves room for future GitHub review mapping.
+
+## UI surfaces
+
+### Code window
+
+The source of truth for the currently reviewed or edited range.
+Sherpa jumps here and highlights the active region.
+
+### Review pane
+
+Buffer name:
+- `sherpa://review`
+
+Purpose:
+- show one active review item
+- show the current explanation
+- show excerpt and item-local comments
+- show the end-of-review summary
+- show busy state while waiting for agent responses
+
+### Log buffer
+
+Buffer name:
+- `sherpa://log`
+
+Purpose:
+- keep the full transcript, tool activity, and stderr
+- useful for debugging and history
+- can be reopened with `:SherpaLog`
+- not the primary pairing surface during review
+
+## RPC events used by the plugin
 
 ### From pi
 
 - `message_end`
-  - capture assistant summaries for the current chunk
+  - capture assistant text
+  - update log
+  - update review pane when the response belongs to review
 - `tool_execution_start`
-  - inspect `toolName` and `args`
+  - log tool usage
+  - track touched paths
 - `tool_execution_end`
-  - jump to changed files and highlight changed ranges
+  - jump to files
+  - highlight read/edit/write ranges
 - `extension_ui_request`
-  - receive status and widget updates from the extension
+  - status + widget updates from the extension
 
 ### To pi
 
 - `prompt`
 
-## File jump heuristic
+## File/range heuristics
 
-For now, watch these explicit file tools only:
-
+Sherpa currently keys off explicit tool paths only:
 - `read.path`
 - `edit.path`
 - `write.path`
 
-Shell parsing is intentionally out of scope for the current UX.
-
-## Suggested extension state
-
-```ts
-interface WorkflowState {
-  mode: "idle" | "guided";
-  goal?: string;
-  currentChunk: number;
-  acceptedChunks: number;
-  lastAcceptedEntryId?: string;
-  lastAssistantEntryId?: string;
-  lastTouchedFile?: string;
-  recentFiles: string[];
-  lastAssistantSummary?: string;
-}
-```
-
-Persist with `pi.appendEntry()` so resumed sessions can reconstruct the linear flow.
-
-## Boundaries for chunk mode
-
-The extension prompt should bias the model toward:
-
-- one bounded chunk per turn
-- one file when possible
-- explicit stop after the chunk is complete
-- answering explanatory questions without editing code
-- making code changes only when the request actually asks for them
+Shell parsing remains intentionally lightweight.
 
 ## Current implementation status
 
 Working today:
+- structured search with picker + quickfix behavior
+- explicit review scopes
+- dedicated review pane
+- local review comments
+- selection-scoped patching
+- broader work requests
+- fast fake-backend tmux e2e tests
+- optional real-pi smoke tests on bundled fixture projects
 
-- `:SherpaQ` starts and continues the flow
-- `:SherpaNext` records accepted checkpoints and advances linearly
-- a scratch log buffer records user prompts, assistant replies, tool activity, and stderr
-- file jumps happen for explicit `read`, `edit`, and `write` tool calls
-- changed chunks are marked in the gutter
-- accepted checkpoints are stored in pi history labels for future reuse
+Still rough:
+- the review pane can be polished further
+- review summaries depend heavily on model quality
+- work mode is broader than patch mode but still lightweight
+- code restoration is not implemented
 
-Known rough edges:
+## Related docs
 
-- the workflow is linear by design, but checkpoint browsing is not yet exposed in Neovim
-- file creation and first-open ordering still needs more testing
-- checkpoint summaries are still lightweight
-- code restoration is not implemented yet
+- `docs/review-mode.md`
+- `docs/plan.md`
+- `tests/README.md`

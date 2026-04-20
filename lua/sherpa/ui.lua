@@ -3,8 +3,12 @@ local state = require("sherpa.state")
 local M = {}
 
 local chunk_namespace = vim.api.nvim_create_namespace("sherpa-chunk")
+local comment_namespace = vim.api.nvim_create_namespace("sherpa-comments")
 local added_chunk_hl = "SherpaChunkAddedGutter"
 local removed_chunk_hl = "SherpaChunkRemovedGutter"
+local comment_hl = "SherpaCommentGutter"
+local close_windows_for_buffer
+local target_window
 
 local function notify(message, level)
   vim.notify(message, level or vim.log.levels.INFO, { title = "sherpa" })
@@ -12,6 +16,10 @@ end
 
 local function log_name()
   return state.get_config().log_buffer_name
+end
+
+local function review_name()
+  return "sherpa://review"
 end
 
 local function log_lines(lines)
@@ -22,6 +30,16 @@ local function log_lines(lines)
   return vim.split(text, "\n", { plain = true })
 end
 
+local function configure_scratch_buffer(buf, filetype)
+  vim.bo[buf].bufhidden = "hide"
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].modifiable = true
+  if filetype then
+    vim.bo[buf].filetype = filetype
+  end
+end
+
 function M.ensure_log_buffer()
   local session = state.get_session()
   if session.log_buf and vim.api.nvim_buf_is_valid(session.log_buf) then
@@ -30,10 +48,21 @@ function M.ensure_log_buffer()
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, log_name())
-  vim.bo[buf].bufhidden = "hide"
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].swapfile = false
+  configure_scratch_buffer(buf)
   session.log_buf = buf
+  return buf
+end
+
+function M.ensure_review_buffer()
+  local session = state.get_session()
+  if session.review_buf and vim.api.nvim_buf_is_valid(session.review_buf) then
+    return session.review_buf
+  end
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(buf, review_name())
+  configure_scratch_buffer(buf, "markdown")
+  session.review_buf = buf
   return buf
 end
 
@@ -60,6 +89,11 @@ function M.show_log()
   scroll_log_windows(buf)
 end
 
+function M.hide_log()
+  local session = state.get_session()
+  close_windows_for_buffer(session and session.log_buf)
+end
+
 function M.append(lines)
   local buf = M.ensure_log_buffer()
   local items = log_lines(lines)
@@ -77,6 +111,177 @@ function M.append_block(label, text)
   M.append(lines)
 end
 
+local function configure_review_window(win)
+  vim.wo[win].wrap = true
+  vim.wo[win].linebreak = true
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].cursorline = false
+  vim.wo[win].winfixwidth = true
+end
+
+function M.show_review()
+  local session = state.get_session()
+  local buf = M.ensure_review_buffer()
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      configure_review_window(win)
+      session.review_win = win
+      return win
+    end
+  end
+
+  local previous = target_window() or vim.api.nvim_get_current_win()
+  vim.cmd("botright vsplit")
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, buf)
+  configure_review_window(win)
+  local width = math.min(math.max(math.floor(vim.o.columns * 0.38), 44), 72)
+  pcall(vim.api.nvim_win_set_width, win, width)
+  session.review_win = win
+  if previous and vim.api.nvim_win_is_valid(previous) then
+    vim.api.nvim_set_current_win(previous)
+  end
+  return win
+end
+
+function M.set_review_lines(lines)
+  local session = state.get_session()
+  local buf = M.ensure_review_buffer()
+  local win = M.show_review()
+  local items = log_lines(lines or {})
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, items)
+  vim.bo[buf].modifiable = false
+  if win and vim.api.nvim_win_is_valid(win) then
+    pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
+  end
+  session.review_win = win
+end
+
+local function set_buffer_busy(buf, busy)
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    pcall(function()
+      vim.bo[buf].busy = busy and 1 or 0
+    end)
+  end
+end
+
+local function progress_buffers(target)
+  local bufs = {}
+  if target == "review" or target == "both" then
+    table.insert(bufs, M.ensure_review_buffer())
+  end
+  if target == "log" or target == "both" then
+    table.insert(bufs, M.ensure_log_buffer())
+  end
+  return bufs
+end
+
+function M.start_activity(title, target)
+  local session = state.get_session()
+  M.finish_activity(nil, "cancel")
+  session.progress = {
+    title = title,
+    target = target or "log",
+  }
+  for _, buf in ipairs(progress_buffers(session.progress.target)) do
+    set_buffer_busy(buf, true)
+  end
+  local ok, id = pcall(vim.api.nvim_echo, { { title } }, true, {
+    kind = "progress",
+    status = "running",
+    title = "sherpa",
+    source = "sherpa",
+  })
+  if ok then
+    session.progress.id = id
+  end
+end
+
+function M.finish_activity(message, status)
+  local session = state.get_session()
+  local progress = session and session.progress
+  if not progress then
+    return
+  end
+  for _, buf in ipairs(progress_buffers(progress.target)) do
+    set_buffer_busy(buf, false)
+  end
+  if progress.id then
+    pcall(vim.api.nvim_echo, { { message or progress.title } }, true, {
+      id = progress.id,
+      kind = "progress",
+      status = status or "success",
+      title = "sherpa",
+      source = "sherpa",
+    })
+  end
+  session.progress = nil
+end
+
+local function open_scratch_editor(name, title, on_submit)
+  local buf = vim.api.nvim_create_buf(false, true)
+  pcall(vim.api.nvim_buf_set_name, buf, name)
+  configure_scratch_buffer(buf, "markdown")
+  vim.bo[buf].bufhidden = "wipe"
+
+  vim.cmd("botright 10split")
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, buf)
+  vim.wo[win].wrap = true
+  vim.wo[win].linebreak = true
+
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+    string.format("-- %s. <C-s> to submit, q or <Esc><Esc> to cancel", title),
+    "",
+  })
+
+  local function finish(submit)
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local text = vim.trim(table.concat(lines, "\n"))
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
+    if submit and text ~= "" then
+      on_submit(text)
+    elseif submit then
+      notify("Discarded empty Sherpa input", vim.log.levels.WARN)
+    end
+  end
+
+  vim.keymap.set({ "n", "i" }, "<C-s>", function()
+    finish(true)
+  end, { buffer = buf, nowait = true, silent = true })
+
+  vim.keymap.set("n", "q", function()
+    finish(false)
+  end, { buffer = buf, nowait = true, silent = true })
+
+  vim.keymap.set("i", "<Esc><Esc>", function()
+    finish(false)
+  end, { buffer = buf, nowait = true, silent = true })
+
+  vim.schedule(function()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_set_current_win(win)
+      vim.cmd("startinsert")
+    end
+  end)
+end
+
+function M.open_comment_editor(on_submit)
+  open_scratch_editor("sherpa://comment", "Write your comment below", on_submit)
+end
+
+function M.open_prompt_editor(label, on_submit)
+  open_scratch_editor("sherpa://prompt", label, on_submit)
+end
+
 local function is_normal_window(win)
   if not vim.api.nvim_win_is_valid(win) then
     return false
@@ -85,7 +290,7 @@ local function is_normal_window(win)
   return vim.bo[buf].buftype == ""
 end
 
-local function target_window()
+target_window = function()
   local current = vim.api.nvim_get_current_win()
   if is_normal_window(current) then
     return current
@@ -95,6 +300,25 @@ local function target_window()
     if is_normal_window(win) then
       return win
     end
+  end
+end
+
+close_windows_for_buffer = function(buf)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
+  end
+end
+
+function M.hide_review()
+  local session = state.get_session()
+  close_windows_for_buffer(session and session.review_buf)
+  if session then
+    session.review_win = nil
   end
 end
 
@@ -120,6 +344,7 @@ end
 local function ensure_chunk_style()
   vim.api.nvim_set_hl(0, added_chunk_hl, { default = true, fg = "#73C991" })
   vim.api.nvim_set_hl(0, removed_chunk_hl, { default = true, fg = "#F14C4C" })
+  vim.api.nvim_set_hl(0, comment_hl, { default = true, fg = "#D7BA7D" })
 end
 
 local function get_buffer(path)
@@ -216,6 +441,53 @@ function M.highlight_range(path, first_line, last_line)
     table.insert(lines, { line = line, kind = "added" })
   end
   M.highlight_lines(path, lines)
+end
+
+function M.clear_comment_markers()
+  local session = state.get_session()
+  if not session then
+    return
+  end
+  for _, buf in ipairs(session.comment_buffers or {}) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      vim.api.nvim_buf_clear_namespace(buf, comment_namespace, 0, -1)
+    end
+  end
+  session.comment_buffers = {}
+end
+
+function M.add_comment_marker(path, line)
+  local session = state.get_session()
+  local buf = get_buffer(path)
+  if not buf then
+    return
+  end
+  ensure_chunk_style()
+  local max_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
+  local target = math.min(math.max(tonumber(line) or 1, 1), max_line)
+  vim.api.nvim_buf_set_extmark(buf, comment_namespace, target - 1, 0, {
+    priority = 20,
+    sign_hl_group = comment_hl,
+    sign_text = "●",
+  })
+  session.comment_buffers = session.comment_buffers or {}
+  if not vim.tbl_contains(session.comment_buffers, buf) then
+    table.insert(session.comment_buffers, buf)
+  end
+end
+
+function M.set_quickfix(title, items, open)
+  vim.fn.setqflist({}, "r", {
+    title = title,
+    items = items,
+  })
+  if open ~= false then
+    vim.cmd("copen")
+  end
+end
+
+function M.open_quickfix(title, items)
+  M.set_quickfix(title, items, true)
 end
 
 function M.jump_to_chunk_change(direction)

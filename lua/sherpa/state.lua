@@ -19,13 +19,20 @@ local function new_session(cwd)
     assistant_text = nil,
     chunk_lines = {},
     chunk_path = nil,
+    comment_buffers = {},
     cwd = cwd,
     highlight_buf = nil,
+    review_buf = nil,
+    review_win = nil,
     job_id = nil,
     last_summary = nil,
     last_touched_file = nil,
+    pending_request = nil,
+    progress = nil,
     recent_files = {},
     request_seq = 0,
+    review = nil,
+    search_history = {},
     status = {},
     stdout_tail = "",
     stderr_tail = "",
@@ -101,6 +108,30 @@ end
 function M.set_summary(text)
   local session = M.get_session()
   session.last_summary = text
+end
+
+function M.set_pending_request(operation, metadata)
+  local session = M.get_session()
+  if not operation then
+    session.pending_request = nil
+    return
+  end
+  session.pending_request = {
+    operation = operation,
+    metadata = metadata or {},
+  }
+end
+
+function M.peek_pending_request()
+  local session = M.get_session()
+  return session.pending_request
+end
+
+function M.consume_pending_request()
+  local session = M.get_session()
+  local pending = session.pending_request
+  session.pending_request = nil
+  return pending
 end
 
 return M

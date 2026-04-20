@@ -1,8 +1,8 @@
 # sherpa
 
-Sherpa is a Neovim plugin for linear, chunked code generation powered by pi.
+Sherpa is a Neovim plugin for guided code generation, search, review, and patch flows powered by pi.
 
-It keeps the user in Neovim, executes one bounded chunk at a time, jumps to touched files, and pauses between accepted checkpoints.
+It keeps the user in Neovim, jumps to touched files or reviewed ranges, and supports both linear chunking and explicit review flows.
 
 ## Requirements
 
@@ -22,12 +22,129 @@ vim.cmd("runtime plugin/sherpa.lua")
 require("sherpa").setup()
 ```
 
+## Features
+
+- Search — `:SherpaSearch {prompt}` and `:SherpaSearches`
+- Review — `:SherpaReview [scope] [prompt]`, `:SherpaNext`, `:SherpaPrev`
+- Review comments — `:SherpaComment {text}` and `:SherpaComments`
+- Targeted edit — `:'<,'>SherpaPatch {prompt}`
+- Broader run + review — `:SherpaWork {prompt}` then `:SherpaReview diff|last|searches`
+
 ## Commands
 
-- `:SherpaQ {request}` — start or continue the current linear chunk flow
-- `:SherpaNext` — accept the current chunk and continue to the next one
-- `:SherpaChangeNext` — jump to the next changed line in the current chunk
-- `:SherpaChangePrev` — jump to the previous changed line in the current chunk
+### Search
+
+- `:SherpaSearch {prompt}` — run structured Sherpa search
+- `:SherpaSearches` — reopen recent search result sets
+
+Search uses a p99-style structured result format.
+A single match jumps directly to the file and highlights the range.
+Multiple matches use a wrapped telescope/fzf picker when available and otherwise fall back to quickfix.
+
+### Review
+
+- `:SherpaReview [scope] [prompt]` — start review or ask about the active review item
+- `:SherpaNext` — move to the next review item
+- `:SherpaPrev` — move to the previous review item
+- `:SherpaReviewItems` — open the current review item list
+- `:SherpaLog` — reopen the transcript / agent buffer
+
+Review scopes:
+- `file` — review the current file
+- `diff` — review git diff hunks
+- `last` — review the latest useful result set, diff, or file fallback
+- `searches` — review the latest Sherpa search result set
+- visual selection — use `:'<,'>SherpaReview {question}` on a range instead of a named scope
+
+Rules of thumb:
+- `:SherpaReview` with no args starts a file review
+- `:SherpaReview diff` starts diff review
+- `:SherpaReview searches` reviews the latest search results
+- `:SherpaReview why does this matter?` asks about the current active review item
+- `:SherpaLog` brings the transcript buffer back when the review pane is the primary surface
+
+Review is read-only.
+Comments are local to Sherpa for now and are fed back to the agent when review ends.
+They are shaped to leave room for future GitHub PR review integration, but Sherpa does not submit or sync them yet.
+
+### Comments
+
+- `:SherpaComment {text}` — comment on the current review item
+- `:'<,'>SherpaComment {text}` — comment on the selected range inside the active review
+- `:SherpaComment` with no text opens a multiline comment editor
+- `:SherpaComments` — browse recorded review comments
+
+### Targeted edit
+
+- `:'<,'>SherpaPatch {prompt}` — patch the selected range
+- `:SherpaPatch {prompt}` — patch the active review item if one is selected
+
+### Broader run
+
+- `:SherpaWork {prompt}` — run a broader implementation request
+
+## Examples
+
+### Search
+
+```vim
+:SherpaSearch where is the main entrypoint?
+:SherpaSearch show me all websocket entrypoints
+```
+
+### Review a file
+
+```vim
+:SherpaReview file
+:SherpaNext
+:SherpaPrev
+```
+
+### Review a diff
+
+```vim
+:SherpaReview diff
+```
+
+### Review search results
+
+```vim
+:SherpaSearch where is auth handled?
+:SherpaReview searches
+```
+
+### Ask about a selected range during review
+
+```vim
+:'<,'>SherpaReview why does this block matter?
+```
+
+### Leave a range comment during review
+
+```vim
+:'<,'>SherpaComment this branch needs a clearer name
+```
+
+Or open a multiline comment editor:
+
+```vim
+:'<,'>SherpaComment
+```
+
+### Targeted edit
+
+```vim
+:'<,'>SherpaPatch change this greeting from hi to hello and only touch this line
+```
+
+### Full run + review
+
+```vim
+:SherpaWork add loading states to the lobby flow
+:SherpaReview diff
+:'<,'>SherpaComment this branch needs a clearer empty state
+:SherpaNext
+```
 
 ## Development
 
@@ -45,13 +162,26 @@ To mirror Sherpa's backend setup more closely, start pi in RPC mode:
 pi --mode rpc --no-extensions --extension ./pi/sherpa-stepper.ts
 ```
 
+## Tests
+
+Fast tmux+nvim end-to-end tests live under `tests/` and use a fake pi backend by default.
+Optional real-pi smoke tests use the bundled zero-dependency Python fixture project:
+
+```bash
+SHERPA_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
+```
+
+See `tests/README.md` for details.
+
 ## Notes
 
-- Sherpa uses pi's built-in session history and labels accepted chunks as checkpoints.
+- Sherpa uses pi's built-in session history and labels accepted chunks or stops as checkpoints.
 - Assistant output is written to a scratch log buffer.
 - File jumps currently follow `read`, `edit`, and `write` tool calls.
-- Sherpa keeps an open chunk state and shows when a chunk is waiting for `:SherpaNext`.
-- Sherpa asks the model to work in the smallest reviewable chunks it can manage.
-- A chunk may mutate exactly one file. If another file needs changes, that becomes the next chunk.
-- Final chunks can end the workflow cleanly without asking for another chunk after acceptance.
+- `:SherpaReview` is the main walkthrough/review surface.
+- `:SherpaSearch` is read-only and returns structured locations into quickfix plus picker-backed selection.
+- `:SherpaReview diff|file|last|searches` creates explicit review sessions with range highlighting and a dedicated review pane.
+- While waiting on long-running agent responses, Sherpa marks its review/log buffers busy and emits built-in Neovim progress messages.
+- `:'<,'>SherpaComment` comments on a visual selection inside the active review, and `:SherpaComment` can open a multiline editor.
+- `:SherpaPatch` is selection-first and intended for small local edits.
 - Code restoration is not implemented yet; checkpoints are history anchors for now, not workspace restores.

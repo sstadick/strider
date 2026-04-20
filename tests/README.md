@@ -1,0 +1,63 @@
+# Sherpa test tooling
+
+## Goals
+
+These tests cover the Neovim UX layer that is hard to validate with pure unit tests:
+- running Sherpa inside a real Neovim TUI
+- driving it from a tmux session
+- querying Neovim state over a `--listen` socket
+- using a fake pi RPC backend for repeatable UX tests
+
+## Pieces
+
+- `support/fake_pi.py` — tiny fake pi RPC process for canned Sherpa responses
+- `support/minimal_init.lua` — minimal Neovim init that loads Sherpa from this repo and reuses already-installed telescope/fzf plugins
+- `support/tmux_nvim.py` — reusable tmux + Neovim harness
+- `run_tmux_session.py` — manual launcher for an interactive tmux-backed Sherpa session
+- `fixtures/app/` — small fixture project used by the UX tests
+
+## Running tests
+
+From the repo root:
+
+```bash
+python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_count_lines
+```
+
+These fake-backend tmux tests should stay cheap to run: seconds, not minutes.
+
+## Optional real-pi smoke test
+
+Uses the bundled zero-dependency `fixtures/python_app` project and covers:
+- `:SherpaReview file`
+- `:SherpaPatch` on a selected line
+
+```bash
+SHERPA_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
+```
+
+## Manual tmux session
+
+Fake backend:
+
+```bash
+python3 tests/run_tmux_session.py --project tests/fixtures/app
+```
+
+Real pi backend against another project:
+
+```bash
+python3 tests/run_tmux_session.py --project ../punked --real-pi
+```
+
+Then attach with:
+
+```bash
+tmux attach -t <session-name>
+```
+
+## Notes
+
+The fake backend keeps the tests deterministic.
+The minimal init does not install plugins during test runs; it reuses the user's existing telescope/fzf setup.
+The real-pi launcher and smoke test are for live model debugging and should stay optional.

@@ -6,7 +6,7 @@ vim.g.loaded_sherpa = 1
 
 vim.api.nvim_create_user_command("SherpaWork", function(opts)
   require("sherpa").work(opts.args)
-end, { nargs = "+", desc = "Run a broader Sherpa work request" })
+end, { nargs = "*", desc = "Run a broader Sherpa work request" })
 
 vim.api.nvim_create_user_command("SherpaSearch", function(opts)
   require("sherpa").search(opts.args)
@@ -18,7 +18,7 @@ end, { nargs = "*", range = true, desc = "Start Sherpa review mode or ask about 
 
 vim.api.nvim_create_user_command("SherpaPatch", function(opts)
   require("sherpa").patch(opts.args, opts)
-end, { nargs = "+", range = true, desc = "Apply a selection-scoped Sherpa patch" })
+end, { nargs = "*", range = true, desc = "Apply a selection-scoped Sherpa patch" })
 
 vim.api.nvim_create_user_command("SherpaComment", function(opts)
   require("sherpa").comment(opts.args, opts)

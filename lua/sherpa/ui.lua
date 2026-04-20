@@ -221,21 +221,77 @@ function M.finish_activity(message, status)
   session.progress = nil
 end
 
-local function open_scratch_editor(name, title, on_submit)
+local editor_ns = vim.api.nvim_create_namespace("sherpa-editor-hint")
+
+-- Open a centered floating scratch editor with ghost-text help.
+-- opts: { name, title, hint_lines?, allow_empty? }
+--   title is the one-line header shown above the input
+--   hint_lines is an optional list of per-command guidance shown as virt_lines
+--   allow_empty permits empty submissions (defaults to false)
+local function open_scratch_editor(opts, on_submit)
   local buf = vim.api.nvim_create_buf(false, true)
-  pcall(vim.api.nvim_buf_set_name, buf, name)
+  pcall(vim.api.nvim_buf_set_name, buf, opts.name)
   configure_scratch_buffer(buf, "markdown")
   vim.bo[buf].bufhidden = "wipe"
 
-  vim.cmd("botright 10split")
-  local win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(win, buf)
+  local ui_info = vim.api.nvim_list_uis()[1] or { width = 120, height = 30 }
+  local width = math.min(80, math.max(40, math.floor(ui_info.width * 0.6)))
+  local height = math.min(12, math.max(6, math.floor(ui_info.height * 0.35)))
+  local row = math.floor((ui_info.height - height) / 2)
+  local col = math.floor((ui_info.width - width) / 2)
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = row,
+    col = col,
+    width = width,
+    height = height,
+    border = "rounded",
+    title = " " .. opts.title .. " ",
+    title_pos = "center",
+    style = "minimal",
+  })
   vim.wo[win].wrap = true
   vim.wo[win].linebreak = true
+  vim.wo[win].winhighlight = "NormalFloat:Normal,FloatBorder:FloatBorder"
 
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-    string.format("-- %s. <C-s> to submit, q or <Esc><Esc> to cancel", title),
-    "",
+  local submit_hint = " <C-s> submit · <Esc><Esc> cancel "
+
+  -- Render ghost text. Called on open and whenever the buffer becomes empty
+  -- or non-empty again via TextChanged / TextChangedI.
+  local function render_hint()
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+    vim.api.nvim_buf_clear_namespace(buf, editor_ns, 0, -1)
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local is_empty = (#lines == 0) or (#lines == 1 and lines[1] == "")
+
+    local virt_lines = {}
+    if opts.hint_lines then
+      for _, text in ipairs(opts.hint_lines) do
+        table.insert(virt_lines, { { text, "Comment" } })
+      end
+    end
+    table.insert(virt_lines, { { submit_hint, "NonText" } })
+
+    local anchor_line = math.max(#lines - 1, 0)
+    vim.api.nvim_buf_set_extmark(buf, editor_ns, anchor_line, 0, {
+      virt_lines = virt_lines,
+      virt_lines_above = false,
+    })
+
+    if is_empty then
+      vim.api.nvim_buf_set_extmark(buf, editor_ns, 0, 0, {
+        virt_text = { { "type your input…", "Comment" } },
+        virt_text_pos = "overlay",
+      })
+    end
+  end
+
+  render_hint()
+
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    buffer = buf,
+    callback = render_hint,
   })
 
   local function finish(submit)
@@ -247,7 +303,7 @@ local function open_scratch_editor(name, title, on_submit)
     if vim.api.nvim_win_is_valid(win) then
       pcall(vim.api.nvim_win_close, win, true)
     end
-    if submit and text ~= "" then
+    if submit and (text ~= "" or opts.allow_empty) then
       on_submit(text)
     elseif submit then
       notify("Discarded empty Sherpa input", vim.log.levels.WARN)
@@ -275,11 +331,30 @@ local function open_scratch_editor(name, title, on_submit)
 end
 
 function M.open_comment_editor(on_submit)
-  open_scratch_editor("sherpa://comment", "Write your comment below", on_submit)
+  open_scratch_editor({
+    name = "sherpa://comment",
+    title = "Sherpa comment",
+    hint_lines = { "Leave a review comment. Multiple lines are fine." },
+  }, on_submit)
 end
 
-function M.open_prompt_editor(label, on_submit)
-  open_scratch_editor("sherpa://prompt", label, on_submit)
+function M.open_prompt_editor(label, on_submit, hint_lines)
+  open_scratch_editor({
+    name = "sherpa://prompt",
+    title = label,
+    hint_lines = hint_lines,
+  }, on_submit)
+end
+
+-- Editor that permits an empty submission. Used by review question mode,
+-- where empty input means "continue with the current item".
+function M.open_prompt_editor_allow_empty(label, on_submit, hint_lines)
+  open_scratch_editor({
+    name = "sherpa://prompt",
+    title = label,
+    hint_lines = hint_lines,
+    allow_empty = true,
+  }, on_submit)
 end
 
 local function is_normal_window(win)

@@ -32,6 +32,7 @@ Output gif lands next to the tape name, e.g. `recordings/patch.gif`.
 - `review-searches.gif` — chain a search into `:SherpaReview searches`
 - `review-selection.gif` — ask about a visual range inside an active review
 - `review-comment.gif` — leave a multi-line comment with the `:SherpaComment` editor
+- `review-popup.gif` — `:SherpaReview` with no args opens the floating editor; first word picks the scope, then a follow-up shows the in-review question editor
 - `patch.gif` — `:SherpaPatch` on a visual-line selection
 - `work-review.gif` — `:SherpaWork` followed by reviewing the resulting diff
 

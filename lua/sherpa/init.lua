@@ -149,7 +149,10 @@ function M.work(prompt)
   if prompt == "" then
     ui.open_prompt_editor("Sherpa work request", function(text)
       M.work(text)
-    end)
+    end, {
+      "Broader implementation request. Sherpa may touch multiple files.",
+      "Follow up with :SherpaReview diff or :SherpaReview last.",
+    })
     return
   end
   vim.schedule(function()
@@ -161,7 +164,12 @@ end
 function M.search(prompt)
   prompt = trimmed(prompt)
   if prompt == "" then
-    search.history_picker()
+    ui.open_prompt_editor("Sherpa search", function(text)
+      M.search(text)
+    end, {
+      "Structured code search. e.g. \"websocket entrypoints\".",
+      "Use :SherpaSearches to browse previous searches.",
+    })
     return
   end
   vim.schedule(function()
@@ -170,6 +178,37 @@ function M.search(prompt)
   send("/search " .. prompt, prompt, {
     operation = "search",
     metadata = { prompt = prompt },
+  })
+end
+
+-- When :SherpaReview is called with empty args, open an editor whose behavior
+-- depends on whether a review is already active. The first word still acts as
+-- a scope key in the starting case, matching the ex-command UX.
+local function review_opts_from_range(range)
+  if not range then return nil end
+  return {
+    range = 2,
+    line1 = range.startLine,
+    line2 = range.endLine,
+  }
+end
+
+local function open_review_editor(range)
+  if review.has_active_review() then
+    ui.open_prompt_editor_allow_empty("Ask about this review item", function(text)
+      M.review(text, review_opts_from_range(range))
+    end, {
+      "Question about the current review item. Empty = continue.",
+    })
+    return
+  end
+
+  ui.open_prompt_editor("Start Sherpa review", function(text)
+    M.review(text, review_opts_from_range(range))
+  end, {
+    "First word picks the scope:",
+    "  file · diff · last · searches · branch <ref>",
+    "Anything else is a one-shot teach/review question.",
   })
 end
 
@@ -193,6 +232,11 @@ function M.review(args, opts)
     return
   end
 
+  if trimmed(args) == "" then
+    open_review_editor(range)
+    return
+  end
+
   if review.has_active_review() then
     local question = trimmed(args)
     local prompt = review.build_prompt(question ~= "" and question or nil)
@@ -205,20 +249,24 @@ function M.review(args, opts)
     return
   end
 
-  if trimmed(args) == "" then
-    start_review("file", { focus = nil })
-    return
-  end
-
   send("/teach " .. trimmed(args), trimmed(args), { operation = "teach" })
+end
+
+local function dispatch_patch(prompt, range)
+  local lines = {
+    string.format("Patch target file: %s", range.path),
+    string.format("Patch target lines: %d-%d", range.startLine, range.endLine),
+    "Only edit this file and stay as close to the selected range as possible.",
+    "<PATCH_EXCERPT>",
+    read_excerpt(range.path, range.startLine, range.endLine),
+    "</PATCH_EXCERPT>",
+    "User request: " .. prompt,
+  }
+  send("/patch " .. table.concat(lines, "\n"), prompt, { operation = "patch" })
 end
 
 function M.patch(prompt, opts)
   prompt = trimmed(prompt)
-  if prompt == "" then
-    ui.notify("Usage: :SherpaPatch <request>", vim.log.levels.WARN)
-    return
-  end
 
   local range = range_from_opts(opts)
   local item = review.current_item()
@@ -234,16 +282,23 @@ function M.patch(prompt, opts)
     return
   end
 
-  local lines = {
-    string.format("Patch target file: %s", range.path),
-    string.format("Patch target lines: %d-%d", range.startLine, range.endLine),
-    "Only edit this file and stay as close to the selected range as possible.",
-    "<PATCH_EXCERPT>",
-    read_excerpt(range.path, range.startLine, range.endLine),
-    "</PATCH_EXCERPT>",
-    "User request: " .. prompt,
-  }
-  send("/patch " .. table.concat(lines, "\n"), prompt, { operation = "patch" })
+  if prompt == "" then
+    local captured_range = range
+    ui.open_prompt_editor("Sherpa patch request", function(text)
+      local inner = trimmed(text)
+      if inner == "" then
+        ui.notify("Usage: :SherpaPatch <request>", vim.log.levels.WARN)
+        return
+      end
+      dispatch_patch(inner, captured_range)
+    end, {
+      string.format("Patch target: %s:%d-%d", range.path, range.startLine, range.endLine),
+      "Keep changes local to this range.",
+    })
+    return
+  end
+
+  dispatch_patch(prompt, range)
 end
 
 function M.next_step()

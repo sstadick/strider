@@ -30,6 +30,10 @@ require("sherpa").setup()
 - Targeted edit — `:'<,'>SherpaPatch {prompt}`
 - Broader run + review — `:SherpaWork {prompt}` then `:SherpaReview diff|last|searches`
 
+Any of the text-input commands (`:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`,
+`:SherpaWork`, `:SherpaComment`) called with no arguments opens a floating
+editor with ghost-text guidance. Submit with `<C-s>`, cancel with `<Esc><Esc>`.
+
 ## Commands
 
 ### Search

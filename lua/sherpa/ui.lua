@@ -255,7 +255,7 @@ local function open_scratch_editor(opts, on_submit)
   vim.wo[win].linebreak = true
   vim.wo[win].winhighlight = "NormalFloat:Normal,FloatBorder:FloatBorder"
 
-  local submit_hint = " <C-s> submit · <Esc><Esc> cancel "
+  local submit_hint = "<C-s> to submit · <Esc><Esc> to cancel"
 
   -- Render ghost text. Called on open and whenever the buffer becomes empty
   -- or non-empty again via TextChanged / TextChangedI.
@@ -271,7 +271,7 @@ local function open_scratch_editor(opts, on_submit)
         table.insert(virt_lines, { { text, "Comment" } })
       end
     end
-    table.insert(virt_lines, { { submit_hint, "NonText" } })
+    table.insert(virt_lines, { { submit_hint, "Comment" } })
 
     local anchor_line = math.max(#lines - 1, 0)
     vim.api.nvim_buf_set_extmark(buf, editor_ns, anchor_line, 0, {

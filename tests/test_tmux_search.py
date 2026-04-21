@@ -44,7 +44,7 @@ class TmuxSearchTests(unittest.TestCase):
             h.ex("SherpaSearch where is the main entrypoint?")
             h.wait_until(lambda: len(h.current_state()["qf"]["items"]) == 1)
 
-            h.ex("SherpaLog")
+            h.ex("SherpaChat")
             h.ex("edit src/App.tsx")
             h.ex("SherpaSearch show all entry roots")
 

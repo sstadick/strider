@@ -377,7 +377,7 @@ local function panel_lines(review)
     "- `:SherpaNext` / `:SherpaPrev` move between review items",
     "- `:SherpaReview <question>` asks about the current review item",
     "- `:'<,'>SherpaReview <question>` asks about a selected range",
-    "- `:SherpaLog` reopens the transcript / agent buffer",
+    "- `:SherpaChat` toggles the chat surfaces (log + compose)",
     "- `:SherpaComment` opens the multiline comment editor",
     "- `:'<,'>SherpaComment <text>` comments on a selected range",
     "- `:'<,'>SherpaPatch <prompt>` patches the selected range",

@@ -4,9 +4,9 @@ end
 
 vim.g.loaded_sherpa = 1
 
-vim.api.nvim_create_user_command("SherpaPrompt", function(opts)
-  require("sherpa").prompt(opts.args)
-end, { nargs = "*", desc = "Send a Sherpa prompt (plain agent turn with clarify available)" })
+vim.api.nvim_create_user_command("SherpaChat", function(opts)
+  require("sherpa").chat(opts.args)
+end, { nargs = "*", desc = "Open or toggle the Sherpa chat surfaces; with args, send the message" })
 
 vim.api.nvim_create_user_command("SherpaSearch", function(opts)
   require("sherpa").search(opts.args)
@@ -48,6 +48,3 @@ vim.api.nvim_create_user_command("SherpaRetry", function()
   require("sherpa").retry()
 end, { desc = "Re-dispatch the Sherpa plan turn if it stalled" })
 
-vim.api.nvim_create_user_command("SherpaLog", function()
-  require("sherpa").show_log()
-end, { desc = "Open the Sherpa transcript / agent buffer" })

@@ -14,6 +14,8 @@ local log_assistant_hl = "SherpaLogAssistant"
 local log_user_hl = "SherpaLogUser"
 local log_tool_hl = "SherpaLogTool"
 local log_rule_hl = "SherpaLogRule"
+local log_assistant_bg_hl = "SherpaLogAssistantBg"
+local log_user_bg_hl = "SherpaLogUserBg"
 local close_windows_for_buffer
 local target_window
 -- Forward declaration — defined later, referenced by append_block.
@@ -162,17 +164,6 @@ local function scroll_log_windows(buf)
   end
 end
 
-function M.show_log()
-  local buf = M.ensure_log_buffer()
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    if vim.api.nvim_win_is_valid(win) then
-      close_windows_for_buffer(buf)
-      return
-    end
-  end
-  M.open_log()
-end
-
 function M.open_log(opts)
   opts = opts or {}
   local previous = opts.preserve_focus and (target_window() or vim.api.nvim_get_current_win()) or nil
@@ -252,6 +243,12 @@ function M.ensure_compose_buffer(on_send)
       notify("Nothing to send — type a message first", vim.log.levels.WARN)
       return
     end
+    -- Remember where focus was before dispatch. send() may open the
+    -- log as a side effect; we want to return to compose afterward so
+    -- the user can keep typing the next message.
+    local compose_wins = vim.fn.win_findbuf(buf)
+    local compose_win = compose_wins[1]
+
     -- Dispatch first; only clear the buffer if the send actually
     -- succeeded. Undo history is reset so `u` doesn't resurrect the
     -- just-sent text — surprising since it's now in the log as history.
@@ -262,6 +259,18 @@ function M.ensure_compose_buffer(on_send)
       vim.bo[buf].undolevels = -1
       vim.bo[buf].undolevels = vim.o.undolevels
       render_hint()
+    end
+
+    -- Keep the user in the compose window + insert mode for the next
+    -- message. Scheduled so it lands after any activity echo / scroll
+    -- effects from the dispatch.
+    if compose_win and vim.api.nvim_win_is_valid(compose_win) then
+      vim.schedule(function()
+        if vim.api.nvim_win_is_valid(compose_win) then
+          vim.api.nvim_set_current_win(compose_win)
+          vim.cmd("startinsert")
+        end
+      end)
     end
   end
 
@@ -329,6 +338,30 @@ function M.hide_compose()
   close_windows_for_buffer(session and session.compose_buf)
 end
 
+-- True if either chat surface (log or compose) has a live window.
+-- Used by :SherpaChat to decide between open and hide on the no-args
+-- toggle path.
+function M.chat_is_visible()
+  local session = state.get_session()
+  if not session then return false end
+  for _, buf in ipairs({ session.log_buf, session.compose_buf }) do
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+        if vim.api.nvim_win_is_valid(win) then
+          return true
+        end
+      end
+    end
+  end
+  return false
+end
+
+-- Hide both chat surfaces.
+function M.hide_chat()
+  M.hide_compose()
+  M.hide_log()
+end
+
 function M.append(lines)
   local buf = M.ensure_log_buffer()
   local items = log_lines(lines)
@@ -377,6 +410,19 @@ function M.append_block(label, text)
   -- but we always append — so start_line is where the header lands.
   vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
 
+  -- Background highlight for entire block (user/assistant only)
+  local end_line = start_line + #items - 1
+  if label == "assistant" or label == "user" then
+    local bg_hl = label == "user" and log_user_bg_hl or log_assistant_bg_hl
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
+      end_row = end_line + 1,
+      hl_group = bg_hl,
+      hl_eol = true,
+      priority = 5,
+    })
+  end
+
+  -- Header foreground (higher priority than background)
   local hl = log_label_hl[label]
   if hl then
     pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
@@ -811,13 +857,15 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, removed_chunk_hl, { default = true, fg = "#F14C4C" })
   vim.api.nvim_set_hl(0, comment_hl, { default = true, fg = "#D7BA7D" })
   vim.api.nvim_set_hl(0, annotation_hl, { default = true, link = "Comment" })
-  -- Log pane hierarchy. Colors picked to echo pi's interactive theme:
-  -- assistant/user distinct from each other; tool calls dim; a subtle
-  -- rule separates assistant blocks from surrounding noise.
-  vim.api.nvim_set_hl(0, log_assistant_hl, { default = true, fg = "#7BB5FF", bold = true })
-  vim.api.nvim_set_hl(0, log_user_hl, { default = true, fg = "#A6E22E", bold = true })
-  vim.api.nvim_set_hl(0, log_tool_hl, { default = true, link = "Comment" })
+  -- Log pane hierarchy: user messages stand out in blue; assistant and
+  -- tool blocks use normal text so user input is visually primary.
+  vim.api.nvim_set_hl(0, log_assistant_hl, { default = true, link = "Normal" })
+  vim.api.nvim_set_hl(0, log_user_hl, { default = true, fg = "#7BB5FF", bold = true })
+  vim.api.nvim_set_hl(0, log_tool_hl, { default = true, link = "Normal" })
   vim.api.nvim_set_hl(0, log_rule_hl, { default = true, link = "NonText" })
+  -- Subtle background for user blocks only; assistant blocks blend in.
+  vim.api.nvim_set_hl(0, log_assistant_bg_hl, { default = true, link = "Normal" })
+  vim.api.nvim_set_hl(0, log_user_bg_hl, { default = true, bg = "#1a2536" })
 end
 
 local function get_buffer(path)

@@ -2,7 +2,7 @@
 
 Sherpa is a Neovim plugin for guided code generation, search, review, and patch flows powered by pi.
 
-It keeps the user in Neovim and jumps to touched files or reviewed ranges. Review is the primary walkthrough surface; the four product flows are `SherpaSearch`, `SherpaReview`, `SherpaPatch`, and `SherpaPrompt`.
+It keeps the user in Neovim and jumps to touched files or reviewed ranges. Review is the primary walkthrough surface; the four product flows are `SherpaSearch`, `SherpaReview`, `SherpaPatch`, and `SherpaChat`.
 
 ## Requirements
 
@@ -30,11 +30,15 @@ require("sherpa").setup()
 - Review — `:SherpaReview [scope] [prompt]`, `:SherpaNext`, `:SherpaPrev`
 - Review comments — `:SherpaComment {text}` and `:SherpaComments`
 - Targeted edit — `:'<,'>SherpaPatch {prompt}`
-- Plain prompt — `:SherpaPrompt {prompt}` (agent turn with clarify available; Sherpa adds no mode-specific behavior beyond making the clarify tool known to the model)
+- Chat — `:SherpaChat [prompt]` (opens/toggles the log + compose surfaces; with args, sends the message directly)
 
-Any of the text-input commands (`:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`,
-`:SherpaPrompt`, `:SherpaComment`) called with no arguments opens a floating
-editor with ghost-text guidance. Submit with `<C-s>`, cancel with `<Esc><Esc>`.
+The text-input commands `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`,
+and `:SherpaComment` with no arguments open a floating editor with
+ghost-text guidance. Submit with `<C-s>`, cancel with `<Esc><Esc>`.
+
+`:SherpaChat` is different — it opens two persistent buffers (log +
+compose) rather than a transient float. Send with `<C-s>` in compose;
+messages accumulate as chat history.
 
 ## Commands
 
@@ -55,7 +59,8 @@ If only one match exists and no picker is available, Sherpa still highlights tha
 - `:SherpaNext` — move to the next review stop
 - `:SherpaPrev` — move to the previous review stop
 - `:SherpaReviewItems` — pick any stop from the plan
-- `:SherpaLog` — reopen the transcript / agent buffer
+- `:SherpaChat` — toggle the chat surfaces (log + compose). Acts as the
+  log viewer since the log lives in the chat right-hand split.
 
 How a review works:
 
@@ -98,18 +103,19 @@ GitHub PR review integration, but Sherpa doesn't submit or sync them yet.
 - `:'<,'>SherpaPatch {prompt}` — patch the selected range
 - `:SherpaPatch {prompt}` — patch the active review item if one is selected
 
-### Plain prompt
+### Chat
 
-- `:SherpaPrompt {prompt}` — send a plain agent turn. Sherpa adds no
+- `:SherpaChat {prompt}` — send a message to the agent. Sherpa adds no
   mode-specific prompting beyond making the `sherpa_clarify` tool
   available; your global pi system prompt governs everything else.
-- `:SherpaPrompt` (no args) — opens the `sherpa://log` buffer in a
-  right-hand vertical split and the `sherpa://compose` buffer in a
-  horizontal split below it. Type in compose, `<C-s>` to send. Compose
-  clears on successful send and persists across sends so you can
-  immediately type the next message. Sending while a request is in
-  flight steers the running turn (pi's `steer` command) — you can
-  pile up mid-stream corrections freely.
+- `:SherpaChat` (no args) — toggle the chat UI. If either the log or
+  compose buffer is visible, hide both. Otherwise open the
+  `sherpa://log` buffer in a right-hand vertical split and the
+  `sherpa://compose` buffer in a horizontal split below it, and focus
+  compose in insert mode. Type in compose, `<C-s>` to send. Compose
+  clears on successful send and persists across sends. Sending while
+  a request is in flight steers the running turn (pi's `steer`
+  command) — pile up mid-stream corrections freely.
 
 ## Examples
 
@@ -167,7 +173,7 @@ Or open a multiline comment editor:
 ### Full prompt + review
 
 ```vim
-:SherpaPrompt add loading states to the lobby flow
+:SherpaChat add loading states to the lobby flow
 :SherpaReview walk through the diff on this branch
 :'<,'>SherpaComment this branch needs a clearer empty state
 :SherpaNext
@@ -202,7 +208,7 @@ See `tests/README.md` for details.
 
 ### Clarification during prompt / patch
 
-During `:SherpaPrompt` and `:SherpaPatch`, the model may pause to ask a
+During `:SherpaChat` and `:SherpaPatch`, the model may pause to ask a
 clarifying question, propose a plan for approval, or confirm a
 destructive action. When this happens, Sherpa opens a small floating
 editor (or a yes/no picker for confirmations). Submit your reply with

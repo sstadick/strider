@@ -41,12 +41,12 @@ class TmuxPopupTests(unittest.TestCase):
             self.assertEqual(0, len(state["qf"]["items"]))
 
     def test_empty_prompt_opens_compose_and_sends(self) -> None:
-        # :SherpaPrompt with no args opens the log buffer and a persistent
+        # :SherpaChat with no args opens the log buffer and a persistent
         # compose buffer. <C-s> in compose sends and clears. The sent
         # text lands in the log as a [user] block.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaPrompt")
+                h.ex("SherpaChat")
                 # Compose buffer should come into existence.
                 h.wait_until(
                     lambda: h.expr("bufexists('sherpa://compose')") == "1",
@@ -74,7 +74,7 @@ class TmuxPopupTests(unittest.TestCase):
         # log shows both [user] blocks (original + steer).
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaPrompt")
+                h.ex("SherpaChat")
                 h.wait_until(
                     lambda: h.expr("bufexists('sherpa://compose')") == "1",
                     timeout=3.0,
@@ -97,21 +97,33 @@ class TmuxPopupTests(unittest.TestCase):
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("steering input", log_text)
 
-    def test_compose_buffer_persists_across_sends(self) -> None:
-        # After a send, the compose buffer is cleared but still exists.
-        # A subsequent :SherpaPrompt reopens it rather than spawning a
-        # second compose buffer.
+    def test_sherpachat_toggles_both_surfaces(self) -> None:
+        # :SherpaChat with no args is a toggle. First call opens log +
+        # compose; second call hides both.
+        visible_expr = "require('sherpa.ui').chat_is_visible()"
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaPrompt")
+                h.ex("SherpaChat")
+                h.wait_until(lambda: h.lua_bool(visible_expr), timeout=3.0)
+                h.ex("SherpaChat")
+                h.wait_until(lambda: not h.lua_bool(visible_expr), timeout=3.0)
+
+    def test_compose_buffer_identity_is_stable(self) -> None:
+        # The compose buffer is created once and reused. After a send +
+        # toggle-cycle, its bufnr stays the same — we're not leaking a
+        # new buffer on every open.
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat")
                 h.wait_until(
                     lambda: h.expr("bufexists('sherpa://compose')") == "1",
                     timeout=3.0,
                 )
                 first_id = h.expr("bufnr('sherpa://compose')")
                 h.send("first", "C-s", pause=0.3)
-                # Run SherpaPrompt again — compose buffer should be the same.
-                h.ex("SherpaPrompt")
+                # Toggle off (both visible -> hide both), then back on.
+                h.ex("SherpaChat")
+                h.ex("SherpaChat")
                 second_id = h.expr("bufnr('sherpa://compose')")
                 self.assertEqual(first_id, second_id)
 

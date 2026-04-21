@@ -43,7 +43,10 @@ local function send(command, user_text, opts)
     return false
   end
   if opts and opts.open_log then
-    ui.open_log()
+    -- Don't steal focus from whatever the user is currently doing (e.g.
+    -- composing in sherpa://compose). If the log isn't visible yet,
+    -- opening it should be silent.
+    ui.open_log({ preserve_focus = true })
   end
   local operation = opts and opts.operation or nil
   state.set_pending_request(operation, opts and opts.metadata)
@@ -223,12 +226,16 @@ local function dispatch_compose(text)
   return true
 end
 
-function M.prompt(prompt)
+function M.chat(prompt)
   prompt = trimmed(prompt)
+
+  -- No args: toggle the chat surfaces. If either surface is visible,
+  -- hide both. Otherwise open both and focus compose.
   if prompt == "" then
-    -- No args: open the log and compose surfaces and focus compose.
-    -- The compose buffer is persistent; multiple sends / steers are
-    -- fine, no state to track.
+    if ui.chat_is_visible() then
+      ui.hide_chat()
+      return
+    end
     if not ensure_backend() then
       return
     end
@@ -238,7 +245,22 @@ function M.prompt(prompt)
     end)
     return
   end
-  dispatch_prompt(prompt)
+
+  -- With args: send the message. Open surfaces if they're not already
+  -- visible, but don't steal focus — the user is dispatching from
+  -- wherever they currently are. Route via dispatch_compose so steering
+  -- works the same way as a compose-<C-s> send.
+  if not ensure_backend() then
+    return
+  end
+  if not ui.chat_is_visible() then
+    ui.open_log({ preserve_focus = true })
+    -- open_compose focuses + startinsert; we don't want that here.
+    -- ensure_compose_buffer creates the buffer and wires its keymaps
+    -- without opening a window; that's enough for later toggling.
+    ui.ensure_compose_buffer(function(text) return dispatch_compose(text) end)
+  end
+  dispatch_compose(prompt)
 end
 
 function M.search(prompt)
@@ -470,10 +492,6 @@ end
 
 function M.searches()
   search.history_picker()
-end
-
-function M.show_log()
-  ui.show_log()
 end
 
 return M

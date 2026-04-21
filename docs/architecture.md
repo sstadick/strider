@@ -7,7 +7,7 @@ Sherpa is now built around four primary user flows:
 - `:SherpaSearch {prompt}`
 - `:SherpaReview [scope] [prompt]`
 - `:'<,'>SherpaPatch {prompt}`
-- `:SherpaPrompt {prompt}`
+- `:SherpaChat [prompt]`
 
 Supporting navigation:
 
@@ -109,14 +109,18 @@ Important UX rule:
 4. tool events update the file jump and edit highlighting
 5. edited ranges remain highlighted after the patch
 
-### Prompt
+### Chat
 
-1. user runs `:SherpaPrompt <prompt>`
-2. plugin sends `/prompt <prompt>`
+1. user runs `:SherpaChat` (no args) to open the log + compose surfaces,
+   or `:SherpaChat <message>` to send directly
+2. plugin sends `/prompt <message>` if no request is pending, or
+   `/steer <message>` to redirect a running turn
 3. assistant handles the request under the user's global pi system
    prompt; Sherpa adds no mode-specific guidance beyond making
    `sherpa_clarify` available
-4. user can follow up with `:SherpaReview` to walk through the result
+4. the compose buffer persists across sends; user can fire off steers
+   any time, even while a reply is streaming
+5. user can follow up with `:SherpaReview` to walk through the result
 
 ## Review state model
 
@@ -157,13 +161,14 @@ Buffer name:
 Purpose:
 - keep the full transcript, tool activity, and stderr
 - useful for debugging and history
-- can be reopened with `:SherpaLog`
+- toggled via `:SherpaChat` along with compose
 - not the primary pairing surface during review
 
 ### Input editor
 
 Buffer names:
-- `sherpa://prompt` — used by `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, `:SherpaPrompt`
+- `sherpa://prompt` — used by `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`
+- `sherpa://compose` — persistent user input buffer used by `:SherpaChat`
 - `sherpa://comment` — used by `:SherpaComment`
 - `sherpa://clarify` — used by the `sherpa_clarify` tool during `prompt` / `patch` turns
 

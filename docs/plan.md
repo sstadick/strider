@@ -6,7 +6,7 @@ Primary flows:
 - `:SherpaSearch`
 - `:SherpaReview` (pre-planned walkthrough — see `docs/review-mode.md`)
 - `:SherpaPatch`
-- `:SherpaPrompt`
+- `:SherpaChat`
 
 Supporting UX:
 - dedicated review pane with a plan TOC
@@ -46,7 +46,7 @@ Next:
 ### 2. Work → review handoff
 
 Improve:
-- stronger review suggestions after `:SherpaPrompt`
+- stronger review suggestions after `:SherpaChat`
 - better use of the latest touched file / search result set / diff as
   review entry points
 

@@ -142,12 +142,38 @@ def search_response(message: str) -> str:
 
 
 def teach_response(message: str) -> str:
-    if "<review_comments>" in message.lower():
+    lower = message.lower()
+    if "<review_comments>" in lower:
         return "I found unresolved review comments. The main follow-up is to clarify the reviewed code and keep the intent documented."
-    if "main.py" in message or "greet" in message:
+    if "next review item" in lower or "continue the review by choosing the next most useful file" in lower:
+        if project_has("src/App.tsx"):
+            emit_read(Path.cwd() / "src" / "App.tsx", offset=1, limit=20)
+            return "The next useful stop is the top-level app component because it shows the main UI surface after the entrypoint."
+        if project_has("app.py"):
+            emit_read(Path.cwd() / "app.py", offset=1, limit=20)
+            return "The next useful stop is app.py because it contains the core helper and runtime logic."
+    if "pi extension" in lower and project_has("pi/sherpa-stepper.ts"):
+        emit_read(Path.cwd() / "pi" / "sherpa-stepper.ts", offset=1, limit=20)
+        return "This stop focuses on the pi extension entrypoint and the explicit Sherpa commands it registers."
+    if "src/main.tsx" in lower and project_has("src/main.tsx"):
+        emit_read(Path.cwd() / "src" / "main.tsx", offset=1, limit=20)
+        return "This stop focuses on src/main.tsx because it bootstraps the React app and renders App into the root node."
+    if "long_review.py" in lower and project_has("long_review.py"):
+        emit_read(Path.cwd() / "long_review.py", offset=1, limit=20)
+        return "This stop starts at the first part of long_review.py so Sherpa can explain the structure of the generated functions."
+    if ("repo" in lower or "project" in lower) and project_has("readme.md"):
+        emit_read(Path.cwd() / "README.md", offset=1, limit=20)
+        return "This stop starts at the top-level README because it explains the plugin surface and how Sherpa is intended to be used."
+    if "main.py" in lower or "greet" in lower:
+        if project_has("main.py"):
+            emit_read(Path.cwd() / "main.py", offset=1, limit=20)
         return "This review item shows the main Python flow. It wires the entrypoint through main(), formats the greeting, and then calls run()."
-    if "app.py" in message:
+    if "app.py" in lower:
+        if project_has("app.py"):
+            emit_read(Path.cwd() / "app.py", offset=1, limit=20)
         return "This review item focuses on the small helper and the file-writing function. The key thing to notice is the pure greeting helper versus the side-effecting run() call."
+    if project_has("src/main.tsx"):
+        emit_read(Path.cwd() / "src" / "main.tsx", offset=1, limit=20)
     return "This range is part of the current review. It is the main place where the app bootstraps or where the selected code is being discussed."
 
 

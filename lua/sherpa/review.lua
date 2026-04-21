@@ -1,5 +1,4 @@
 local picker = require("sherpa.picker")
-local search = require("sherpa.search")
 local state = require("sherpa.state")
 local ui = require("sherpa.ui")
 
@@ -7,6 +6,7 @@ local M = {}
 
 local git_run
 local relative_path
+local make_item
 
 local MAX_REVIEW_LINES = 40
 local MAX_PROJECT_FILE_BYTES = 256 * 1024
@@ -71,6 +71,10 @@ local function truncate(text, width)
     return text
   end
   return text:sub(1, width - 1) .. "…"
+end
+
+local function collapse_whitespace(text)
+  return vim.trim((text or ""):gsub("%s+", " "))
 end
 
 local function first_meaningful_line(text)
@@ -213,17 +217,7 @@ local function push_chunks(items, path, start_line, end_line, kind, title, summa
   local chunk_start = start_line
   while chunk_start <= end_line do
     local chunk_end = math.min(chunk_start + MAX_REVIEW_LINES - 1, end_line)
-    local chunk_excerpt = excerpt(path, chunk_start, chunk_end)
-    table.insert(items, {
-      id = string.format("%s:%d-%d", path, chunk_start, chunk_end),
-      path = path,
-      startLine = chunk_start,
-      endLine = chunk_end,
-      kind = kind,
-      title = chunk_title(kind, path, title, chunk_excerpt),
-      summary = chunk_summary(kind, summary, chunk_excerpt),
-      excerpt = chunk_excerpt,
-    })
+    table.insert(items, make_item(path, chunk_start, chunk_end, kind, title, summary))
     chunk_start = chunk_end + 1
   end
 end
@@ -362,35 +356,6 @@ local function project_items(focus)
   return items
 end
 
-local function normalize_diff_path(raw)
-  if not raw or raw == "/dev/null" then
-    return nil
-  end
-  local session = state.get_session()
-  if not session then
-    return nil
-  end
-  local path = raw:gsub("^b/", "")
-  local cwd = session.cwd
-  if path:match("^/") then
-    return path
-  end
-  return vim.fs.joinpath(cwd, path)
-end
-
-local function parse_hunk(line)
-  local start_raw, count_raw = line:match("^@@ %-%d+,?%d* %+(%d+),?(%d*) @@")
-  if not start_raw then
-    return nil
-  end
-  local start_line = tonumber(start_raw) or 1
-  local count = tonumber(count_raw)
-  if count == nil or count == 0 then
-    count = 1
-  end
-  return start_line, start_line + count - 1
-end
-
 git_run = function(cwd, args)
   local cmd = string.format("git -C %s %s", vim.fn.shellescape(cwd), args)
   local output = vim.fn.systemlist(cmd)
@@ -400,122 +365,29 @@ git_run = function(cwd, args)
   return output
 end
 
-local function git_first_line(cwd, args)
-  local output = git_run(cwd, args)
-  if not output or #output == 0 then
-    return nil
-  end
-  local line = vim.trim(output[1] or "")
-  if line == "" then
-    return nil
-  end
-  return line
-end
-
-local function ref_exists(cwd, ref)
-  local cmd = string.format(
-    "git -C %s rev-parse --verify --quiet %s",
-    vim.fn.shellescape(cwd),
-    vim.fn.shellescape(ref)
-  )
-  vim.fn.systemlist(cmd)
-  return vim.v.shell_error == 0
-end
-
-local function detect_base_branch(cwd)
-  if vim.fn.executable("gh") == 1 then
-    local gh_cmd = "cd " .. vim.fn.shellescape(cwd)
-      .. " && gh pr view --json baseRefName -q .baseRefName 2>/dev/null"
-    local gh_output = vim.fn.systemlist(gh_cmd)
-    if vim.v.shell_error == 0 and gh_output[1] and vim.trim(gh_output[1]) ~= "" then
-      local base = vim.trim(gh_output[1])
-      local remote_ref = "origin/" .. base
-      if ref_exists(cwd, remote_ref) then
-        return remote_ref
-      end
-      if ref_exists(cwd, base) then
-        return base
-      end
-    end
-  end
-
-  local head_ref = git_first_line(cwd, "symbolic-ref --quiet refs/remotes/origin/HEAD")
-  if head_ref then
-    local stripped = head_ref:gsub("^refs/remotes/", "")
-    if ref_exists(cwd, stripped) then
-      return stripped
-    end
-  end
-
-  for _, candidate in ipairs({ "origin/main", "origin/master", "main", "master" }) do
-    if ref_exists(cwd, candidate) then
-      return candidate
-    end
-  end
-
-  return nil
-end
-
-local function parse_diff_output(output)
-  local items = {}
-  local current_path = nil
-  for _, line in ipairs(output or {}) do
-    if vim.startswith(line, "+++") then
-      current_path = normalize_diff_path(line:match("^%+%+%+%s+(.+)$"))
-    elseif vim.startswith(line, "@@") and current_path then
-      local start_line, end_line = parse_hunk(line)
-      if start_line and end_line then
-        push_chunks(items, current_path, start_line, end_line, "change", "Diff hunk", line)
-      end
-    end
-  end
-  return items
-end
-
-local function diff_items()
-  local session = state.get_session()
-  if not session then
-    return {}
-  end
-  local output = git_run(session.cwd, "diff --unified=0 --no-color")
-  if not output then
-    return {}
-  end
-  return parse_diff_output(output)
-end
-
-local function branch_diff_items(base)
-  local session = state.get_session()
-  if not session then
-    return {}, nil
-  end
-  local cwd = session.cwd
-  local base_ref = base and base ~= "" and base or detect_base_branch(cwd)
-  if not base_ref then
-    ui.notify("Sherpa: could not determine base branch for review", vim.log.levels.WARN)
-    return {}, nil
-  end
-  if not ref_exists(cwd, base_ref) then
-    ui.notify("Sherpa: base ref not found: " .. base_ref, vim.log.levels.WARN)
-    return {}, base_ref
-  end
-  local args = string.format(
-    "diff --unified=0 --no-color %s...HEAD",
-    vim.fn.shellescape(base_ref)
-  )
-  local output = git_run(cwd, args)
-  if not output then
-    return {}, base_ref
-  end
-  return parse_diff_output(output), base_ref
-end
-
 local function current_item(review)
   review = review or active_review()
   if not review then
     return nil
   end
+  if not review.current_index or review.current_index < 1 then
+    return nil
+  end
   return review.items[review.current_index]
+end
+
+make_item = function(path, start_line, end_line, kind, fallback_title, fallback_summary)
+  local item_excerpt = excerpt(path, start_line, end_line)
+  return {
+    id = string.format("%s:%d-%d", path, start_line, end_line),
+    path = path,
+    startLine = start_line,
+    endLine = end_line,
+    kind = kind,
+    title = chunk_title(kind, path, fallback_title, item_excerpt),
+    summary = chunk_summary(kind, fallback_summary, item_excerpt),
+    excerpt = item_excerpt,
+  }
 end
 
 local function comment_lines(comments)
@@ -585,9 +457,25 @@ local function panel_lines(review)
     "# Sherpa Review",
     "",
     string.format("- source: `%s`", review.source),
-    string.format("- item: `%d/%d`", review.current_index or 1, #review.items),
-    "",
+    review.goal and ("- goal: `" .. review.goal .. "`") or nil,
   }
+
+  if review.dynamic then
+    table.insert(lines, string.format("- current stop: `%s`", review.current_index > 0 and tostring(review.current_index) or "planning"))
+    table.insert(lines, string.format("- discovered stops: `%d`", #review.items))
+    if review.expecting_next_item then
+      table.insert(lines, "- state: `choosing next stop`")
+    elseif review.complete_suggested then
+      table.insert(lines, "- state: `no new stop chosen`")
+    end
+  else
+    table.insert(lines, string.format("- item: `%d/%d`", review.current_index or 1, #review.items))
+  end
+  table.insert(lines, "")
+
+  lines = vim.tbl_filter(function(line)
+    return line ~= nil and line ~= ""
+  end, lines)
 
   if item then
     table.insert(lines, string.format("**%s**", item.title or "Review item"))
@@ -596,9 +484,12 @@ local function panel_lines(review)
       table.insert(lines, string.format("Synopsis: %s", item.summary))
     end
     table.insert(lines, "")
+  elseif review.dynamic then
+    table.insert(lines, "Sherpa is choosing the next review stop based on your request.")
+    table.insert(lines, "")
   end
 
-  local explanation = item and item.explanation or nil
+  local explanation = item and item.explanation or review.overview
   local explanation_title = "Explanation"
   if review.awaiting_summary then
     explanation_title = "End of review"
@@ -606,8 +497,11 @@ local function panel_lines(review)
   elseif review.summary and review.summary ~= "" then
     explanation_title = "Review summary"
     explanation = review.summary
+  elseif review.dynamic and review.complete_suggested then
+    explanation_title = "No new stop chosen"
+    explanation = review.overview or "Sherpa did not choose a new stop. Use :SherpaNext to ask for another stop or :SherpaReview <question> to redirect the review."
   elseif not explanation or explanation == "" then
-    explanation = review.active and "Waiting for the explanation for this review item..." or "Review complete."
+    explanation = review.active and (review.dynamic and "Waiting for Sherpa to choose the next review stop..." or "Waiting for the explanation for this review item...") or "Review complete."
   end
   if explanation_title == "Explanation" then
     append_section(lines, explanation_title, {
@@ -676,6 +570,56 @@ function M.capture_assistant_text(text, opts)
     return true
   end
 
+  if review.dynamic then
+    local candidate = review.pending_item
+    local item = current_item(review)
+    if candidate then
+      local same_item = item
+        and item.path == candidate.path
+        and item.startLine == candidate.startLine
+        and item.endLine == candidate.endLine
+      if not same_item then
+        local existing_index = nil
+        for index, existing in ipairs(review.items) do
+          if existing.path == candidate.path
+            and existing.startLine == candidate.startLine
+            and existing.endLine == candidate.endLine then
+            existing_index = index
+            break
+          end
+        end
+        if existing_index then
+          review.current_index = existing_index
+          item = review.items[existing_index]
+        else
+          table.insert(review.items, candidate)
+          review.current_index = #review.items
+          item = candidate
+        end
+      end
+      review.pending_item = nil
+      review.expecting_next_item = false
+      review.complete_suggested = false
+    end
+
+    if not item then
+      if review.expecting_next_item and not opts.partial then
+        review.expecting_next_item = false
+        review.complete_suggested = true
+        review.overview = text ~= "" and text or "Sherpa did not choose a new stop yet."
+        review.last_overview = review.overview
+        M.render()
+        return true
+      end
+      review.overview = text
+      if not opts.partial then
+        review.last_overview = text
+      end
+      M.render()
+      return true
+    end
+  end
+
   local item = current_item(review)
   if not item then
     return false
@@ -694,6 +638,20 @@ end
 
 function M.current_item()
   return current_item(active_review())
+end
+
+function M.is_dynamic()
+  local review = active_review()
+  return review and review.dynamic or false
+end
+
+function M.note_read(path, start_line, end_line)
+  local review = active_review()
+  if not review or not review.dynamic or review.awaiting_summary then
+    return false
+  end
+  review.pending_item = make_item(path, start_line, end_line, "review-stop", relative_path(path), "Review stop")
+  return true
 end
 
 function M.focus_item(item)
@@ -716,50 +674,34 @@ function M.build_items(scope, opts)
     return file_items(path, opts.startLine, opts.endLine, "selection", "Selection", "Selected range")
   end
 
-  if scope == "file" then
-    local path = opts.path or current_buffer_path()
-    if not is_reviewable_file(path) then
-      opts.resolved_source = "project"
-      return project_items(opts.focus)
-    end
-    local line_count = file_line_count(path)
-    return file_items(path, 1, line_count, "tour-stop", "File walkthrough", "Current file")
-  end
-
-  if scope == "project" then
-    opts.resolved_source = "project"
-    return project_items(opts.focus)
-  end
-
-  if scope == "diff" then
-    return diff_items()
-  end
-
-  if scope == "branch" then
-    local items, base = branch_diff_items(opts.base)
-    if base then
-      opts.resolved_base = base
-    end
-    return items
-  end
-
-  if scope == "search" then
-    return search.to_review_items(search.last_result_set())
-  end
-
-  if scope == "last" then
-    local last_search = search.last_result_set()
-    if last_search then
-      return search.to_review_items(last_search)
-    end
-    local items = diff_items()
-    if #items > 0 then
-      return items
-    end
-    return M.build_items("file", opts)
-  end
-
   return {}
+end
+
+function M.start_dynamic(goal)
+  local session = state.get_session()
+  if not session then
+    ui.notify("No active Sherpa session", vim.log.levels.WARN)
+    return false
+  end
+
+  ui.clear_comment_markers()
+  ui.hide_log()
+  session.review = {
+    active = true,
+    awaiting_summary = false,
+    comments = {},
+    complete_suggested = false,
+    current_index = 0,
+    dynamic = true,
+    expecting_next_item = false,
+    goal = goal,
+    items = {},
+    source = "review",
+    summary = nil,
+    title = "Sherpa review",
+  }
+  M.render()
+  return true
 end
 
 function M.start(scope, opts)
@@ -778,9 +720,6 @@ function M.start(scope, opts)
   ui.clear_comment_markers()
   ui.hide_log()
   local source = opts.resolved_source or scope
-  if scope == "branch" and opts.resolved_base then
-    source = "branch (" .. opts.resolved_base .. ")"
-  end
   session.review = {
     active = true,
     awaiting_summary = false,
@@ -805,8 +744,9 @@ function M.build_prompt(focus)
     return nil
   end
 
-  local user_focus = focus or review.focus or "Walk me through this review item."
+  local user_focus = focus or review.focus or review.goal or "Walk me through this review item."
   local lines = {
+    review.goal and ("Review goal: " .. review.goal) or nil,
     string.format("Review source: %s", review.source),
     string.format("Review item: %d of %d", review.current_index, #review.items),
     string.format("File: %s", item.path),
@@ -827,15 +767,57 @@ function M.build_prompt(focus)
   end, lines), "\n")
 end
 
+function M.next_prompt()
+  local review = active_review()
+  local item = current_item(review)
+  if not review or not review.dynamic then
+    return nil
+  end
+  if not item then
+    return review.goal
+  end
+
+  local lines = {
+    "Continue the review by choosing the next most useful file or small code section for understanding the review goal.",
+    review.goal and ("Review goal: " .. review.goal) or nil,
+    string.format("Current stop file: %s", item.path),
+    string.format("Current stop lines: %d-%d", item.startLine, item.endLine),
+    item.summary and ("Current stop summary: " .. item.summary) or nil,
+    item.explanation and ("Current stop explanation: " .. collapse_whitespace(item.explanation)) or nil,
+    "If the review is already complete, say so clearly instead of opening another stop.",
+    "Otherwise, inspect one new small section and explain why it matters next.",
+  }
+  return table.concat(vim.tbl_filter(function(line)
+    return line ~= nil and line ~= ""
+  end, lines), "\n")
+end
+
+function M.prepare_next_dynamic()
+  local review = active_review()
+  if not review or not review.dynamic then
+    return false
+  end
+  local item = current_item(review)
+  if item and item.status == nil then
+    item.status = "reviewed"
+  end
+  review.complete_suggested = false
+  review.overview = nil
+  review.pending_item = nil
+  review.expecting_next_item = true
+  M.render()
+  return true
+end
+
 function M.advance(direction)
   local review = active_review()
   if not review then
     return nil, false
   end
 
-  local next_index = review.current_index + direction
+  local next_index = (review.current_index or 0) + direction
   if next_index < 1 or next_index > #review.items then
-    return nil, next_index > #review.items
+    return nil, next_index > #review.items and not review.dynamic
   end
 
   local previous = current_item(review)
@@ -887,6 +869,11 @@ function M.pending_comment_lines()
     return nil
   end
   return review.pending_comments
+end
+
+function M.has_unresolved_comments()
+  local review = active_review()
+  return review ~= nil and #unresolved_comments(review) > 0
 end
 
 function M.add_comment(text, range)

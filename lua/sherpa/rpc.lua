@@ -268,9 +268,10 @@ local function handle_tool_end(event)
   if not path then
     return
   end
-  if event.toolName == "read" and workflow_kind() == "teach" then
+  if event.toolName == "read" and review.has_active_review() then
     local start_line, end_line = read_range(event)
     state.record_file(path)
+    review.note_read(path, start_line, end_line)
     ui.jump_to_file(path, start_line)
     ui.highlight_range(path, start_line, end_line)
     return

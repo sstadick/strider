@@ -83,8 +83,7 @@ class TmuxPopupTests(unittest.TestCase):
 
     def test_empty_review_during_active_session_opens_question_editor(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
-            h.ex("edit src/main.tsx")
-            h.ex("SherpaReview file")
+            h.ex("SherpaReview explain src/main.tsx")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
 
             h.ex("SherpaReview")

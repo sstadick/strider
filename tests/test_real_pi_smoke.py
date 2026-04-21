@@ -18,9 +18,8 @@ class RealPiSmokeTests(unittest.TestCase):
     def test_real_pi_review_file_on_fixture_project(self) -> None:
         with FixtureProject(self.fixture_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root, real_pi=True) as h:
-                h.ex("edit app.py")
                 initial_log_count = len(h.log_lines())
-                h.ex("SherpaReview file")
+                h.ex("SherpaReview explain app.py")
 
                 h.wait_until(
                     lambda: h.lua_bool("require('sherpa.review').has_active_review()")

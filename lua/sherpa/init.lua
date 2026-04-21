@@ -6,19 +6,6 @@ local ui = require("sherpa.ui")
 
 local M = {}
 
-local review_scopes = {
-  branch = "branch",
-  diff = "diff",
-  file = "file",
-  last = "last",
-  pr = "branch",
-  project = "project",
-  repo = "project",
-  search = "search",
-  searches = "search",
-  selection = "selection",
-}
-
 local function current_cwd()
   return vim.fn.getcwd()
 end
@@ -71,6 +58,9 @@ local function send(command, user_text, opts)
   if user_text and user_text ~= "" then
     ui.append_block("user", user_text)
   end
+  if opts and opts.debug_prompt and opts.debug_prompt ~= "" then
+    ui.append_block("review-prompt", opts.debug_prompt)
+  end
   return true
 end
 
@@ -111,22 +101,11 @@ local function read_excerpt(path, start_line, end_line)
   return table.concat(lines, "\n")
 end
 
-local function parse_scope(args, has_range)
-  if has_range then
-    return "selection", trimmed(args)
-  end
-
-  local text = trimmed(args)
-  if text == "" then
-    return nil, nil
-  end
-
-  local first, rest = text:match("^(%S+)%s*(.-)$")
-  if first and review_scopes[first] then
-    return review_scopes[first], trimmed(rest)
-  end
-
-  return nil, text
+local function send_review_prompt(prompt, label)
+  return send("/teach " .. prompt, label, {
+    operation = "teach",
+    debug_prompt = prompt,
+  })
 end
 
 local function start_review(scope, opts)
@@ -142,7 +121,22 @@ local function start_review(scope, opts)
     return false
   end
   local label = opts and opts.focus ~= "" and opts.focus or ("Review " .. scope)
-  return send("/teach " .. prompt, label, { operation = "teach" })
+  return send_review_prompt(prompt, label)
+end
+
+local function start_dynamic_review(focus)
+  local text = trimmed(focus)
+  if text == "" then
+    ui.notify("SherpaReview requires input", vim.log.levels.WARN)
+    return false
+  end
+  if not ensure_backend() then
+    return false
+  end
+  if not review.start_dynamic(text) then
+    return false
+  end
+  return send_review_prompt(text, text)
 end
 
 function M.setup(opts)
@@ -156,7 +150,7 @@ function M.work(prompt)
       M.work(text)
     end, {
       "Broader implementation request. Sherpa may touch multiple files.",
-      "Follow up with :SherpaReview diff or :SherpaReview last.",
+      "Follow up with :SherpaReview to walk through the relevant code.",
     })
     return
   end
@@ -184,80 +178,69 @@ end
 
 function M.review(args, opts)
   local range = range_from_opts(opts)
-  local scope, focus = parse_scope(args, range ~= nil)
-  local empty_args = trimmed(args) == ""
-  if scope and not (scope == "selection" and empty_args) then
-    local base = nil
-    if scope == "branch" and focus and focus ~= "" then
-      local first, rest = focus:match("^(%S+)%s*(.-)$")
-      base = first
-      focus = trimmed(rest)
+  local text = trimmed(args)
+  local empty_args = text == ""
+
+  if review.has_active_review() and not range then
+    if empty_args then
+      ui.open_prompt_editor("Ask about this review item", function(input)
+        local question = trimmed(input)
+        local prompt = review.build_prompt(question)
+        if not prompt then
+          ui.notify("No active Sherpa review item", vim.log.levels.WARN)
+          return
+        end
+        send_review_prompt(prompt, question)
+      end, {
+        "Ask a question about the current review item.",
+      })
+      return
     end
-    start_review(scope, {
-      base = base,
-      endLine = range and range.endLine or nil,
-      focus = focus,
-      path = range and range.path or nil,
-      startLine = range and range.startLine or nil,
+
+    local prompt = review.build_prompt(text)
+    if not prompt then
+      ui.notify("No active Sherpa review item", vim.log.levels.WARN)
+      return
+    end
+    send_review_prompt(prompt, text)
+    return
+  end
+
+  if range then
+    if empty_args then
+      ui.open_prompt_editor("Sherpa review context", function(input)
+        local focus_text = trimmed(input)
+        start_review("selection", {
+          endLine = range.endLine,
+          focus = focus_text,
+          path = range.path,
+          startLine = range.startLine,
+        })
+      end, {
+        "Describe what you want reviewed in this selected range.",
+      })
+      return
+    end
+
+    start_review("selection", {
+      endLine = range.endLine,
+      focus = text,
+      path = range.path,
+      startLine = range.startLine,
     })
     return
   end
 
   if empty_args then
-    if review.has_active_review() then
-      ui.open_prompt_editor_allow_empty("Ask about this review item", function(text)
-        local question = trimmed(text)
-        local prompt = review.build_prompt(question ~= "" and question or nil)
-        if not prompt then
-          ui.notify("No active Sherpa review item", vim.log.levels.WARN)
-          return
-        end
-        local label = question ~= "" and question or "Continue review"
-        send("/teach " .. prompt, label, { operation = "teach" })
-      end, {
-        "Ask a question about the current review item.",
-        "Submit empty input to continue the review without adding a question.",
-      })
-      return
-    end
-
-    ui.open_prompt_editor_allow_empty("Sherpa review context", function(text)
-      local focus_text = trimmed(text)
-      if range then
-        start_review("selection", {
-          endLine = range.endLine,
-          focus = focus_text ~= "" and focus_text or nil,
-          path = range.path,
-          startLine = range.startLine,
-        })
-      else
-        start_review("file", { focus = focus_text ~= "" and focus_text or nil })
-      end
-    end, range and {
-      "Add extra context for this selected range before Sherpa starts the review.",
-      "Describe what you want reviewed or any concerns to focus on.",
-      "Submit empty input to start the selection review immediately.",
-    } or {
-      "Add extra context for this file before Sherpa starts the review.",
-      "Describe what you want reviewed or any concerns to focus on.",
-      "Submit empty input to start the file review immediately.",
+    ui.open_prompt_editor("Sherpa review context", function(input)
+      start_dynamic_review(trimmed(input))
+    end, {
+      "Describe what you want reviewed.",
     })
     return
   end
 
-  if review.has_active_review() then
-    local question = trimmed(args)
-    local prompt = review.build_prompt(question ~= "" and question or nil)
-    if not prompt then
-      ui.notify("No active Sherpa review item", vim.log.levels.WARN)
-      return
-    end
-    local label = question ~= "" and question or "Continue review"
-    send("/teach " .. prompt, label, { operation = "teach" })
-    return
-  end
-
-  start_review("file", { focus = trimmed(args) })
+  start_dynamic_review(text)
 end
 
 local function dispatch_patch(prompt, range)
@@ -313,8 +296,32 @@ function M.next_step()
   if review.has_active_review() then
     local item, finished = review.advance(1)
     if item then
-      send("/teach " .. review.build_prompt(), "Next review item", { operation = "teach" })
+      if not review.is_dynamic() then
+        send_review_prompt(review.build_prompt(), "Next review item")
+      end
       return
+    end
+    if review.is_dynamic() then
+      if review.has_unresolved_comments() then
+        local prompt = review.finish()
+        ui.open_log()
+        local comment_lines = review.pending_comment_lines()
+        if comment_lines then
+          ui.append_block("review-comments", table.concat(comment_lines, "\n"))
+        end
+        if prompt then
+          send_review_prompt(prompt, "Summarize unresolved review comments")
+        else
+          ui.notify("Sherpa review complete", vim.log.levels.INFO)
+        end
+        return
+      end
+      local prompt = review.next_prompt()
+      if prompt then
+        review.prepare_next_dynamic()
+        send_review_prompt(prompt, "Next review item")
+        return
+      end
     end
     if finished then
       local prompt = review.finish()
@@ -324,7 +331,7 @@ function M.next_step()
         ui.append_block("review-comments", table.concat(comment_lines, "\n"))
       end
       if prompt then
-        send("/teach " .. prompt, "Summarize unresolved review comments", { operation = "teach" })
+        send_review_prompt(prompt, "Summarize unresolved review comments")
       else
         ui.notify("Sherpa review complete", vim.log.levels.INFO)
       end
@@ -345,7 +352,9 @@ function M.prev_step()
     ui.notify("Already at the first review item", vim.log.levels.WARN)
     return
   end
-  send("/teach " .. review.build_prompt(), "Previous review item", { operation = "teach" })
+  if not review.is_dynamic() then
+    send_review_prompt(review.build_prompt(), "Previous review item")
+  end
 end
 
 function M.comment(text, opts)

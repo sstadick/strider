@@ -155,9 +155,6 @@ function M.work(prompt)
     })
     return
   end
-  vim.schedule(function()
-    ui.show_log()
-  end)
   send("/work " .. prompt, prompt, { operation = "work" })
 end
 
@@ -172,9 +169,6 @@ function M.search(prompt)
     })
     return
   end
-  vim.schedule(function()
-    ui.show_log()
-  end)
   send("/search " .. prompt, prompt, {
     operation = "search",
     metadata = { prompt = prompt },

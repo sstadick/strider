@@ -61,6 +61,25 @@ class TmuxReviewTests(unittest.TestCase):
             self.assertIn("Current explanation", review_text)
             self.assertNotIn("Waiting for the explanation", review_text)
 
+    def test_review_excerpt_uses_tsx_fence(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.ex("edit src/main.tsx")
+            h.ex("SherpaReview file")
+            h.wait_until(lambda: "## Excerpt" in "\n".join(h.buffer_lines("sherpa://review")))
+
+            review_text = "\n".join(h.buffer_lines("sherpa://review"))
+            self.assertIn("```tsx", review_text)
+
+    def test_review_excerpt_uses_python_fence(self) -> None:
+        python_project = self.repo_root / "tests" / "fixtures" / "python_app"
+        with TmuxNvimHarness(self.repo_root, python_project) as h:
+            h.ex("edit app.py")
+            h.ex("SherpaReview file")
+            h.wait_until(lambda: "## Excerpt" in "\n".join(h.buffer_lines("sherpa://review")))
+
+            review_text = "\n".join(h.buffer_lines("sherpa://review"))
+            self.assertIn("```python", review_text)
+
     def test_multiline_comment_editor_records_comment(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("edit src/main.tsx")

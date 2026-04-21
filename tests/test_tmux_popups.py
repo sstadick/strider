@@ -62,14 +62,20 @@ class TmuxPopupTests(unittest.TestCase):
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             self.assertFalse(_popup_open(h))
 
-    def test_empty_review_during_active_session_reopens_review_sidebar(self) -> None:
+    def test_empty_review_during_active_session_opens_question_editor(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("edit src/main.tsx")
             h.ex("SherpaReview file")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
-            h.ex("SherpaLog")
+
             h.ex("SherpaReview")
-            h.wait_until(lambda: "sherpa://review" in h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})'))
+            h.wait_until(lambda: _popup_open(h))
+
+            h.send("why does this mount App?", "C-s", pause=0.3)
+            h.wait_until(lambda: not _popup_open(h))
+
+            log_text = "\n".join(h.log_lines())
+            self.assertIn("why does this mount App?", log_text)
 
 
 if __name__ == "__main__":

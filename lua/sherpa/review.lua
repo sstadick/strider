@@ -45,6 +45,65 @@ local function excerpt(path, start_line, end_line)
   return table.concat(lines, "\n")
 end
 
+local fence_languages = {
+  bash = "bash",
+  c = "c",
+  cpp = "cpp",
+  csharp = "csharp",
+  css = "css",
+  dart = "dart",
+  dockerfile = "dockerfile",
+  elixir = "elixir",
+  go = "go",
+  html = "html",
+  java = "java",
+  javascript = "js",
+  javascriptreact = "jsx",
+  json = "json",
+  kotlin = "kotlin",
+  lua = "lua",
+  make = "makefile",
+  markdown = "markdown",
+  php = "php",
+  python = "python",
+  ruby = "ruby",
+  rust = "rust",
+  sass = "sass",
+  scala = "scala",
+  scss = "scss",
+  sh = "bash",
+  sql = "sql",
+  swift = "swift",
+  toml = "toml",
+  typescript = "ts",
+  typescriptreact = "tsx",
+  vim = "vim",
+  xml = "xml",
+  yaml = "yaml",
+  zsh = "bash",
+}
+
+local function excerpt_fence(path)
+  if not path or path == "" then
+    return "```"
+  end
+
+  local filetype = nil
+  local buf = vim.fn.bufnr(path)
+  if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
+    filetype = vim.bo[buf].filetype
+  end
+  if not filetype or filetype == "" then
+    filetype = vim.filetype.match({ filename = path })
+  end
+
+  local language = filetype and fence_languages[filetype] or nil
+  if not language or language == "" then
+    return "```"
+  end
+  return "```" .. language
+end
+
 local function item_label(item, index, total)
   return string.format(
     "%d/%d %s:%d-%d %s",
@@ -344,7 +403,7 @@ local function panel_lines(review)
 
   if item and item.excerpt and item.excerpt ~= "" then
     append_section(lines, "Excerpt", {
-      "```",
+      excerpt_fence(item.path),
       item.excerpt,
       "```",
     })

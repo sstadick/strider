@@ -52,10 +52,13 @@ local function send(command, user_text, opts)
   if not ensure_backend() then
     return false
   end
+  if opts and opts.open_log then
+    ui.open_log()
+  end
   local operation = opts and opts.operation or nil
   state.set_pending_request(operation, opts and opts.metadata)
   if operation then
-    ui.start_activity(activity_title(operation), activity_target(operation))
+    ui.start_activity(activity_title(operation), activity_target(operation), operation)
   end
   local ok = rpc.send_prompt(command)
   if not ok then
@@ -155,7 +158,7 @@ function M.work(prompt)
     })
     return
   end
-  send("/work " .. prompt, prompt, { operation = "work" })
+  send("/work " .. prompt, prompt, { operation = "work", open_log = true })
 end
 
 function M.search(prompt)
@@ -172,6 +175,7 @@ function M.search(prompt)
   send("/search " .. prompt, prompt, {
     operation = "search",
     metadata = { prompt = prompt },
+    open_log = true,
   })
 end
 
@@ -179,7 +183,8 @@ end
 function M.review(args, opts)
   local range = range_from_opts(opts)
   local scope, focus = parse_scope(args, range ~= nil)
-  if scope then
+  local empty_args = trimmed(args) == ""
+  if scope and not (scope == "selection" and empty_args) then
     local base = nil
     if scope == "branch" and focus and focus ~= "" then
       local first, rest = focus:match("^(%S+)%s*(.-)$")
@@ -196,14 +201,21 @@ function M.review(args, opts)
     return
   end
 
-  if trimmed(args) == "" then
+  if empty_args then
     if review.has_active_review() then
-      local item = review.current_item()
-      if item then
-        review.focus_item(item)
-      else
-        review.render()
-      end
+      ui.open_prompt_editor_allow_empty("Ask about this review item", function(text)
+        local question = trimmed(text)
+        local prompt = review.build_prompt(question ~= "" and question or nil)
+        if not prompt then
+          ui.notify("No active Sherpa review item", vim.log.levels.WARN)
+          return
+        end
+        local label = question ~= "" and question or "Continue review"
+        send("/teach " .. prompt, label, { operation = "teach" })
+      end, {
+        "Ask a question about the current review item.",
+        "Submit empty input to continue the review without adding a question.",
+      })
       return
     end
     if range then

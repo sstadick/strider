@@ -11,15 +11,54 @@ local close_windows_for_buffer
 local target_window
 
 local spin_labels = {
-  "thinking...",
-  "reading files...",
-  "analyzing...",
-  "still working...",
-  "almost there...",
-  "crunching...",
+  default = {
+    "Sherpa is climbing...",
+    "Sherpa is scouting the route...",
+    "Sherpa is checking the map...",
+    "Sherpa is crossing the ridge...",
+    "Sherpa is setting the ropes...",
+    "Sherpa is almost there...",
+  },
+  patch = {
+    "Sherpa is placing the pitons...",
+    "Sherpa is trimming the route...",
+    "Sherpa is tightening the seam...",
+    "Sherpa is making a careful local move...",
+  },
+  search = {
+    "Sherpa is scanning the trail...",
+    "Sherpa is checking the landmarks...",
+    "Sherpa is tracing the path...",
+    "Sherpa is spotting likely matches...",
+  },
+  teach = {
+    "Sherpa is walking the route...",
+    "Sherpa is pointing out the key ledges...",
+    "Sherpa is explaining the terrain...",
+    "Sherpa is highlighting the tricky bit...",
+  },
+  work = {
+    "Sherpa is climbing...",
+    "Sherpa is hauling the gear...",
+    "Sherpa is finding the next hold...",
+    "Sherpa is making steady progress...",
+  },
 }
 local spin_index = 0
 local spin_timer = nil
+
+local function progress_echo(message, status, id)
+  local opts = {
+    kind = "progress",
+    status = status or "running",
+    title = "sherpa",
+    source = "sherpa",
+  }
+  if id then
+    opts.id = id
+  end
+  return pcall(vim.api.nvim_echo, { { message } }, true, opts)
+end
 
 local function stop_spin()
   if spin_timer then
@@ -31,18 +70,28 @@ end
 
 local function spin_tick()
   local session = state.get_session()
-  if not session or not session.progress then
+  local progress = session and session.progress
+  if not progress then
     return
   end
-  spin_index = (spin_index % #spin_labels) + 1
-  M.append({ "[sherpa] " .. spin_labels[spin_index] })
+  local labels = spin_labels[progress.operation] or spin_labels.default
+  spin_index = (spin_index % #labels) + 1
+  local label = labels[spin_index]
+  local message = string.format("%s · %s", progress.title, label)
+  if progress.id then
+    local ok = progress_echo(message, "running", progress.id)
+    if ok then
+      return
+    end
+  end
+  M.append({ "[sherpa] " .. label })
 end
 
 local function start_spin()
   stop_spin()
   spin_index = 0
   spin_timer = vim.uv.new_timer()
-  spin_timer:start(6000, 8000, vim.schedule_wrap(function()
+  spin_timer:start(3000, 3000, vim.schedule_wrap(function()
     spin_tick()
   end))
 end
@@ -227,22 +276,18 @@ local function progress_buffers(target)
   return bufs
 end
 
-function M.start_activity(title, target)
+function M.start_activity(title, target, operation)
   local session = state.get_session()
   M.finish_activity(nil, "cancel")
   session.progress = {
     title = title,
     target = target or "log",
+    operation = operation,
   }
   for _, buf in ipairs(progress_buffers(session.progress.target)) do
     set_buffer_busy(buf, true)
   end
-  local ok, id = pcall(vim.api.nvim_echo, { { title } }, true, {
-    kind = "progress",
-    status = "running",
-    title = "sherpa",
-    source = "sherpa",
-  })
+  local ok, id = progress_echo(title, "running")
   if ok then
     session.progress.id = id
   end
@@ -259,13 +304,7 @@ function M.finish_activity(message, status)
     set_buffer_busy(buf, false)
   end
   if progress.id then
-    pcall(vim.api.nvim_echo, { { message or progress.title } }, true, {
-      id = progress.id,
-      kind = "progress",
-      status = status or "success",
-      title = "sherpa",
-      source = "sherpa",
-    })
+    progress_echo(message or progress.title, status or "success", progress.id)
   end
   session.progress = nil
   stop_spin()
@@ -393,6 +432,15 @@ function M.open_prompt_editor(label, on_submit, hint_lines)
     name = "sherpa://prompt",
     title = label,
     hint_lines = hint_lines,
+  }, on_submit)
+end
+
+function M.open_prompt_editor_allow_empty(label, on_submit, hint_lines)
+  open_scratch_editor({
+    name = "sherpa://prompt",
+    title = label,
+    hint_lines = hint_lines,
+    allow_empty = true,
   }, on_submit)
 end
 

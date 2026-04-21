@@ -36,6 +36,17 @@ class TmuxSearchTests(unittest.TestCase):
                 self.assertIn("src/main.tsx", rendered)
                 self.assertIn("src/App.tsx", rendered)
 
+    def test_search_reopens_log_when_backend_is_already_running(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.ex("SherpaSearch where is the main entrypoint?")
+            h.wait_until(lambda: len(h.current_state()["qf"]["items"]) == 1)
+
+            h.ex("SherpaLog")
+            h.ex("edit src/App.tsx")
+            h.ex("SherpaSearch show all entry roots")
+
+            h.wait_until(lambda: "sherpa://log" in h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})'))
+            h.wait_until(lambda: len(h.current_state()["qf"]["items"]) == 2)
 
 if __name__ == "__main__":
     unittest.main()

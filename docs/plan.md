@@ -75,6 +75,10 @@ Goal:
 - stay under a minute
 - cover at least review + patch on the bundled fixture project
 
+## Future: Session persistence
+
+See `docs/session-persistence.md` for the full plan.
+
 ## Non-goals right now
 
 - code restoration / rewind
@@ -88,5 +92,6 @@ Goal:
 
 - `docs/architecture.md`
 - `docs/review-mode.md`
+- `docs/session-persistence.md`
 - `tests/README.md`
 - `recordings/README.md`

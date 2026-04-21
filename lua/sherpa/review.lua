@@ -402,6 +402,7 @@ function M.capture_assistant_text(text, opts)
   if not review then
     return false
   end
+  -- End-of-review summary turn: feed the summary into the sidebar.
   if review.awaiting_summary then
     review.summary = text
     if not opts.partial then
@@ -411,15 +412,22 @@ function M.capture_assistant_text(text, opts)
     return true
   end
 
-  local item = current_item(review)
-  if not item then
-    return false
+  -- Ranged question: render the answer inline over the question's range.
+  if review.pending_question then
+    return M.capture_ranged_question_answer(text, opts)
   end
-  item.explanation = text
-  if not opts.partial and item.status ~= "commented" then
-    item.status = "reviewed"
+
+  -- Plain question (no pending_question, no awaiting_summary): the
+  -- answer goes to the log via the rpc's append_block. Do NOT touch
+  -- item.explanation — that's reserved for the pre-computed explanation
+  -- rendered inline in the buffer, and overwriting it would clobber the
+  -- stop's own context.
+  if not opts.partial then
+    local item = current_item(review)
+    if item and item.status == nil then
+      item.status = "reviewed"
+    end
   end
-  M.render()
   return true
 end
 
@@ -439,9 +447,84 @@ function M.focus_item(item)
   ui.highlight_range(item.path, item.startLine, item.endLine)
   -- Swap inline annotations: clear prior stop's, render this one's.
   -- Each step clears the annotations of the previous step (by design).
+  -- Any pending ranged-question answer also gets cleared — the user
+  -- moved on.
   ui.clear_stop_annotations()
+  local review = review_state()
+  if review then review.pending_question = nil end
   ui.set_stop_annotations(item)
   M.render()
+  return true
+end
+
+-- Stash a ranged question on the review so the streaming answer can be
+-- rendered as an inline block annotation over the same range. Only
+-- honored while the review is active and the current stop is unchanged
+-- when the answer lands.
+function M.begin_ranged_question(range, text)
+  local review = active_review()
+  if not review or not range then
+    return false
+  end
+  local item = current_item(review)
+  review.pending_question = {
+    path = range.path,
+    startLine = range.startLine,
+    endLine = range.endLine,
+    stop_index = review.current_index,
+    question = text,
+    stop_item_id = item and item.id or nil,
+  }
+  return true
+end
+
+-- Render a ranged-question answer as an inline block annotation over
+-- the pending question's range. Safe to call with partial or final
+-- text. Clears pending_question when final (opts.partial == false).
+function M.capture_ranged_question_answer(text, opts)
+  opts = opts or {}
+  local review = active_review()
+  if not review or not review.pending_question then
+    return false
+  end
+  local pq = review.pending_question
+  -- Bail if the user navigated to a different stop while the answer was
+  -- in flight. The annotation would anchor to the wrong range; leave
+  -- the log-only version and drop the inline path.
+  local item = current_item(review)
+  if not item or item.id ~= pq.stop_item_id then
+    if not opts.partial then
+      review.pending_question = nil
+    end
+    return false
+  end
+
+  -- Build a synthetic "stop-like" object we can hand to the existing
+  -- annotation renderer. One block annotation over the question's
+  -- sub-range, no line annotations, no explanation (the block IS the
+  -- explanation).
+  local synthetic = {
+    path = pq.path,
+    startLine = pq.startLine,
+    endLine = pq.endLine,
+    annotations = {
+      {
+        kind = "block",
+        startLine = pq.startLine,
+        endLine = pq.endLine,
+        text = text,
+      },
+    },
+  }
+  -- Clear any prior render of this same answer so streaming updates
+  -- replace rather than stack.
+  ui.clear_stop_annotations()
+  ui.set_stop_annotations(item)          -- restore the stop's own block
+  ui.set_stop_annotations(synthetic)     -- layer the question answer on top
+
+  if not opts.partial then
+    review.pending_question = nil
+  end
   return true
 end
 

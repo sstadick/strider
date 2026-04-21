@@ -230,6 +230,30 @@ function M.review(args, opts)
   local text = trimmed(args)
   local empty_args = text == ""
 
+  -- Ranged question inside an active review: scope the question to the
+  -- sub-range and stash the range so the streaming answer can render as
+  -- an inline block annotation over that range rather than cluttering
+  -- the sidebar.
+  if review.has_active_review() and range then
+    if empty_args then
+      local captured = range
+      ui.open_prompt_editor("Ask about this selected range", function(input)
+        local question = trimmed(input)
+        if question == "" then return end
+        review.begin_ranged_question(captured, question)
+        local prompt = review.build_prompt(question)
+        if prompt then send_review_prompt(prompt, question) end
+      end, {
+        "Ask a question about the selected range inside the active review.",
+      })
+      return
+    end
+    review.begin_ranged_question(range, text)
+    local prompt = review.build_prompt(text)
+    if prompt then send_review_prompt(prompt, text) end
+    return
+  end
+
   if review.has_active_review() and not range then
     if empty_args then
       ui.open_prompt_editor("Ask about this review item", function(input)

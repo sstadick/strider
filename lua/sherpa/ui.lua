@@ -5,12 +5,19 @@ local M = {}
 local chunk_namespace = vim.api.nvim_create_namespace("sherpa-chunk")
 local comment_namespace = vim.api.nvim_create_namespace("sherpa-comments")
 local annotation_namespace = vim.api.nvim_create_namespace("sherpa-annotations")
+local log_namespace = vim.api.nvim_create_namespace("sherpa-log")
 local added_chunk_hl = "SherpaChunkAddedGutter"
 local removed_chunk_hl = "SherpaChunkRemovedGutter"
 local comment_hl = "SherpaCommentGutter"
 local annotation_hl = "SherpaAnnotation"
+local log_assistant_hl = "SherpaLogAssistant"
+local log_user_hl = "SherpaLogUser"
+local log_tool_hl = "SherpaLogTool"
+local log_rule_hl = "SherpaLogRule"
 local close_windows_for_buffer
 local target_window
+-- Forward declaration — defined later, referenced by append_block.
+local ensure_chunk_style
 
 local spin_labels = {
   default = {
@@ -203,11 +210,62 @@ function M.append(lines)
   scroll_log_windows(buf)
 end
 
+-- Label → highlight group mapping. Labels we don't recognize are left
+-- unhighlighted (they still appear in the log, just without color).
+local log_label_hl = {
+  assistant = log_assistant_hl,
+  user = log_user_hl,
+  tool = log_tool_hl,
+  sherpa = log_tool_hl,
+  stderr = log_tool_hl,
+  ["review-prompt"] = log_tool_hl,
+  ["review-comments"] = log_tool_hl,
+}
+
 function M.append_block(label, text)
-  local lines = { string.format("[%s]", label) }
+  ensure_chunk_style()
+  local buf = M.ensure_log_buffer()
+
+  -- Thin rule above every block makes it easy to scan past tool-call
+  -- noise when looking for the most recent assistant answer. Match pi's
+  -- visual rhythm (color-distinct block heads, quiet separators).
+  local rule = string.rep("─", 60)
+  local header = string.format("── [%s] %s", label, string.rep("─", math.max(60 - 5 - #label, 1)))
+  local lines = { rule ~= header and "" or "" }
+  -- Use only one rule-styled header line rather than a separate rule +
+  -- header. Keeps the log tight.
+  lines = { header }
   vim.list_extend(lines, vim.split(text, "\n", { plain = true }))
   table.insert(lines, "")
-  M.append(lines)
+
+  local items = log_lines(lines)
+  if #items == 0 then
+    return
+  end
+
+  local start_line = vim.api.nvim_buf_line_count(buf)
+  -- ensure_log_buffer keeps the buffer non-empty with a trailing blank,
+  -- but we always append — so start_line is where the header lands.
+  vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+
+  local hl = log_label_hl[label]
+  if hl then
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
+      end_row = start_line + 1,
+      hl_group = hl,
+      priority = 10,
+    })
+  end
+  -- Rule characters (anything after the label in the header line) get
+  -- their own dim color so the header visually "trails off".
+  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
+    end_row = start_line,
+    end_col = 0,
+    hl_group = log_rule_hl,
+    priority = 5,
+  })
+
+  scroll_log_windows(buf)
 end
 
 local function configure_review_window(win)
@@ -541,11 +599,18 @@ local function clear_chunk_highlight(session)
   session.highlight_buf = nil
 end
 
-local function ensure_chunk_style()
+ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, added_chunk_hl, { default = true, fg = "#73C991" })
   vim.api.nvim_set_hl(0, removed_chunk_hl, { default = true, fg = "#F14C4C" })
   vim.api.nvim_set_hl(0, comment_hl, { default = true, fg = "#D7BA7D" })
   vim.api.nvim_set_hl(0, annotation_hl, { default = true, link = "Comment" })
+  -- Log pane hierarchy. Colors picked to echo pi's interactive theme:
+  -- assistant/user distinct from each other; tool calls dim; a subtle
+  -- rule separates assistant blocks from surrounding noise.
+  vim.api.nvim_set_hl(0, log_assistant_hl, { default = true, fg = "#7BB5FF", bold = true })
+  vim.api.nvim_set_hl(0, log_user_hl, { default = true, fg = "#A6E22E", bold = true })
+  vim.api.nvim_set_hl(0, log_tool_hl, { default = true, link = "Comment" })
+  vim.api.nvim_set_hl(0, log_rule_hl, { default = true, link = "NonText" })
 end
 
 local function get_buffer(path)

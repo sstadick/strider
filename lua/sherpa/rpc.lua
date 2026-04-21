@@ -101,11 +101,18 @@ local function handle_message_update(event)
   if not pending then
     return
   end
-  if pending.operation ~= "review" and pending.operation ~= "plan" then
-    return
-  end
   local session = state.get_session()
   session.assistant_text = (session.assistant_text or "") .. (delta.delta or "")
+
+  -- Auto-open the log on the first streamed delta of any answer-producing
+  -- operation, without stealing focus. Idempotent: open_log is a no-op
+  -- when the log is already visible. One-per-pending guard avoids
+  -- reopening a manually-closed log mid-stream.
+  if not pending.log_opened and pending.operation ~= "plan" then
+    pending.log_opened = true
+    ui.open_log({ preserve_focus = true })
+  end
+
   if pending.operation == "review" then
     review.capture_assistant_text(session.assistant_text, { partial = true })
   end

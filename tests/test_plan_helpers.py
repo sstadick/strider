@@ -317,6 +317,59 @@ class PlanHelperTests(unittest.TestCase):
 
     # --- free-scope review via /plan + sherpa_plan tool --------------------
 
+    def test_ranged_question_renders_inline_answer_annotation(self) -> None:
+        # After a plan lands, asking a ranged :SherpaReview question
+        # should stash pending_question and route the streamed answer
+        # through capture_ranged_question_answer, producing an inline
+        # annotation extmark in the stop's buffer.
+        project = self.repo_root / "tests" / "fixtures" / "app"
+        with TmuxNvimHarness(self.repo_root, project) as h:
+            h.ex("SherpaReview explain the app")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            h.wait_until(
+                lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
+                timeout=8.0,
+            )
+            # Open the active stop's buffer so we can mark a sub-range.
+            current_path_expr = "require('sherpa.state').get_session().review.items[1].path"
+            path = h.lua(current_path_expr)
+            h.ex(f"edit {path}")
+            # Stash pending_question directly to simulate a ranged ask,
+            # then drive the answer through capture_ranged_question_answer.
+            # Avoids racing the fake pi's reply routing.
+            h.lua(
+                "(function() "
+                "  local r = require('sherpa.review').current_item(); "
+                "  require('sherpa.review').begin_ranged_question("
+                "    { path = r.path, startLine = r.startLine, endLine = r.startLine }, "
+                "    'why this line?'); return true "
+                "end)()"
+            )
+            h.lua(
+                "(function() "
+                "  require('sherpa.review').capture_ranged_question_answer("
+                "    'Inline answer about that one line.', { partial = false }); "
+                "  return true "
+                "end)()"
+            )
+
+            # At least one annotation extmark should exist in the buffer.
+            count_expr = (
+                "(function() "
+                "  local ns = vim.api.nvim_get_namespaces()['sherpa-annotations']; "
+                "  if not ns then return 0 end; "
+                "  local buf = vim.fn.bufnr('%'); "
+                "  if buf <= 0 then return 0 end; "
+                "  return #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}) "
+                "end)()"
+            )
+            h.wait_until(lambda: int(h.lua(count_expr)) >= 1, timeout=3.0)
+            # pending_question should be cleared on a final (non-partial) answer.
+            cleared = h.lua_bool(
+                "require('sherpa.state').get_session().review.pending_question == nil"
+            )
+            self.assertTrue(cleared, "pending_question should clear on final answer")
+
     def test_plan_time_annotations_render_and_clear_between_stops(self) -> None:
         # When a stop is focused, its explanation should render as a
         # virtual-lines extmark in the stop's buffer. Advancing to the

@@ -74,9 +74,11 @@ How a review works:
 4. For selection and diff reviews, every line in the range / every changed
    line is guaranteed to appear in some stop. Free-form reviews let the
    model pick what matters.
-5. `:SherpaReview <question>` with an active review sends a fresh model
-   turn scoped to the current stop — that's the only in-review path that
-   round-trips the model.
+5. `:SherpaReview <question>` with an active review asks the model.
+   Plain questions stream their answer into the log buffer. Questions
+   on a visual sub-range (`:'<,'>SherpaReview <question>`) render the
+   answer as an inline block annotation pinned to the selected lines —
+   cleared when you navigate to another stop.
 6. Model may append new stops mid-review on free-form plans (via
    `sherpa_append_stops`) if it spots something additional worth visiting.
 

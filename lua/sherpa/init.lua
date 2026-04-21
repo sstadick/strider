@@ -218,15 +218,28 @@ function M.review(args, opts)
       })
       return
     end
-    if range then
-      start_review("selection", {
-        endLine = range.endLine,
-        path = range.path,
-        startLine = range.startLine,
-      })
-    else
-      start_review("file", { focus = nil })
-    end
+
+    ui.open_prompt_editor_allow_empty("Sherpa review context", function(text)
+      local focus_text = trimmed(text)
+      if range then
+        start_review("selection", {
+          endLine = range.endLine,
+          focus = focus_text ~= "" and focus_text or nil,
+          path = range.path,
+          startLine = range.startLine,
+        })
+      else
+        start_review("file", { focus = focus_text ~= "" and focus_text or nil })
+      end
+    end, range and {
+      "Add extra context for this selected range before Sherpa starts the review.",
+      "Describe what you want reviewed or any concerns to focus on.",
+      "Submit empty input to start the selection review immediately.",
+    } or {
+      "Add extra context for this file before Sherpa starts the review.",
+      "Describe what you want reviewed or any concerns to focus on.",
+      "Submit empty input to start the file review immediately.",
+    })
     return
   end
 

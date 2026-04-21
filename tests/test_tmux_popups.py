@@ -55,12 +55,31 @@ class TmuxPopupTests(unittest.TestCase):
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("add a banner", log_text)
 
-    def test_empty_review_without_active_session_starts_file_review(self) -> None:
+    def test_empty_review_without_active_session_opens_context_editor(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("edit src/main.tsx")
             h.ex("SherpaReview")
+            h.wait_until(lambda: _popup_open(h))
+
+            h.send("focus on the mount flow", "C-s", pause=0.3)
+            h.wait_until(lambda: not _popup_open(h))
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
-            self.assertFalse(_popup_open(h))
+
+            log_text = "\n".join(h.log_lines())
+            self.assertIn("focus on the mount flow", log_text)
+
+    def test_empty_selection_review_opens_context_editor(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.ex("edit src/main.tsx")
+            h.ex("1,2SherpaReview")
+            h.wait_until(lambda: _popup_open(h))
+
+            h.send("explain the bootstrap path", "C-s", pause=0.3)
+            h.wait_until(lambda: not _popup_open(h))
+            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+
+            review_text = "\n".join(h.buffer_lines("sherpa://review"))
+            self.assertIn("src/main.tsx:1-2", review_text)
 
     def test_empty_review_during_active_session_opens_question_editor(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:

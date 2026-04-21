@@ -160,6 +160,34 @@ class TmuxReviewTests(unittest.TestCase):
                     h.lua_bool("require('sherpa.review').has_active_review()")
                 )
 
+    def test_file_review_chunks_large_files_into_multiple_items(self) -> None:
+        python_fixture = self.repo_root / "tests" / "fixtures" / "python_app"
+        with FixtureProject(python_fixture) as project_root:
+            long_file = project_root / "long_review.py"
+            long_file.write_text(
+                "\n".join(
+                    f"def f{i}():\n    return {i}\n"
+                    for i in range(1, 61)
+                ),
+                encoding="utf-8",
+            )
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("edit long_review.py")
+                h.ex("SherpaReview file")
+                h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+
+                item_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
+                self.assertGreater(item_count, 1)
+
+                first_review = "\n".join(h.buffer_lines("sherpa://review"))
+                self.assertIn("- item: `1/", first_review)
+                self.assertIn("`long_review.py:1-40`", first_review)
+
+                h.ex("SherpaNext")
+                h.wait_until(lambda: "- item: `2/" in "\n".join(h.buffer_lines("sherpa://review")))
+                second_review = "\n".join(h.buffer_lines("sherpa://review"))
+                self.assertIn("`long_review.py:41-80`", second_review)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -358,6 +358,24 @@ local function handle_tool_end(event)
   end
 end
 
+-- Send an extension_ui_response back to pi. Payload merges an id + any
+-- response-specific fields (value / cancelled / confirmed).
+local function send_ui_response(id, payload)
+  local session = state.get_session()
+  if not session or not session.job_id then
+    return false
+  end
+  -- pi-coding-agent uses crypto.randomUUID() (strings) as ids. Echo the
+  -- id back as-is — do not coerce to/from number.
+  local body = vim.tbl_extend("force", { type = "extension_ui_response", id = id }, payload or {})
+  local ok, encoded = pcall(vim.json.encode, body)
+  if not ok then
+    return false
+  end
+  vim.fn.chansend(session.job_id, encoded .. "\n")
+  return true
+end
+
 local function handle_extension_ui(event)
   if event.method == "notify" then
     local levels = {
@@ -385,6 +403,46 @@ local function handle_extension_ui(event)
   end
   if event.method == "setWidget" then
     state.set_widget(event.widgetLines)
+    return
+  end
+  if event.method == "editor" then
+    -- Open a floating scratch editor. Title comes from the event; any
+    -- `prefill` seeds the buffer. On submit send `{value: text}`; on
+    -- cancel send `{cancelled: true}`. Tool's execute() in the extension
+    -- awaits this response.
+    local id = event.id
+    local title = event.title or "Sherpa clarify"
+    local prefill = event.prefill or ""
+    ui.append_block("sherpa", string.format("clarify opened: %s", title))
+    ui.open_clarify_editor(title, prefill, function(result)
+      if result == nil then
+        ui.append({ "[sherpa] clarify cancelled" })
+        send_ui_response(id, { cancelled = true })
+      else
+        ui.append_block("user", result)
+        send_ui_response(id, { value = result })
+      end
+    end)
+    return
+  end
+  if event.method == "confirm" then
+    local id = event.id
+    local title = event.title or "Sherpa confirm"
+    local message = event.message or ""
+    local prompt = message ~= "" and (title .. "\n\n" .. message) or title
+    vim.schedule(function()
+      vim.ui.select({ "Yes", "No" }, { prompt = prompt }, function(choice)
+        if choice == nil then
+          ui.append({ "[sherpa] confirm cancelled" })
+          send_ui_response(id, { cancelled = true })
+        else
+          local confirmed = choice == "Yes"
+          ui.append({ string.format("[sherpa] confirm: %s", choice) })
+          send_ui_response(id, { confirmed = confirmed })
+        end
+      end)
+    end)
+    return
   end
 end
 

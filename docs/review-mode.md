@@ -173,7 +173,7 @@ Each operation has a specific prompt. They live in `pi/sherpa-stepper.ts`:
   `review.build_prompt` on the Lua side, carrying `file`, `line range`,
   `title`, `why`, `excerpt`, and the user's focus text. Default per-stop
   explanations are pre-computed by the planner, not fetched here.
-- **`/search`**, **`/patch`**, **`/work`** — unrelated to review; see
+- **`/search`**, **`/patch`**, **`/prompt`** — unrelated to review; see
   README.
 
 `/plan` and `/review` are both read-only (no edit/write tools).

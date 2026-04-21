@@ -264,7 +264,7 @@ def plan_response(message: str) -> str:
     return "Plan ready."
 
 
-def work_response(message: str) -> str:
+def prompt_response(message: str) -> str:
     if project_has("src/App.tsx"):
         path = Path.cwd() / "src" / "App.tsx"
         emit_read(path)
@@ -302,8 +302,8 @@ def main() -> int:
             emit_streaming_assistant(plan_response(message))
         elif message.startswith("/patch "):
             emit(assistant_message(patch_response(message)))
-        elif message.startswith("/work "):
-            emit(assistant_message(work_response(message)))
+        elif message.startswith("/prompt "):
+            emit(assistant_message(prompt_response(message)))
         else:
             emit(assistant_message("Fake pi response"))
     return 0

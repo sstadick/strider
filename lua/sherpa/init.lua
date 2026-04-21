@@ -26,7 +26,7 @@ local function activity_title(operation)
     plan = "Sherpa planning review...",
     review = "Sherpa review running...",
     search = "Sherpa search running...",
-    work = "Sherpa work running...",
+    prompt = "Sherpa prompt running...",
   }
   return titles[operation] or "Sherpa running..."
 end
@@ -192,18 +192,18 @@ function M.setup(opts)
   state.setup(opts or {})
 end
 
-function M.work(prompt)
+function M.prompt(prompt)
   prompt = trimmed(prompt)
   if prompt == "" then
-    ui.open_prompt_editor("Sherpa work request", function(text)
-      M.work(text)
+    ui.open_prompt_editor("Sherpa prompt", function(text)
+      M.prompt(text)
     end, {
-      "Broader implementation request. Sherpa may touch multiple files.",
-      "Follow up with :SherpaReview to walk through the relevant code.",
+      "Agent prompt. No Sherpa-specific behavior — uses your global pi prompt.",
+      "Model may call sherpa_clarify to ask clarifying questions before acting.",
     })
     return
   end
-  send("/work " .. prompt, prompt, { operation = "work", open_log = true })
+  send("/prompt " .. prompt, prompt, { operation = "prompt", open_log = true })
 end
 
 function M.search(prompt)

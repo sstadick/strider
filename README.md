@@ -2,7 +2,7 @@
 
 Sherpa is a Neovim plugin for guided code generation, search, review, and patch flows powered by pi.
 
-It keeps the user in Neovim and jumps to touched files or reviewed ranges. Review is the primary walkthrough surface; the four product flows are `SherpaSearch`, `SherpaReview`, `SherpaPatch`, and `SherpaWork`.
+It keeps the user in Neovim and jumps to touched files or reviewed ranges. Review is the primary walkthrough surface; the four product flows are `SherpaSearch`, `SherpaReview`, `SherpaPatch`, and `SherpaPrompt`.
 
 ## Requirements
 
@@ -30,10 +30,10 @@ require("sherpa").setup()
 - Review — `:SherpaReview [scope] [prompt]`, `:SherpaNext`, `:SherpaPrev`
 - Review comments — `:SherpaComment {text}` and `:SherpaComments`
 - Targeted edit — `:'<,'>SherpaPatch {prompt}`
-- Broader run + review — `:SherpaWork {prompt}` then `:SherpaReview diff|last|searches`
+- Plain prompt — `:SherpaPrompt {prompt}` (agent turn with clarify available; Sherpa adds no mode-specific behavior beyond making the clarify tool known to the model)
 
 Any of the text-input commands (`:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`,
-`:SherpaWork`, `:SherpaComment`) called with no arguments opens a floating
+`:SherpaPrompt`, `:SherpaComment`) called with no arguments opens a floating
 editor with ghost-text guidance. Submit with `<C-s>`, cancel with `<Esc><Esc>`.
 
 ## Commands
@@ -96,9 +96,11 @@ GitHub PR review integration, but Sherpa doesn't submit or sync them yet.
 - `:'<,'>SherpaPatch {prompt}` — patch the selected range
 - `:SherpaPatch {prompt}` — patch the active review item if one is selected
 
-### Broader run
+### Plain prompt
 
-- `:SherpaWork {prompt}` — run a broader implementation request
+- `:SherpaPrompt {prompt}` — send a plain agent turn. Sherpa adds no
+  mode-specific prompting beyond making the `sherpa_clarify` tool
+  available; your global pi system prompt governs everything else.
 
 ## Examples
 
@@ -153,10 +155,10 @@ Or open a multiline comment editor:
 :'<,'>SherpaPatch change this greeting from hi to hello and only touch this line
 ```
 
-### Full run + review
+### Full prompt + review
 
 ```vim
-:SherpaWork add loading states to the lobby flow
+:SherpaPrompt add loading states to the lobby flow
 :SherpaReview walk through the diff on this branch
 :'<,'>SherpaComment this branch needs a clearer empty state
 :SherpaNext
@@ -188,6 +190,19 @@ SHERPA_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
 ```
 
 See `tests/README.md` for details.
+
+### Clarification during prompt / patch
+
+During `:SherpaPrompt` and `:SherpaPatch`, the model may pause to ask a
+clarifying question, propose a plan for approval, or confirm a
+destructive action. When this happens, Sherpa opens a small floating
+editor (or a yes/no picker for confirmations). Submit your reply with
+`<C-s>`; cancel with `<Esc><Esc>` — the model treats cancellation as
+"don't proceed" and stops with a short explanation.
+
+The model is budgeted to at most one clarification per request. If the
+prompt guidance isn't enough to keep it from over-asking, this is the
+backstop.
 
 ## Notes
 

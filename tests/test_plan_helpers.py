@@ -230,6 +230,63 @@ class PlanHelperTests(unittest.TestCase):
         self.assertEqual(20, end_line)  # 12 + 8
         self.assertEqual(17, ann_line)  # 9 + 8
 
+    # --- clarify editor dialog --------------------------------------------
+
+    def test_clarify_editor_opens_with_prefill_and_submits_value(self) -> None:
+        # ui.open_clarify_editor is what the plan_proposal / question
+        # clarify kinds drive on the Lua side. Verify it opens with the
+        # prefilled text and delivers the submitted value via callback.
+        project = self.repo_root / "tests" / "fixtures" / "app"
+        with TmuxNvimHarness(self.repo_root, project) as h:
+            # Stash the delivered value on a global for cross-call inspection.
+            h.lua("(function() _G.sherpa_test_clarify_result = nil; return true end)()")
+            h.lua(
+                "(function() "
+                "  require('sherpa.ui').open_clarify_editor('Test', 'initial', function(v) "
+                "    _G.sherpa_test_clarify_result = v "
+                "  end); return true "
+                "end)()"
+            )
+            # Popup should be open with the prefill visible.
+            h.wait_until(
+                lambda: h.expr("bufexists('sherpa://clarify')") == "1",
+                timeout=3.0,
+            )
+            popup_lines = h.buffer_lines("sherpa://clarify")
+            self.assertIn("initial", "\n".join(popup_lines))
+
+            # Type extra text + submit.
+            h.send("edited", "C-s", pause=0.4)
+            h.wait_until(
+                lambda: h.lua("tostring(_G.sherpa_test_clarify_result)") != "nil",
+                timeout=3.0,
+            )
+            delivered = h.lua("tostring(_G.sherpa_test_clarify_result)")
+            self.assertIn("initial", delivered)
+            self.assertIn("edited", delivered)
+
+    def test_clarify_editor_cancel_delivers_nil(self) -> None:
+        project = self.repo_root / "tests" / "fixtures" / "app"
+        with TmuxNvimHarness(self.repo_root, project) as h:
+            h.lua("(function() _G.sherpa_test_clarify_cancelled = false; return true end)()")
+            h.lua(
+                "(function() "
+                "  require('sherpa.ui').open_clarify_editor('Test', '', function(v) "
+                "    if v == nil then _G.sherpa_test_clarify_cancelled = true end "
+                "  end); return true "
+                "end)()"
+            )
+            h.wait_until(
+                lambda: h.expr("bufexists('sherpa://clarify')") == "1",
+                timeout=3.0,
+            )
+            # Cancel via <Esc><Esc>. We're in insert mode after open.
+            h.send("Escape", "Escape", pause=0.3)
+            h.wait_until(
+                lambda: h.lua_bool("_G.sherpa_test_clarify_cancelled"),
+                timeout=3.0,
+            )
+
     # --- selection reviews go through start_planned ----------------------
 
     def test_selection_review_uses_planned_state_shape(self) -> None:

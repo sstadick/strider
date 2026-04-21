@@ -39,7 +39,7 @@ local spin_labels = {
     "Sherpa is explaining the terrain...",
     "Sherpa is highlighting the tricky bit...",
   },
-  work = {
+  prompt = {
     "Sherpa is climbing...",
     "Sherpa is hauling the gear...",
     "Sherpa is finding the next hold...",
@@ -316,15 +316,22 @@ end
 local editor_ns = vim.api.nvim_create_namespace("sherpa-editor-hint")
 
 -- Open a centered floating scratch editor with ghost-text help.
--- opts: { name, title, hint_lines?, allow_empty? }
+-- opts: { name, title, hint_lines?, allow_empty?, prefill?, on_cancel? }
 --   title is the one-line header shown above the input
 --   hint_lines is an optional list of per-command guidance shown as virt_lines
 --   allow_empty permits empty submissions (defaults to false)
+--   prefill seeds the buffer with initial text (editable before submit)
+--   on_cancel is invoked with no args when the user cancels, if set
 local function open_scratch_editor(opts, on_submit)
   local buf = vim.api.nvim_create_buf(false, true)
   pcall(vim.api.nvim_buf_set_name, buf, opts.name)
   configure_scratch_buffer(buf, "markdown")
   vim.bo[buf].bufhidden = "wipe"
+
+  if opts.prefill and opts.prefill ~= "" then
+    local prefill_lines = vim.split(opts.prefill, "\n", { plain = true })
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, prefill_lines)
+  end
 
   local ui_info = vim.api.nvim_list_uis()[1] or { width = 120, height = 30 }
   local width = math.min(80, math.max(40, math.floor(ui_info.width * 0.6)))
@@ -399,6 +406,9 @@ local function open_scratch_editor(opts, on_submit)
       on_submit(text)
     elseif submit then
       notify("Discarded empty Sherpa input", vim.log.levels.WARN)
+      if opts.on_cancel then opts.on_cancel() end
+    else
+      if opts.on_cancel then opts.on_cancel() end
     end
   end
 
@@ -428,6 +438,28 @@ function M.open_comment_editor(on_submit)
     title = "Sherpa comment",
     hint_lines = { "Leave a review comment. Multiple lines are fine." },
   }, on_submit)
+end
+
+-- Open a floating editor for clarification. Passes a single callback
+-- that receives either the submitted text or `nil` on cancel.
+function M.open_clarify_editor(title, prefill, cb)
+  local delivered = false
+  local function deliver(value)
+    if delivered then return end
+    delivered = true
+    cb(value)
+  end
+  open_scratch_editor({
+    name = "sherpa://clarify",
+    title = title or "Sherpa clarify",
+    prefill = prefill,
+    hint_lines = {
+      "Sherpa is asking for clarification. Edit or reply below.",
+      "Submit to answer · Cancel to decline.",
+    },
+    allow_empty = false,
+    on_cancel = function() deliver(nil) end,
+  }, function(text) deliver(text) end)
 end
 
 function M.open_prompt_editor(label, on_submit, hint_lines)

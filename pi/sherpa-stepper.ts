@@ -1,18 +1,22 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
-type OperationKind = "search" | "review" | "patch" | "work" | "plan";
+type OperationKind = "search" | "review" | "patch" | "prompt" | "plan";
 
 type SherpaState = {
 	activeOperation?: OperationKind;
 	lastTouchedFile?: string;
 	recentFiles: string[];
 	lastAssistantSummary?: string;
+	// Budget: at most one sherpa_clarify call per user request. Reset in
+	// startOperation so the next /prompt or /patch starts fresh.
+	clarifyCount: number;
 };
 
 function emptyState(): SherpaState {
 	return {
 		recentFiles: [],
+		clarifyCount: 0,
 	};
 }
 
@@ -61,13 +65,21 @@ function searchRules(): string[] {
 	];
 }
 
-function workRules(): string[] {
+function clarifyGuidance(): string[] {
 	return [
-		"You are operating in Sherpa work mode.",
-		"You may make broader changes than tightly bounded patch mode.",
-		"Prefer coherent progress over tiny forced stops.",
-		"When you finish, summarize what changed and what should be reviewed next.",
+		"",
+		"If the request is genuinely ambiguous, or you've discovered the change is much larger or more nuanced than the prompt implies, you MAY call the `sherpa_clarify` tool once before proceeding.",
+		"Prefer action over questions. Only clarify when a specific ambiguity would change your approach in a non-trivial way. Do NOT clarify about preferences, style, or anything you can reasonably decide yourself.",
+		"Use `kind: 'question'` for open-ended ambiguity, `kind: 'plan_proposal'` for a large change where the user should see the shape before you act, and `kind: 'confirm'` for destructive or expensive operations.",
+		"If the user cancels the clarification, stop work and produce a short reply explaining what you were asking about — do NOT proceed with a guess.",
 	];
+}
+
+function promptRules(): string[] {
+	// Sherpa adds no mode-specific behavior here — the user's global pi
+	// system prompt (APPEND_SYSTEM.md + pi defaults) governs. Only carry
+	// the clarify tool affordance so the model knows it exists.
+	return clarifyGuidance();
 }
 
 function patchRules(): string[] {
@@ -77,6 +89,7 @@ function patchRules(): string[] {
 		"Prefer changing only the smallest necessary local region.",
 		"Do not expand the edit to other files unless the user explicitly requires it.",
 		"Summarize the local patch when you finish.",
+		...clarifyGuidance(),
 	];
 }
 
@@ -119,8 +132,8 @@ function searchPrompt(request: string): string {
 	return [`Search request: ${request}`, ...searchRules()].join("\n");
 }
 
-function workPrompt(request: string): string {
-	return [`Work request: ${request}`, ...workRules()].join("\n");
+function promptPrompt(request: string): string {
+	return [`Prompt request: ${request}`, ...promptRules()].join("\n");
 }
 
 function patchPrompt(request: string): string {
@@ -162,7 +175,7 @@ export default function (pi: ExtensionAPI) {
 
 	function renderStatus(): string[] {
 		if (!state.activeOperation) {
-			const lines = ["Sherpa: idle", "Use /review, /search, /work, or /patch to start."];
+			const lines = ["Sherpa: idle", "Use /review, /search, /prompt, or /patch to start."];
 			if (state.lastTouchedFile) lines.push(`Last file: ${state.lastTouchedFile}`);
 			if (state.lastAssistantSummary) lines.push(`Last response: ${state.lastAssistantSummary}`);
 			return lines;
@@ -191,6 +204,7 @@ export default function (pi: ExtensionAPI) {
 	function startOperation(kind: OperationKind, ctx: any) {
 		state.activeOperation = kind;
 		state.lastAssistantSummary = undefined;
+		state.clarifyCount = 0;
 		updateWidget(ctx);
 	}
 
@@ -319,13 +333,10 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: "sherpa_plan: submit the review plan during Sherpa plan mode.",
 		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, _ctx: any) {
 			if (params.scope === "diff" && !params.base) {
-				return {
-					output: "error: base is required when scope='diff'",
-					isError: true,
-				} as any;
+				throw new Error("sherpa_plan: base is required when scope='diff'");
 			}
 			return {
-				output: `ok: ${params.stops.length} stop(s)`,
+				content: [{ type: "text", text: `ok: ${params.stops.length} stop(s)` }],
 				details: { count: params.stops.length, scope: params.scope },
 			} as any;
 		},
@@ -343,9 +354,65 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: "sherpa_append_stops: append stops to a free-scope Sherpa review in progress.",
 		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, _ctx: any) {
 			return {
-				output: `ok: appended ${params.stops.length} stop(s)`,
+				content: [{ type: "text", text: `ok: appended ${params.stops.length} stop(s)` }],
 				details: { count: params.stops.length },
 			} as any;
+		},
+	});
+
+	const clarifySchema = Type.Object({
+		kind: Type.Union(
+			[Type.Literal("question"), Type.Literal("plan_proposal"), Type.Literal("confirm")],
+			{
+				description:
+					"'question' for open-ended ambiguity; 'plan_proposal' when you want the user to approve/edit a proposed approach before you act; 'confirm' for a yes/no gate on a destructive or expensive operation.",
+			},
+		),
+		title: Type.String({ description: "One-line heading shown at the top of the user's prompt." }),
+		body: Type.String({
+			description:
+				"Full context / question / proposed plan shown to the user. For 'plan_proposal' this is used as the editor's prefill — the user may submit as-is or edit before accepting.",
+		}),
+	});
+
+	pi.registerTool({
+		name: "sherpa_clarify",
+		label: "Sherpa clarify",
+		description:
+			"Pause the current turn and ask the user for clarification, approval of a proposed plan, or confirmation of a destructive action. Available during /prompt and /patch. Use sparingly.",
+		parameters: clarifySchema,
+		promptSnippet:
+			"sherpa_clarify: pause and ask the user (question / plan_proposal / confirm) when truly ambiguous.",
+		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: any) {
+			const text = (s: string) => ({
+				content: [{ type: "text", text: s }],
+				details: { kind: params.kind },
+			}) as any;
+
+			if (state.clarifyCount >= 1) {
+				throw new Error(
+					"sherpa_clarify: budget exhausted for this request. Proceed with your best interpretation and summarize the ambiguity in your final reply.",
+				);
+			}
+			state.clarifyCount += 1;
+
+			if (params.kind === "confirm") {
+				// ctx.ui.confirm returns false on both "No" and cancel — pi's
+				// API doesn't distinguish. Treat false as "no"; don't claim
+				// cancellation here.
+				const confirmed = await ctx.ui.confirm(params.title, params.body);
+				return text(confirmed ? "yes" : "no");
+			}
+
+			// question + plan_proposal both use the editor; plan_proposal
+			// prefills the editor with the proposal so the user can accept
+			// as-is, edit, or cancel. question leaves the editor empty.
+			const prefill = params.kind === "plan_proposal" ? params.body : "";
+			const answer = await ctx.ui.editor(params.title, prefill);
+			if (answer === undefined) {
+				return text("[user cancelled clarification]");
+			}
+			return text(answer);
 		},
 	});
 
@@ -388,16 +455,16 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("work", {
-		description: "Run a broader Sherpa work request",
+	pi.registerCommand("prompt", {
+		description: "Run a Sherpa prompt — plain agent turn with clarify available",
 		handler: async (args: any, ctx: any) => {
 			const request = args?.trim();
 			if (!request) {
-				ctx.ui.notify("Usage: /work <request>", "warning");
+				ctx.ui.notify("Usage: /prompt <request>", "warning");
 				return;
 			}
-			startOperation("work", ctx);
-			pi.sendUserMessage(workPrompt(request));
+			startOperation("prompt", ctx);
+			pi.sendUserMessage(promptPrompt(request));
 		},
 	});
 

@@ -1,6 +1,6 @@
 """Tests for the floating prompt editors used when Sherpa commands are called
-with no arguments. Exercises search/review/work/patch popups end-to-end through
-a real Neovim session with the fake pi backend.
+with no arguments. Exercises search/review/prompt/patch popups end-to-end
+through a real Neovim session with the fake pi backend.
 """
 import unittest
 from pathlib import Path
@@ -40,18 +40,18 @@ class TmuxPopupTests(unittest.TestCase):
             state = h.current_state()
             self.assertEqual(0, len(state["qf"]["items"]))
 
-    def test_empty_work_opens_popup_and_dispatches(self) -> None:
-        # Use a fixture copy because the fake-pi work response mutates App.tsx.
+    def test_empty_prompt_opens_popup_and_dispatches(self) -> None:
+        # Use a fixture copy because the fake-pi prompt response mutates App.tsx.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaWork")
+                h.ex("SherpaPrompt")
                 h.wait_until(lambda: _popup_open(h))
 
                 h.send("add a banner", "C-s", pause=0.3)
                 h.wait_until(lambda: not _popup_open(h))
 
-                # The fake backend logs the /work prompt; we only care that the
-                # popup closed and dispatch reached the log.
+                # The fake backend logs the /prompt request; we only care that
+                # the popup closed and dispatch reached the log.
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("add a banner", log_text)
 

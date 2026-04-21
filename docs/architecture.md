@@ -7,7 +7,7 @@ Sherpa is now built around four primary user flows:
 - `:SherpaSearch {prompt}`
 - `:SherpaReview [scope] [prompt]`
 - `:'<,'>SherpaPatch {prompt}`
-- `:SherpaWork {prompt}`
+- `:SherpaPrompt {prompt}`
 
 Supporting navigation:
 
@@ -42,8 +42,10 @@ Owns:
 Lives in `pi/sherpa-stepper.ts`.
 
 Owns:
-- prompt shaping for `plan`, `review`, `search`, `patch`, and `work`
+- prompt shaping for `plan`, `review`, `search`, `patch`, and `prompt`
 - the `sherpa_plan` and `sherpa_append_stops` tools used during reviews
+- the `sherpa_clarify` tool used during `prompt` and `patch` for
+  mid-turn questions, plan proposals, and yes/no confirmations
 - read-only guardrails for plan / review / search
 - widget/status updates for Neovim
 
@@ -107,12 +109,14 @@ Important UX rule:
 4. tool events update the file jump and edit highlighting
 5. edited ranges remain highlighted after the patch
 
-### Work
+### Prompt
 
-1. user runs `:SherpaWork <prompt>`
-2. plugin sends `/work <prompt>`
-3. assistant may make broader changes than patch mode
-4. user reviews the result with `:SherpaReview diff` or `:SherpaReview last`
+1. user runs `:SherpaPrompt <prompt>`
+2. plugin sends `/prompt <prompt>`
+3. assistant handles the request under the user's global pi system
+   prompt; Sherpa adds no mode-specific guidance beyond making
+   `sherpa_clarify` available
+4. user can follow up with `:SherpaReview` to walk through the result
 
 ## Review state model
 
@@ -159,8 +163,9 @@ Purpose:
 ### Input editor
 
 Buffer names:
-- `sherpa://prompt` — used by `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, `:SherpaWork`
+- `sherpa://prompt` — used by `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, `:SherpaPrompt`
 - `sherpa://comment` — used by `:SherpaComment`
+- `sherpa://clarify` — used by the `sherpa_clarify` tool during `prompt` / `patch` turns
 
 A centered floating scratch buffer that opens when any text-input command is
 called with no arguments. Renders per-command guidance as `Comment`-highlighted
@@ -185,11 +190,18 @@ text is treated as a question about the current review item.
   - jump to files
   - highlight read/edit/write ranges
 - `extension_ui_request`
-  - status + widget updates from the extension
+  - `notify` / `setStatus` / `setWidget` — fire-and-forget UI updates
+  - `editor` — open a floating scratch editor with a prefill; plugin
+    replies via `extension_ui_response` with `{value}` on submit or
+    `{cancelled: true}` on cancel
+  - `confirm` — yes/no picker via `vim.ui.select`; plugin replies with
+    `{confirmed: bool}` or `{cancelled: true}`
 
 ### To pi
 
-- `prompt`
+- `prompt` — user prompt message
+- `extension_ui_response` — reply to an awaiting `extension_ui_request`
+  (carries the request `id` plus `value` / `confirmed` / `cancelled`)
 
 ## File/range heuristics
 
@@ -204,18 +216,17 @@ Shell parsing remains intentionally lightweight.
 
 Working today:
 - structured search with picker + quickfix behavior
-- explicit review scopes
+- pre-planned review with in-buffer annotations and sidebar TOC
 - dedicated review pane
 - local review comments
 - selection-scoped patching
-- broader work requests
+- plain-prompt agent turns with clarify available
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests on bundled fixture projects
 
 Still rough:
 - the review pane can be polished further
 - review summaries depend heavily on model quality
-- work mode is broader than patch mode but still lightweight
 - code restoration is not implemented
 
 ## Related docs

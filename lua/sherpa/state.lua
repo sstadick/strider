@@ -36,6 +36,7 @@ local function new_session(cwd)
     status = {},
     stdout_tail = "",
     stderr_tail = "",
+    tool_args = {},
     tool_paths = {},
     widget = {},
   }

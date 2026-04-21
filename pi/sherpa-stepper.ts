@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 
-type OperationKind = "search" | "teach" | "patch" | "work";
+type OperationKind = "search" | "review" | "patch" | "work" | "plan";
 
 type SherpaState = {
 	activeOperation?: OperationKind;
@@ -29,9 +30,9 @@ function assistantText(message: any): string | undefined {
 	return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
-function explicitTeachRules(): string[] {
+function explicitReviewRules(): string[] {
 	return [
-		"You are operating in explicit Sherpa teach/review mode.",
+		"You are operating in explicit Sherpa review mode.",
 		"This mode is read-only. Do not use edit or write.",
 		"Answer clearly and directly.",
 		"If more context is needed, inspect only nearby code or the smallest relevant surface.",
@@ -79,8 +80,29 @@ function patchRules(): string[] {
 	];
 }
 
-function explicitTeachPrompt(request: string): string {
-	return [`Teach/review request: ${request}`, ...explicitTeachRules()].join("\n");
+function planRules(): string[] {
+	return [
+		"You are operating in Sherpa plan mode.",
+		"Your only job this turn is to produce a complete review plan by calling the `sherpa_plan` tool exactly once.",
+		"Read whatever files you need first to understand the user's goal, then call sherpa_plan.",
+		"Classify the review in the tool call: scope is 'selection' (user gave a range), 'diff' (user wants changes vs a branch/base — include the base ref), or 'free' (open-ended).",
+		"Stops must be small — keep each stop ≤ 40 lines. Order them pedagogically (foundations → consumers → tests), not in discovery order.",
+		"For 'selection' and 'diff' scopes, the union of stops must cover every line in the selected range / every changed line in the diff.",
+		"Each stop requires:",
+		"  - a short `title` for the sidebar",
+		"  - a one-sentence `why` explaining why the stop is on the list",
+		"  - a 2-4 sentence `explanation` that the user will see when they visit the stop. Ground the explanation in the actual code at that range — what it does, why it matters, and any notable decisions or tradeoffs.",
+		"The explanation is what the user reads in place of a later follow-up turn. Write it as if you were guiding someone through the code, not as a one-liner.",
+		"Do NOT write a long prose reply outside the tool call — the explanations live inside `sherpa_plan`.",
+	];
+}
+
+function planPrompt(request: string): string {
+	return [`Plan request: ${request}`, ...planRules()].join("\n");
+}
+
+function explicitReviewPrompt(request: string): string {
+	return [`Review request: ${request}`, ...explicitReviewRules()].join("\n");
 }
 
 function searchPrompt(request: string): string {
@@ -130,17 +152,19 @@ export default function (pi: ExtensionAPI) {
 
 	function renderStatus(): string[] {
 		if (!state.activeOperation) {
-			const lines = ["Sherpa: idle", "Use /teach, /search, /work, or /patch to start."];
+			const lines = ["Sherpa: idle", "Use /review, /search, /work, or /patch to start."];
 			if (state.lastTouchedFile) lines.push(`Last file: ${state.lastTouchedFile}`);
 			if (state.lastAssistantSummary) lines.push(`Last response: ${state.lastAssistantSummary}`);
 			return lines;
 		}
 
+		const readOnly =
+			state.activeOperation === "review" ||
+			state.activeOperation === "search" ||
+			state.activeOperation === "plan";
 		const lines = [
 			`Sherpa operation: ${state.activeOperation}`,
-			state.activeOperation === "teach" || state.activeOperation === "search"
-				? "Mode: read-only"
-				: "Mode: edits allowed",
+			readOnly ? "Mode: read-only" : "Mode: edits allowed",
 			"Waiting for assistant response...",
 		];
 		if (state.lastTouchedFile) lines.push(`Last file: ${state.lastTouchedFile}`);
@@ -166,12 +190,29 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function readOnlyOperation(): boolean {
-		return state.activeOperation === "teach" || state.activeOperation === "search";
+		return (
+			state.activeOperation === "review" ||
+			state.activeOperation === "search" ||
+			state.activeOperation === "plan"
+		);
 	}
 
 	pi.on("session_start", async (_event: any, ctx: any) => {
 		state = emptyState();
 		updateWidget(ctx);
+	});
+
+	pi.on("before_agent_start", async (event: any, _ctx: any) => {
+		// Session-wide guidance appended to the base system prompt. Only
+		// suggestive — harmless when no subagent/task tool is available.
+		const extra = [
+			"",
+			"If a subagent, task, or agent-spawning tool is available to you, consider using it for independent read-heavy subtasks (searching multiple areas, summarizing unrelated files, pre-computing explanations for distinct code regions). Subagent work parallelizes and keeps the main turn focused.",
+			"If no such tool is available, just proceed without subagents.",
+		].join("\n");
+		return {
+			systemPrompt: (event.systemPrompt ?? "") + extra,
+		};
 	});
 
 	pi.on("tool_call", async (event: any, ctx: any) => {
@@ -205,16 +246,88 @@ export default function (pi: ExtensionAPI) {
 		else updateWidget(ctx);
 	});
 
-	pi.registerCommand("teach", {
-		description: "Run an explicit Sherpa teach/review request",
+	const stopSchema = Type.Object({
+		path: Type.String({ description: "Absolute or cwd-relative path to the file for this stop" }),
+		startLine: Type.Number({ description: "1-based first line of the stop (inclusive)" }),
+		endLine: Type.Number({ description: "1-based last line of the stop (inclusive)" }),
+		title: Type.String({ description: "Short label for the stop, shown in the sidebar" }),
+		why: Type.String({ description: "One-sentence justification for including this stop" }),
+		explanation: Type.String({
+			description:
+				"2-4 sentence explanation the user sees when they visit this stop. Grounded in the actual code at this range — what it does, why it matters, any notable decisions.",
+		}),
+	});
+
+	const planSchema = Type.Object({
+		scope: Type.Union(
+			[Type.Literal("selection"), Type.Literal("diff"), Type.Literal("free")],
+			{ description: "What kind of review this is — determines coverage expectations" },
+		),
+		base: Type.Optional(Type.String({ description: "Base ref for diff reviews (required when scope='diff')" })),
+		stops: Type.Array(stopSchema, { minItems: 1, description: "Ordered list of review stops" }),
+	});
+
+	pi.registerTool({
+		name: "sherpa_plan",
+		label: "Sherpa plan",
+		description: "Submit the review plan for a Sherpa review. Must be called exactly once during plan mode.",
+		parameters: planSchema,
+		promptSnippet: "sherpa_plan: submit the review plan during Sherpa plan mode.",
+		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, _ctx: any) {
+			if (params.scope === "diff" && !params.base) {
+				return {
+					output: "error: base is required when scope='diff'",
+					isError: true,
+				} as any;
+			}
+			return {
+				output: `ok: ${params.stops.length} stop(s)`,
+				details: { count: params.stops.length, scope: params.scope },
+			} as any;
+		},
+	});
+
+	const appendStopsSchema = Type.Object({
+		stops: Type.Array(stopSchema, { minItems: 1, description: "Stops to append to the current free-scope review" }),
+	});
+
+	pi.registerTool({
+		name: "sherpa_append_stops",
+		label: "Sherpa append stops",
+		description: "Append new stops to an active free-scope Sherpa review. Only valid mid-review on free-scope plans.",
+		parameters: appendStopsSchema,
+		promptSnippet: "sherpa_append_stops: append stops to a free-scope Sherpa review in progress.",
+		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, _ctx: any) {
+			return {
+				output: `ok: appended ${params.stops.length} stop(s)`,
+				details: { count: params.stops.length },
+			} as any;
+		},
+	});
+
+	pi.registerCommand("plan", {
+		description: "Produce a Sherpa review plan",
 		handler: async (args: any, ctx: any) => {
 			const request = args?.trim();
 			if (!request) {
-				ctx.ui.notify("Usage: /teach <request>", "warning");
+				ctx.ui.notify("Usage: /plan <request>", "warning");
 				return;
 			}
-			startOperation("teach", ctx);
-			pi.sendUserMessage(explicitTeachPrompt(request));
+			startOperation("plan", ctx);
+			pi.sendUserMessage(planPrompt(request));
+		},
+	});
+
+	pi.registerCommand("review", {
+		description: "Run an explicit Sherpa review request",
+		handler: async (args: any, ctx: any) => {
+			const request = args?.trim();
+			if (!request) {
+				ctx.ui.notify("Usage: /review <request>", "warning");
+				return;
+			}
+			startOperation("review", ctx);
+			pi.sendUserMessage(explicitReviewPrompt(request));
 		},
 	});
 

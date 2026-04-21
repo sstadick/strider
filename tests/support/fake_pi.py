@@ -72,6 +72,30 @@ def diff_stub(line: int) -> str:
     return f"+ {line} edited" if line > 0 else "+ 1 edited"
 
 
+def emit_sherpa_plan(stops: list, scope: str = "free", base=None) -> None:
+    """Emit a sherpa_plan tool call + end event carrying the plan args.
+
+    Mirrors the shape the real pi extension's sherpa_plan tool produces so
+    rpc.lua's handle_tool_end can ingest it without needing the real agent.
+    """
+    tool_id = next_tool_id()
+    args = {"scope": scope, "stops": stops}
+    if base is not None:
+        args["base"] = base
+    emit({
+        "type": "tool_execution_start",
+        "toolName": "sherpa_plan",
+        "toolCallId": tool_id,
+        "args": args,
+    })
+    emit({
+        "type": "tool_execution_end",
+        "toolName": "sherpa_plan",
+        "toolCallId": tool_id,
+        "result": {"content": [{"type": "text", "text": f"ok: {len(stops)} stop(s)"}]},
+    })
+
+
 def emit_read(path: Path, offset: int = 1, limit: int = 20) -> None:
     tool_id = next_tool_id()
     emit({
@@ -141,26 +165,17 @@ def search_response(message: str) -> str:
     return ""
 
 
-def teach_response(message: str) -> str:
+def review_response(message: str) -> str:
+
     lower = message.lower()
     if "<review_comments>" in lower:
         return "I found unresolved review comments. The main follow-up is to clarify the reviewed code and keep the intent documented."
-    if "next review item" in lower or "continue the review by choosing the next most useful file" in lower:
-        if project_has("src/App.tsx"):
-            emit_read(Path.cwd() / "src" / "App.tsx", offset=1, limit=20)
-            return "The next useful stop is the top-level app component because it shows the main UI surface after the entrypoint."
-        if project_has("app.py"):
-            emit_read(Path.cwd() / "app.py", offset=1, limit=20)
-            return "The next useful stop is app.py because it contains the core helper and runtime logic."
     if "pi extension" in lower and project_has("pi/sherpa-stepper.ts"):
         emit_read(Path.cwd() / "pi" / "sherpa-stepper.ts", offset=1, limit=20)
         return "This stop focuses on the pi extension entrypoint and the explicit Sherpa commands it registers."
     if "src/main.tsx" in lower and project_has("src/main.tsx"):
         emit_read(Path.cwd() / "src" / "main.tsx", offset=1, limit=20)
         return "This stop focuses on src/main.tsx because it bootstraps the React app and renders App into the root node."
-    if "long_review.py" in lower and project_has("long_review.py"):
-        emit_read(Path.cwd() / "long_review.py", offset=1, limit=20)
-        return "This stop starts at the first part of long_review.py so Sherpa can explain the structure of the generated functions."
     if ("repo" in lower or "project" in lower) and project_has("readme.md"):
         emit_read(Path.cwd() / "README.md", offset=1, limit=20)
         return "This stop starts at the top-level README because it explains the plugin surface and how Sherpa is intended to be used."
@@ -192,6 +207,50 @@ def patch_response(message: str) -> str:
         updated = contents + "\n# patched by fake pi\n"
     emit_edit(path, updated)
     return "Applied the requested local patch."
+
+
+def plan_response(message: str) -> str:
+    """Pick a couple of plausible stops from the project for the plan tool."""
+    stops: list = []
+    if project_has("src/main.tsx"):
+        stops.append({
+            "path": fixture_path("src/main.tsx"),
+            "startLine": 1,
+            "endLine": 6,
+            "title": "main.tsx entry",
+            "why": "React entrypoint — where the app is bootstrapped.",
+            "explanation": "This file is the React bootstrap. It creates the root and mounts the App component into the #root element. Standard Vite/React entrypoint pattern.",
+        })
+        if project_has("src/App.tsx"):
+            stops.append({
+                "path": fixture_path("src/App.tsx"),
+                "startLine": 1,
+                "endLine": 3,
+                "title": "App component",
+                "why": "Top-level UI component rendered by main.",
+                "explanation": "The top-level App component. Renders the application UI surface. This is what main.tsx mounts.",
+            })
+    elif project_has("app.py"):
+        stops.append({
+            "path": fixture_path("app.py"),
+            "startLine": 1,
+            "endLine": 5,
+            "title": "app greeting",
+            "why": "Pure greeting helper at the top of the file.",
+            "explanation": "A pure helper that formats a greeting string. No side effects. Used by the main entrypoint.",
+        })
+    elif project_has("wide.txt"):
+        stops.append({
+            "path": fixture_path("wide.txt"),
+            "startLine": 1,
+            "endLine": 5,
+            "title": "top of wide.txt",
+            "why": "First section of the fixture.",
+            "explanation": "Opening section of the test fixture file. Used to exercise the review pane's rendering for long-line content.",
+        })
+    if stops:
+        emit_sherpa_plan(stops, scope="free")
+    return "Plan ready."
 
 
 def work_response(message: str) -> str:
@@ -226,8 +285,10 @@ def main() -> int:
         emit({"type": "response", "success": True})
         if message.startswith("/search "):
             emit(assistant_message(search_response(message)))
-        elif message.startswith("/teach "):
-            emit_streaming_assistant(teach_response(message))
+        elif message.startswith("/review "):
+            emit_streaming_assistant(review_response(message))
+        elif message.startswith("/plan "):
+            emit_streaming_assistant(plan_response(message))
         elif message.startswith("/patch "):
             emit(assistant_message(patch_response(message)))
         elif message.startswith("/work "):

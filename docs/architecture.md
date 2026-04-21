@@ -42,8 +42,9 @@ Owns:
 Lives in `pi/sherpa-stepper.ts`.
 
 Owns:
-- prompt shaping for `search`, `teach/review`, `patch`, and `work`
-- read-only guardrails for search/review
+- prompt shaping for `plan`, `review`, `search`, `patch`, and `work`
+- the `sherpa_plan` and `sherpa_append_stops` tools used during reviews
+- read-only guardrails for plan / review / search
 - widget/status updates for Neovim
 
 ## Core flows
@@ -59,17 +60,44 @@ Owns:
 
 ## Review
 
-1. user runs `:SherpaReview file|diff|last|searches`
-2. plugin builds local review items
-3. Sherpa opens the dedicated review pane and highlights the active range
-4. plugin sends `/teach ...` for the active review item
-5. assistant explanation is written both to the log and the review pane
-6. `:SherpaNext` / `:SherpaPrev` move through items
-7. unresolved comments are summarized back to the agent at review end
+Reviews are pre-planned. The model commits to a full list of stops up
+front via the `sherpa_plan` tool; the plugin then walks that fixed list.
+
+1. user runs `:SherpaReview <prose>` (optionally with a visual range)
+2. plugin opens the review pane in a "planning..." state and sends
+   `/plan <prose>` to the extension
+3. extension's `plan` command tells the model to produce a plan. The model
+   reads code as needed, then calls the `sherpa_plan` tool with:
+   - `scope`: `"selection"`, `"diff"`, or `"free"` (model self-labels)
+   - `base`: required when scope is `"diff"`
+   - `stops`: ordered list of
+     `{path, startLine, endLine, title, why, explanation}` — the
+     explanation is pre-written at plan time, 2-4 sentences per stop
+4. plugin ingests the plan, renders the TOC in the review pane, and
+   focuses stop 1. The sidebar shows stop 1's pre-written explanation
+   immediately — no follow-up model turn.
+5. `:SherpaNext` / `:SherpaPrev` advance through the fixed plan. Each
+   move is a local index change plus a buffer jump — instant, no model
+   call. The sidebar flips to the pre-written explanation for the new
+   stop.
+6. `:SherpaReview <question>` with an active review is the only way to
+   trigger a per-stop model call. It sends `/review ...` scoped to the
+   current stop, carrying the question.
+7. during a free-scope review, the model may call `sherpa_append_stops`
+   mid-review to add more stops (append-only — no reorder, no deletion)
+8. walking past the last stop ends the review; unresolved comments are
+   summarized back to the agent
+
+Coverage guarantees (enforced at plan-ingest time):
+- selection scope: every line in the original range is covered by some stop
+- diff scope: every changed line in `git diff <base>...HEAD` is covered
+- free scope: no coverage check — the model chose
 
 Important UX rule:
 - the review pane is the primary explanation surface
 - the log is secondary transcript/history
+- during review, the user stays on the active stop — the model's
+  `read`/`bash` tool calls do NOT auto-jump the buffer
 
 ### Patch
 

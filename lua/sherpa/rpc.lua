@@ -98,12 +98,17 @@ local function handle_message_update(event)
     return
   end
   local pending = state.peek_pending_request()
-  if not pending or pending.operation ~= "teach" then
+  if not pending then
+    return
+  end
+  if pending.operation ~= "review" and pending.operation ~= "plan" then
     return
   end
   local session = state.get_session()
   session.assistant_text = (session.assistant_text or "") .. (delta.delta or "")
-  review.capture_assistant_text(session.assistant_text, { partial = true })
+  if pending.operation == "review" then
+    review.capture_assistant_text(session.assistant_text, { partial = true })
+  end
 end
 
 local function has_tool_use(message)
@@ -136,6 +141,29 @@ local function handle_message_end(event)
   pending = state.consume_pending_request()
   session.assistant_text = nil
 
+  -- Plan turns: success depends on whether the plan tool landed a plan,
+  -- not on whether the model produced trailing prose. Handle before the
+  -- "no text" early return so empty plan-turn replies still dispatch the
+  -- first /review.
+  if pending and pending.operation == "plan" then
+    if text and text ~= "" then
+      ui.append_block("assistant", text)
+    end
+    if review.has_active_review() and review.is_planning() then
+      ui.notify("Sherpa could not produce a plan — try rephrasing.", vim.log.levels.ERROR)
+      ui.finish_activity("Sherpa plan failed", "error")
+      return
+    end
+    ui.finish_activity("Sherpa plan complete", "success")
+    vim.schedule(function()
+      local ok, mod = pcall(require, "sherpa")
+      if ok and mod and mod.dispatch_first_review then
+        mod.dispatch_first_review()
+      end
+    end)
+    return
+  end
+
   if not text then
     ui.finish_activity("Sherpa request complete (no text)", "success")
     return
@@ -152,15 +180,10 @@ local function handle_message_end(event)
 
   state.set_summary(text:gsub("\n", " "))
   ui.append_block("assistant", text)
-  if pending and pending.operation == "teach" then
+  if pending and pending.operation == "review" then
     review.capture_assistant_text(text)
   end
   ui.finish_activity("Sherpa request complete", "success")
-end
-
-local function workflow_kind()
-  local session = state.get_session()
-  return session and session.status["sherpa-kind"] or nil
 end
 
 local function track_tool_path(session, event)
@@ -252,41 +275,86 @@ end
 local function handle_tool_start(event)
   local session = state.get_session()
   append_tool(event.toolName, event.args)
+
+  -- Cache args for Sherpa planning tools — tool_execution_end events do not
+  -- carry args, so we have to capture them here while they're available.
+  if (event.toolName == "sherpa_plan" or event.toolName == "sherpa_append_stops")
+      and event.toolCallId then
+    session.tool_args[event.toolCallId] = event.args
+  end
+
   local path = track_tool_path(session, event)
   if not path then
     return
   end
   state.record_file(path)
-  if event.toolName == "read" then
+  -- Do not auto-jump the user's buffer on read during a review. The review
+  -- planner drives which file is focused; model-driven reads shouldn't yank
+  -- the user away from the active review stop.
+  if event.toolName == "read" and not review.has_active_review() then
     ui.jump_to_file(path, event.args and event.args.offset)
   end
 end
 
+local function consume_tool_args(session, event)
+  if not event.toolCallId then
+    return nil
+  end
+  local cached = session.tool_args[event.toolCallId]
+  session.tool_args[event.toolCallId] = nil
+  return cached
+end
+
 local function handle_tool_end(event)
   local session = state.get_session()
+
+  -- Sherpa planning tools carry their payload in args captured at start time.
+  if event.toolName == "sherpa_plan" then
+    local args = consume_tool_args(session, event) or {}
+    local item = review.ingest_plan(args)
+    if item then
+      ui.append({ string.format("[sherpa] plan: %d stop(s), scope=%s",
+        #(args.stops or {}),
+        args.scope or "?") })
+    else
+      ui.notify("Sherpa plan was empty or invalid; review cannot start", vim.log.levels.ERROR)
+    end
+    return
+  end
+  if event.toolName == "sherpa_append_stops" then
+    local args = consume_tool_args(session, event) or {}
+    local added = review.ingest_append_stops(args)
+    if added > 0 then
+      ui.append({ string.format("[sherpa] appended %d stop(s)", added) })
+    end
+    return
+  end
+
   local path = finish_tool_path(session, event)
   if not path then
     return
   end
-  if event.toolName == "read" and review.has_active_review() then
-    local start_line, end_line = read_range(event)
+  if event.toolName == "read" then
     state.record_file(path)
-    review.note_read(path, start_line, end_line)
-    ui.jump_to_file(path, start_line)
-    ui.highlight_range(path, start_line, end_line)
     return
   end
   if event.toolName == "edit" then
-    local lines = changed_lines(event)
     state.record_file(path)
-    ui.jump_to_file(path, first_changed_line(event))
-    ui.highlight_lines(path, lines)
+    -- Only follow edits outside of review mode; during review the user stays
+    -- on the planned stop.
+    if not review.has_active_review() then
+      local lines = changed_lines(event)
+      ui.jump_to_file(path, first_changed_line(event))
+      ui.highlight_lines(path, lines)
+    end
     return
   end
   if event.toolName == "write" then
     state.record_file(path)
-    ui.jump_to_file(path, 1)
-    ui.highlight_range(path, 1)
+    if not review.has_active_review() then
+      ui.jump_to_file(path, 1)
+      ui.highlight_range(path, 1)
+    end
   end
 end
 

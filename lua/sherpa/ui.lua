@@ -31,7 +31,7 @@ local spin_labels = {
     "Sherpa is tracing the path...",
     "Sherpa is spotting likely matches...",
   },
-  teach = {
+  review = {
     "Sherpa is walking the route...",
     "Sherpa is pointing out the key ledges...",
     "Sherpa is explaining the terrain...",
@@ -80,7 +80,10 @@ local function start_spin()
   stop_spin()
   spin_index = 0
   spin_timer = vim.uv.new_timer()
-  spin_timer:start(250, 3000, vim.schedule_wrap(function()
+  -- First tick fires immediately so the status line updates as soon as
+  -- the activity starts — not 250ms later (which can lose to nvim redraws
+  -- after closing a floating prompt window).
+  spin_timer:start(0, 3000, vim.schedule_wrap(function()
     spin_tick()
   end))
 end
@@ -284,9 +287,13 @@ function M.start_activity(title, target, operation)
   for _, buf in ipairs(progress_buffers(session.progress.target)) do
     set_buffer_busy(buf, true)
   end
-  vim.schedule(function()
+  -- Defer briefly so the echo lands *after* any nvim redraw caused by a
+  -- just-closed floating prompt window. Without the defer, the echo can
+  -- get wiped by the post-close redraw and only reappear on the next
+  -- spin tick.
+  vim.defer_fn(function()
     activity_echo(title)
-  end)
+  end, 10)
   start_spin()
 end
 

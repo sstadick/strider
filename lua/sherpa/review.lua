@@ -6,11 +6,8 @@ local M = {}
 
 local git_run
 local relative_path
-local make_item
 
 local MAX_REVIEW_LINES = 40
-local MAX_PROJECT_FILE_BYTES = 256 * 1024
-local MAX_PROJECT_REVIEW_FILES = 10
 
 local function active_review()
   local session = state.get_session()
@@ -73,10 +70,6 @@ local function truncate(text, width)
   return text:sub(1, width - 1) .. "…"
 end
 
-local function collapse_whitespace(text)
-  return vim.trim((text or ""):gsub("%s+", " "))
-end
-
 local function first_meaningful_line(text)
   for _, raw in ipairs(vim.split(text or "", "\n", { plain = true })) do
     local line = vim.trim(raw)
@@ -128,18 +121,8 @@ local function excerpt_synopsis(text)
   return truncate(line)
 end
 
-local function chunk_title(kind, path, fallback_title, excerpt_text)
-  if kind == "project-file" then
-    return relative_path(path)
-  end
+local function chunk_title(path, fallback_title, excerpt_text)
   return excerpt_synopsis(excerpt_text) or fallback_title
-end
-
-local function chunk_summary(kind, fallback_summary, excerpt_text)
-  if kind == "change" then
-    return fallback_summary
-  end
-  return excerpt_synopsis(excerpt_text) or fallback_summary
 end
 
 local fence_languages = {
@@ -213,149 +196,6 @@ local function item_label(item, index, total)
   )
 end
 
-local function push_chunks(items, path, start_line, end_line, kind, title, summary)
-  local chunk_start = start_line
-  while chunk_start <= end_line do
-    local chunk_end = math.min(chunk_start + MAX_REVIEW_LINES - 1, end_line)
-    table.insert(items, make_item(path, chunk_start, chunk_end, kind, title, summary))
-    chunk_start = chunk_end + 1
-  end
-end
-
-local function file_items(path, start_line, end_line, kind, title, summary)
-  local items = {}
-  push_chunks(items, path, start_line, end_line, kind, title, summary)
-  return items
-end
-
-local function file_line_count(path)
-  local buf = vim.fn.bufnr(path)
-  if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
-    return vim.api.nvim_buf_line_count(buf)
-  end
-  local ok, lines = pcall(vim.fn.readfile, path)
-  if not ok then
-    return 0
-  end
-  return #lines
-end
-
-local function focus_tokens(text)
-  local tokens = {}
-  local seen = {}
-  for token in (text or ""):lower():gmatch("[%w_]+") do
-    if #token >= 3 and not seen[token] then
-      seen[token] = true
-      table.insert(tokens, token)
-    end
-  end
-  return tokens
-end
-
-local function wants_full_project_review(focus)
-  local text = (focus or ""):lower()
-  return text:find("every file", 1, true)
-    or text:find("all files", 1, true)
-    or text:find("entire repo", 1, true)
-    or text:find("whole repo", 1, true)
-    or text:find("entire project", 1, true)
-    or text:find("whole project", 1, true)
-end
-
-local function project_file_score(path, focus)
-  local relative = relative_path(path):lower()
-  local score = 0
-  local wants_tests = (focus or ""):lower():match("test") ~= nil
-  local wants_docs = (focus or ""):lower():match("readme") ~= nil or (focus or ""):lower():match("doc") ~= nil
-
-  if relative == "readme.md" or relative:match("/readme%.md$") then score = score + 60 end
-  if relative:match("package%.json$") or relative:match("pyproject%.toml$") or relative:match("cargo%.toml$")
-    or relative:match("go%.mod$") or relative:match("setup%.py$") then
-    score = score + 45
-  end
-  if relative:match("^plugin/") then score = score + 35 end
-  if relative:match("^lua/") or relative:match("^src/") or relative:match("^app/") or relative:match("^lib/") then
-    score = score + 20
-  end
-  if relative:match("main%.") or relative:match("index%.") or relative:match("app%.") or relative:match("init%.") then
-    score = score + 20
-  end
-  if relative:match("^test/") or relative:match("^tests/") then
-    score = score + (wants_tests and 25 or -20)
-  end
-  if relative:match("^docs/") then
-    score = score + (wants_docs and 20 or 5)
-  end
-  if relative:match("package%-lock%.json$") or relative:match("pnpm%-lock%.yaml$") or relative:match("yarn%.lock$") then
-    score = score - 25
-  end
-
-  local content = table.concat(read_lines(path, 1, math.min(file_line_count(path), 40)), "\n"):lower()
-  for _, token in ipairs(focus_tokens(focus)) do
-    if relative:find(token, 1, true) then
-      score = score + 15
-    end
-    if content:find(token, 1, true) then
-      score = score + 6
-    end
-  end
-
-  return score
-end
-
-local function project_files(focus)
-  local session = state.get_session()
-  if not session then
-    return {}
-  end
-
-  local candidates = {}
-  local tracked = git_run(session.cwd, "ls-files") or {}
-  if #tracked > 0 then
-    for _, relative in ipairs(tracked) do
-      table.insert(candidates, vim.fs.joinpath(session.cwd, relative))
-    end
-  else
-    candidates = vim.fn.globpath(session.cwd, "**/*", false, true)
-  end
-
-  local scored = {}
-  for _, path in ipairs(candidates) do
-    local stat = file_stat(path)
-    if stat and stat.type == "file" and stat.size <= MAX_PROJECT_FILE_BYTES then
-      table.insert(scored, {
-        path = path,
-        score = project_file_score(path, focus),
-      })
-    end
-  end
-
-  table.sort(scored, function(a, b)
-    if a.score == b.score then
-      return a.path < b.path
-    end
-    return a.score > b.score
-  end)
-
-  local limit = wants_full_project_review(focus) and #scored or math.min(#scored, MAX_PROJECT_REVIEW_FILES)
-  local files = {}
-  for index = 1, limit do
-    table.insert(files, scored[index].path)
-  end
-  return files
-end
-
-local function project_items(focus)
-  local items = {}
-  for _, path in ipairs(project_files(focus)) do
-    local line_count = file_line_count(path)
-    if line_count > 0 then
-      push_chunks(items, path, 1, line_count, "project-file", relative_path(path), "Project file")
-    end
-  end
-  return items
-end
-
 git_run = function(cwd, args)
   local cmd = string.format("git -C %s %s", vim.fn.shellescape(cwd), args)
   local output = vim.fn.systemlist(cmd)
@@ -374,20 +214,6 @@ local function current_item(review)
     return nil
   end
   return review.items[review.current_index]
-end
-
-make_item = function(path, start_line, end_line, kind, fallback_title, fallback_summary)
-  local item_excerpt = excerpt(path, start_line, end_line)
-  return {
-    id = string.format("%s:%d-%d", path, start_line, end_line),
-    path = path,
-    startLine = start_line,
-    endLine = end_line,
-    kind = kind,
-    title = chunk_title(kind, path, fallback_title, item_excerpt),
-    summary = chunk_summary(kind, fallback_summary, item_excerpt),
-    excerpt = item_excerpt,
-  }
 end
 
 local function comment_lines(comments)
@@ -460,16 +286,16 @@ local function panel_lines(review)
     review.goal and ("- goal: `" .. review.goal .. "`") or nil,
   }
 
-  if review.dynamic then
-    table.insert(lines, string.format("- current stop: `%s`", review.current_index > 0 and tostring(review.current_index) or "planning"))
-    table.insert(lines, string.format("- discovered stops: `%d`", #review.items))
-    if review.expecting_next_item then
-      table.insert(lines, "- state: `choosing next stop`")
-    elseif review.complete_suggested then
-      table.insert(lines, "- state: `no new stop chosen`")
-    end
+  if review.planning then
+    table.insert(lines, "- stop: `planning...`")
   else
-    table.insert(lines, string.format("- item: `%d/%d`", review.current_index or 1, #review.items))
+    table.insert(lines, string.format("- stop: `%d/%d`", review.current_index or 1, #review.items))
+  end
+  if review.scope then
+    table.insert(lines, string.format("- scope: `%s`", review.scope))
+  end
+  if review.coverage_ok == false then
+    table.insert(lines, "- coverage: `incomplete`")
   end
   table.insert(lines, "")
 
@@ -483,13 +309,16 @@ local function panel_lines(review)
     if item.summary and item.summary ~= "" then
       table.insert(lines, string.format("Synopsis: %s", item.summary))
     end
+    if item.why and item.why ~= "" and item.why ~= item.summary then
+      table.insert(lines, string.format("Why: %s", item.why))
+    end
     table.insert(lines, "")
-  elseif review.dynamic then
-    table.insert(lines, "Sherpa is choosing the next review stop based on your request.")
+  elseif review.planning then
+    table.insert(lines, "Sherpa is planning the review. The first stop will open here.")
     table.insert(lines, "")
   end
 
-  local explanation = item and item.explanation or review.overview
+  local explanation = item and item.explanation
   local explanation_title = "Explanation"
   if review.awaiting_summary then
     explanation_title = "End of review"
@@ -497,11 +326,10 @@ local function panel_lines(review)
   elseif review.summary and review.summary ~= "" then
     explanation_title = "Review summary"
     explanation = review.summary
-  elseif review.dynamic and review.complete_suggested then
-    explanation_title = "No new stop chosen"
-    explanation = review.overview or "Sherpa did not choose a new stop. Use :SherpaNext to ask for another stop or :SherpaReview <question> to redirect the review."
+  elseif review.planning then
+    explanation = "Sherpa is planning the review..."
   elseif not explanation or explanation == "" then
-    explanation = review.active and (review.dynamic and "Waiting for Sherpa to choose the next review stop..." or "Waiting for the explanation for this review item...") or "Review complete."
+    explanation = review.active and "Waiting for the explanation for this review item..." or "Review complete."
   end
   if explanation_title == "Explanation" then
     append_section(lines, explanation_title, {
@@ -530,6 +358,16 @@ local function panel_lines(review)
       table.insert(comment_lines, string.format("%d. lines %d-%d — %s", index, comment.startLine, comment.endLine, comment.text))
     end
     append_section(lines, "Comments on this item", comment_lines)
+  end
+
+  if #review.items > 1 then
+    local toc = {}
+    for index, stop in ipairs(review.items) do
+      local marker = (index == review.current_index) and "→" or " "
+      table.insert(toc, string.format("%s %d. `%s:%d-%d` %s",
+        marker, index, relative_path(stop.path), stop.startLine, stop.endLine, stop.title or ""))
+    end
+    append_section(lines, "Review plan", toc)
   end
 
   append_section(lines, "Controls", {
@@ -570,56 +408,6 @@ function M.capture_assistant_text(text, opts)
     return true
   end
 
-  if review.dynamic then
-    local candidate = review.pending_item
-    local item = current_item(review)
-    if candidate then
-      local same_item = item
-        and item.path == candidate.path
-        and item.startLine == candidate.startLine
-        and item.endLine == candidate.endLine
-      if not same_item then
-        local existing_index = nil
-        for index, existing in ipairs(review.items) do
-          if existing.path == candidate.path
-            and existing.startLine == candidate.startLine
-            and existing.endLine == candidate.endLine then
-            existing_index = index
-            break
-          end
-        end
-        if existing_index then
-          review.current_index = existing_index
-          item = review.items[existing_index]
-        else
-          table.insert(review.items, candidate)
-          review.current_index = #review.items
-          item = candidate
-        end
-      end
-      review.pending_item = nil
-      review.expecting_next_item = false
-      review.complete_suggested = false
-    end
-
-    if not item then
-      if review.expecting_next_item and not opts.partial then
-        review.expecting_next_item = false
-        review.complete_suggested = true
-        review.overview = text ~= "" and text or "Sherpa did not choose a new stop yet."
-        review.last_overview = review.overview
-        M.render()
-        return true
-      end
-      review.overview = text
-      if not opts.partial then
-        review.last_overview = text
-      end
-      M.render()
-      return true
-    end
-  end
-
   local item = current_item(review)
   if not item then
     return false
@@ -640,20 +428,6 @@ function M.current_item()
   return current_item(active_review())
 end
 
-function M.is_dynamic()
-  local review = active_review()
-  return review and review.dynamic or false
-end
-
-function M.note_read(path, start_line, end_line)
-  local review = active_review()
-  if not review or not review.dynamic or review.awaiting_summary then
-    return false
-  end
-  review.pending_item = make_item(path, start_line, end_line, "review-stop", relative_path(path), "Review stop")
-  return true
-end
-
 function M.focus_item(item)
   if not item then
     return false
@@ -664,20 +438,192 @@ function M.focus_item(item)
   return true
 end
 
-function M.build_items(scope, opts)
-  opts = opts or {}
-  if scope == "selection" then
-    local path = opts.path or current_buffer_path()
-    if not path or not opts.startLine or not opts.endLine then
-      return {}
-    end
-    return file_items(path, opts.startLine, opts.endLine, "selection", "Selection", "Selected range")
-  end
+-- Plan helpers. Each returns:
+--   { scope = "selection"|"diff", stops = { { path, startLine, endLine, title, why, kind, excerpt, id, status } } }
+-- Stops never exceed MAX_REVIEW_LINES. Coverage is validated so that the
+-- union of stop ranges equals the input range(s).
 
-  return {}
+local function make_plan_stop(path, start_line, end_line, kind, why)
+  local stop_excerpt = excerpt(path, start_line, end_line)
+  local title = chunk_title(path, kind, stop_excerpt) or relative_path(path)
+  return {
+    id = string.format("%s:%d-%d", path, start_line, end_line),
+    path = path,
+    startLine = start_line,
+    endLine = end_line,
+    kind = kind,
+    title = title,
+    why = why,
+    excerpt = stop_excerpt,
+    status = "pending",
+  }
 end
 
-function M.start_dynamic(goal)
+local function chunk_range(path, start_line, end_line, kind, why_fn)
+  local stops = {}
+  local chunk_start = start_line
+  while chunk_start <= end_line do
+    local chunk_end = math.min(chunk_start + MAX_REVIEW_LINES - 1, end_line)
+    local why = why_fn and why_fn(chunk_start, chunk_end) or nil
+    table.insert(stops, make_plan_stop(path, chunk_start, chunk_end, kind, why))
+    chunk_start = chunk_end + 1
+  end
+  return stops
+end
+
+local function ranges_cover(target_ranges, stop_ranges)
+  -- target_ranges and stop_ranges are each arrays of { path, startLine, endLine }.
+  -- Returns (ok, gaps). gaps is an array of uncovered { path, startLine, endLine } entries.
+  local covered = {}
+  for _, stop in ipairs(stop_ranges) do
+    local list = covered[stop.path] or {}
+    table.insert(list, { stop.startLine, stop.endLine })
+    covered[stop.path] = list
+  end
+
+  local gaps = {}
+  for _, target in ipairs(target_ranges) do
+    local list = covered[target.path] or {}
+    table.sort(list, function(a, b) return a[1] < b[1] end)
+    local cursor = target.startLine
+    for _, seg in ipairs(list) do
+      if seg[1] > target.endLine then break end
+      if seg[2] < cursor then
+        -- segment ends before the cursor; skip
+      else
+        if seg[1] > cursor then
+          table.insert(gaps, { path = target.path, startLine = cursor, endLine = seg[1] - 1 })
+        end
+        if seg[2] >= cursor then
+          cursor = seg[2] + 1
+        end
+      end
+    end
+    if cursor <= target.endLine then
+      table.insert(gaps, { path = target.path, startLine = cursor, endLine = target.endLine })
+    end
+  end
+  return #gaps == 0, gaps
+end
+
+function M.plan_from_range(path, start_line, end_line)
+  if not path or not start_line or not end_line or start_line > end_line then
+    return nil
+  end
+  local stops = chunk_range(path, start_line, end_line, "selection", function(s, e)
+    return string.format("Selected range %d-%d", s, e)
+  end)
+  local ok = ranges_cover({ { path = path, startLine = start_line, endLine = end_line } }, stops)
+  return {
+    scope = "selection",
+    stops = stops,
+    coverage_ok = ok,
+  }
+end
+
+local function parse_diff_hunks(diff_text)
+  -- Returns a map of path -> array of { startLine, endLine } (new-file line numbers
+  -- of added or context regions — any line that the user should see on the new side).
+  local files = {}
+  local current = nil
+  for _, line in ipairs(vim.split(diff_text or "", "\n", { plain = true })) do
+    local new_path = line:match("^%+%+%+ b/(.+)$") or line:match("^%+%+%+ (.+)$")
+    if new_path and new_path ~= "/dev/null" then
+      current = { path = new_path, hunks = {} }
+      files[new_path] = current
+    else
+      local hunk_start, hunk_len = line:match("^@@ %-%d+,?%d* %+(%d+),?(%d*)")
+      if hunk_start and current then
+        local s = tonumber(hunk_start)
+        local l = tonumber(hunk_len)
+        if l == nil or l == 0 then l = 1 end
+        table.insert(current.hunks, { s, s + l - 1 })
+      end
+    end
+  end
+  local result = {}
+  for path, entry in pairs(files) do
+    result[path] = entry.hunks
+  end
+  return result
+end
+
+function M.plan_from_diff(cwd, base)
+  if not cwd or not base or base == "" then
+    return nil
+  end
+  local diff = git_run(cwd, string.format("diff --unified=0 %s...HEAD", vim.fn.shellescape(base)))
+  if not diff then
+    return { scope = "diff", base = base, stops = {}, coverage_ok = true }
+  end
+  local diff_text = table.concat(diff, "\n")
+  local per_file = parse_diff_hunks(diff_text)
+
+  local stops = {}
+  local target_ranges = {}
+  local sorted_paths = {}
+  for path in pairs(per_file) do table.insert(sorted_paths, path) end
+  table.sort(sorted_paths)
+
+  for _, rel_path in ipairs(sorted_paths) do
+    local abs_path = vim.fs.joinpath(cwd, rel_path)
+    local hunks = per_file[rel_path]
+    table.sort(hunks, function(a, b) return a[1] < b[1] end)
+    for _, hunk in ipairs(hunks) do
+      local hs, he = hunk[1], hunk[2]
+      table.insert(target_ranges, { path = abs_path, startLine = hs, endLine = he })
+      local chunked = chunk_range(abs_path, hs, he, "diff", function(s, e)
+        return string.format("Changed lines %d-%d in %s", s, e, rel_path)
+      end)
+      for _, stop in ipairs(chunked) do
+        table.insert(stops, stop)
+      end
+    end
+  end
+
+  local ok = ranges_cover(target_ranges, stops)
+  return {
+    scope = "diff",
+    base = base,
+    stops = stops,
+    coverage_ok = ok,
+  }
+end
+
+function M._ranges_cover(target_ranges, stop_ranges)
+  return ranges_cover(target_ranges, stop_ranges)
+end
+
+local function normalize_plan_stop(cwd, raw)
+  if not raw or not raw.path or not raw.startLine or not raw.endLine then
+    return nil
+  end
+  local path = raw.path
+  if not path:match("^/") then
+    path = vim.fs.joinpath(cwd, path)
+  end
+  local start_line = tonumber(raw.startLine)
+  local end_line = tonumber(raw.endLine)
+  if not start_line or not end_line or start_line > end_line then
+    return nil
+  end
+  local stop = make_plan_stop(path, start_line, end_line, raw.kind or "planned", raw.why)
+  if raw.title and raw.title ~= "" then
+    stop.title = raw.title
+  end
+  stop.summary = stop.why
+  if raw.explanation and raw.explanation ~= "" then
+    stop.explanation = raw.explanation
+  end
+  return stop
+end
+
+-- Start a free-scope review in "planning" state. The plan itself arrives
+-- later via M.ingest_plan (driven by the sherpa_plan tool). The sidebar
+-- and status widget update immediately so the user sees activity from
+-- keystroke zero.
+function M.start_planning(focus, opts)
+  opts = opts or {}
   local session = state.get_session()
   if not session then
     ui.notify("No active Sherpa session", vim.log.levels.WARN)
@@ -690,31 +636,133 @@ function M.start_dynamic(goal)
     active = true,
     awaiting_summary = false,
     comments = {},
-    complete_suggested = false,
     current_index = 0,
-    dynamic = true,
-    expecting_next_item = false,
-    goal = goal,
+    focus = focus,
+    goal = focus,
     items = {},
-    source = "review",
+    planned = true,
+    planning = true,
+    scope = nil,
+    source = opts.source or "review",
     summary = nil,
-    title = "Sherpa review",
+    title = opts.title or "Sherpa review",
   }
+  -- Optimistically seed the status widget so the user sees "planning..."
+  -- immediately, before the pi extension's setWidget roundtrip lands.
+  state.set_widget({
+    "Sherpa operation: plan",
+    "Mode: read-only",
+    "Planning review...",
+  })
+  state.set_status("sherpa", "plan active")
+  state.set_status("sherpa-operation", "plan")
+  state.set_status("sherpa-kind", "plan")
+  ui.show_review()
   M.render()
   return true
 end
 
-function M.start(scope, opts)
+-- Ingest a plan produced by the model via the sherpa_plan tool. Replaces
+-- the current (empty, planning-state) plan with the given stops and
+-- activates the first stop. Only valid while review.planning == true.
+function M.ingest_plan(args)
+  local review = active_review()
+  if not review or not review.planning then
+    return nil
+  end
+  local session = state.get_session()
+  if not session then
+    return nil
+  end
+  args = args or {}
+
+  local stops = {}
+  for _, raw in ipairs(args.stops or {}) do
+    local stop = normalize_plan_stop(session.cwd, raw)
+    if stop then
+      table.insert(stops, stop)
+    end
+  end
+  if #stops == 0 then
+    return nil
+  end
+
+  review.scope = args.scope or "free"
+  review.base = args.base
+  review.items = stops
+  review.current_index = 1
+  review.planning = false
+  review.coverage_ok = true  -- §5 coverage validation lands in a later step
+  M.focus_item(stops[1])
+  M.render()
+  return stops[1]
+end
+
+-- Append more stops to an active free-scope review. No-op for
+-- selection/diff. The model calls this via the sherpa_append_stops tool
+-- when it discovers an additional area to visit mid-review.
+function M.ingest_append_stops(args)
+  local review = active_review()
+  if not review or not review.planned or review.planning then
+    return 0
+  end
+  if review.scope ~= "free" then
+    return 0
+  end
+  local session = state.get_session()
+  if not session then
+    return 0
+  end
+  args = args or {}
+
+  local added = 0
+  for _, raw in ipairs(args.stops or {}) do
+    local stop = normalize_plan_stop(session.cwd, raw)
+    if stop then
+      table.insert(review.items, stop)
+      added = added + 1
+    end
+  end
+  if added > 0 then
+    M.render()
+  end
+  return added
+end
+
+function M.is_planning()
+  local review = active_review()
+  return review ~= nil and review.planning == true
+end
+
+-- Entry point for reviews whose plan is constructed deterministically on
+-- the Lua side (selection, and eventually diff). Items come from
+-- plan_from_* helpers and carry the `why` field.
+function M.start_planned(scope, opts)
   opts = opts or {}
   local session = state.get_session()
   if not session then
     ui.notify("No active Sherpa session", vim.log.levels.WARN)
     return nil
   end
-  local items = M.build_items(scope, opts)
-  if #items == 0 then
-    ui.notify("No review items found for scope: " .. scope, vim.log.levels.WARN)
+
+  local plan
+  if scope == "selection" then
+    local path = opts.path or current_buffer_path()
+    if not path or not opts.startLine or not opts.endLine then
+      return nil
+    end
+    plan = M.plan_from_range(path, opts.startLine, opts.endLine)
+  end
+
+  if not plan or #plan.stops == 0 then
     return nil
+  end
+
+  -- `summary` is the presentation alias for `why` that panel_lines shows
+  -- as "Synopsis:". Plan-from-range helpers set `why`; mirror it here so
+  -- the sidebar renders a non-empty synopsis for selection stops.
+  for _, stop in ipairs(plan.stops) do
+    stop.summary = stop.why
   end
 
   ui.clear_comment_markers()
@@ -723,18 +771,22 @@ function M.start(scope, opts)
   session.review = {
     active = true,
     awaiting_summary = false,
-    base = opts.resolved_base,
+    base = opts.resolved_base or plan.base,
     comments = {},
+    coverage_ok = plan.coverage_ok,
     current_index = 1,
     focus = opts.focus,
-    items = items,
+    goal = opts.focus,
+    items = plan.stops,
+    planned = true,
+    scope = plan.scope,
     source = source,
     summary = nil,
     title = opts.title or ("Sherpa review: " .. source),
   }
   ui.show_review()
-  M.focus_item(items[1])
-  return items[1]
+  M.focus_item(plan.stops[1])
+  return plan.stops[1]
 end
 
 function M.build_prompt(focus)
@@ -748,14 +800,12 @@ function M.build_prompt(focus)
   local lines = {
     review.goal and ("Review goal: " .. review.goal) or nil,
     string.format("Review source: %s", review.source),
-    string.format("Review item: %d of %d", review.current_index, #review.items),
+    string.format("Review stop: %d of %d", review.current_index, #review.items),
     string.format("File: %s", item.path),
     string.format("Lines: %d-%d", item.startLine, item.endLine),
     item.title and ("Title: " .. item.title) or nil,
-    item.summary and ("Summary: " .. item.summary) or nil,
-    "Stay focused on this item.",
-    "Across the overall review, follow the most sensible order for understanding the user's question rather than discovery order.",
-    "Unless the user explicitly asks for a file-by-file audit, focus on the files and chunks most relevant to understanding the project.",
+    item.why and ("Why this stop: " .. item.why) or nil,
+    "Stay focused on this stop.",
     "Keep the explanation compact and low-chrome.",
     "Avoid generic sections like 'Requirements' or 'Overview' unless the user explicitly asks for them.",
     "You may inspect nearby code if needed, but keep the explanation centered on this range.",
@@ -767,48 +817,6 @@ function M.build_prompt(focus)
   end, lines), "\n")
 end
 
-function M.next_prompt()
-  local review = active_review()
-  local item = current_item(review)
-  if not review or not review.dynamic then
-    return nil
-  end
-  if not item then
-    return review.goal
-  end
-
-  local lines = {
-    "Continue the review by choosing the next most useful file or small code section for understanding the review goal.",
-    review.goal and ("Review goal: " .. review.goal) or nil,
-    string.format("Current stop file: %s", item.path),
-    string.format("Current stop lines: %d-%d", item.startLine, item.endLine),
-    item.summary and ("Current stop summary: " .. item.summary) or nil,
-    item.explanation and ("Current stop explanation: " .. collapse_whitespace(item.explanation)) or nil,
-    "If the review is already complete, say so clearly instead of opening another stop.",
-    "Otherwise, inspect one new small section and explain why it matters next.",
-  }
-  return table.concat(vim.tbl_filter(function(line)
-    return line ~= nil and line ~= ""
-  end, lines), "\n")
-end
-
-function M.prepare_next_dynamic()
-  local review = active_review()
-  if not review or not review.dynamic then
-    return false
-  end
-  local item = current_item(review)
-  if item and item.status == nil then
-    item.status = "reviewed"
-  end
-  review.complete_suggested = false
-  review.overview = nil
-  review.pending_item = nil
-  review.expecting_next_item = true
-  M.render()
-  return true
-end
-
 function M.advance(direction)
   local review = active_review()
   if not review then
@@ -817,7 +825,7 @@ function M.advance(direction)
 
   local next_index = (review.current_index or 0) + direction
   if next_index < 1 or next_index > #review.items then
-    return nil, next_index > #review.items and not review.dynamic
+    return nil, next_index > #review.items
   end
 
   local previous = current_item(review)
@@ -869,11 +877,6 @@ function M.pending_comment_lines()
     return nil
   end
   return review.pending_comments
-end
-
-function M.has_unresolved_comments()
-  local review = active_review()
-  return review ~= nil and #unresolved_comments(review) > 0
 end
 
 function M.add_comment(text, range)

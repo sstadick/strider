@@ -31,5 +31,5 @@ The product should feel like disciplined pair programming:
 - `:SherpaNext` accepts the current chunk or stop and advances linearly.
 - Accepted chunks and tour stops should be recorded in pi's built-in history for future restoration work.
 - Code chunks may mutate exactly one file.
-- Teach mode is read-only and should keep each stop to one file and one small section.
+- Review mode is read-only and should keep each stop to one file and one small section.
 - The agent should stop after each bounded chunk or stop and wait for user input.

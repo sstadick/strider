@@ -49,29 +49,38 @@ If only one match exists and no picker is available, Sherpa still highlights tha
 
 ### Review
 
-- `:SherpaReview [scope] [prompt]` — start review or ask about the active review item
-- `:SherpaNext` — move to the next review item
-- `:SherpaPrev` — move to the previous review item
-- `:SherpaReviewItems` — open the current review item list
+- `:SherpaReview {prompt}` — start a review (plain prose describing what you want reviewed)
+- `:'<,'>SherpaReview {prompt}` — start a review scoped to a visual selection (every line covered)
+- `:SherpaReview {question}` — with an active review, ask a question about the current stop
+- `:SherpaNext` — move to the next review stop
+- `:SherpaPrev` — move to the previous review stop
+- `:SherpaReviewItems` — pick any stop from the plan
 - `:SherpaLog` — reopen the transcript / agent buffer
 
-Review scopes:
-- `file` — review the current file
-- `diff` — review git diff hunks
-- `last` — review the latest useful result set, diff, or file fallback
-- `searches` — review the latest Sherpa search result set
-- visual selection — use `:'<,'>SherpaReview {question}` on a range instead of a named scope
+How a review works:
 
-Rules of thumb:
-- `:SherpaReview` with no args opens the review popup. With no active review, the first word picks the scope (`file | diff | last | searches | branch <ref>`); with an active review, the popup asks a question about the current item.
-- `:SherpaReview diff` starts diff review
-- `:SherpaReview searches` reviews the latest search results
-- `:SherpaReview why does this matter?` asks about the current active review item
-- `:SherpaLog` brings the transcript buffer back when the review pane is the primary surface
+1. You give Sherpa a prompt. If you mention a diff, PR, or branch changes,
+   the model will plan a diff review; if you gave it a visual selection, it
+   plans a selection review; otherwise it's a free-form review.
+2. The model produces a full plan up front — an ordered list of stops,
+   each with a file range, a title, a `why`, and a pre-written 2-4
+   sentence explanation. The plan lands via the `sherpa_plan` tool and
+   shows up in the review pane as a TOC.
+3. `:SherpaNext` / `:SherpaPrev` walk the fixed plan. Navigation is
+   instant — explanations were written at plan time, so no per-stop
+   model call.
+4. For selection and diff reviews, every line in the range / every changed
+   line is guaranteed to appear in some stop. Free-form reviews let the
+   model pick what matters.
+5. `:SherpaReview <question>` with an active review sends a fresh model
+   turn scoped to the current stop — that's the only in-review path that
+   round-trips the model.
+6. Model may append new stops mid-review on free-form plans (via
+   `sherpa_append_stops`) if it spots something additional worth visiting.
 
-Review is read-only.
-Comments are local to Sherpa for now and are fed back to the agent when review ends.
-They are shaped to leave room for future GitHub PR review integration, but Sherpa does not submit or sync them yet.
+Review is read-only. Comments are local to Sherpa for now and are fed back
+to the agent when review ends. They're shaped to leave room for future
+GitHub PR review integration, but Sherpa doesn't submit or sync them yet.
 
 ### Comments
 
@@ -98,31 +107,30 @@ They are shaped to leave room for future GitHub PR review integration, but Sherp
 :SherpaSearch show me all websocket entrypoints
 ```
 
-### Review a file
+### Review something in the project
 
 ```vim
-:SherpaReview file
+:SherpaReview walk me through the authentication flow
 :SherpaNext
 :SherpaPrev
 ```
 
-### Review a diff
+### Review a diff vs main
 
 ```vim
-:SherpaReview diff
+:SherpaReview walk me through the changes on this branch vs main
 ```
 
-### Review search results
+### Review a selection
 
 ```vim
-:SherpaSearch where is auth handled?
-:SherpaReview searches
+:'<,'>SherpaReview explain what this block does
 ```
 
-### Ask about a selected range during review
+### Ask a question about the current stop
 
 ```vim
-:'<,'>SherpaReview why does this block matter?
+:SherpaReview why does this block matter?
 ```
 
 ### Leave a range comment during review
@@ -147,7 +155,7 @@ Or open a multiline comment editor:
 
 ```vim
 :SherpaWork add loading states to the lobby flow
-:SherpaReview diff
+:SherpaReview walk through the diff on this branch
 :'<,'>SherpaComment this branch needs a clearer empty state
 :SherpaNext
 ```
@@ -181,13 +189,13 @@ See `tests/README.md` for details.
 
 ## Notes
 
-- Sherpa uses pi's built-in session history and labels accepted chunks or stops as checkpoints.
-- Assistant output is written to a scratch log buffer.
-- File jumps currently follow `read`, `edit`, and `write` tool calls.
-- `:SherpaReview` is the main walkthrough/review surface.
+- Sherpa uses pi's built-in session history and labels accepted stops as checkpoints.
+- Assistant output is written to a scratch log buffer; during review the `sherpa://review` pane is the primary surface.
+- Outside of review, file jumps follow `read`, `edit`, and `write` tool calls. During review, the buffer stays on the active planned stop — the model's tool calls don't yank the cursor away.
+- `:SherpaReview` is the main walkthrough surface. Reviews are pre-planned: the model produces a full stop list via the `sherpa_plan` tool before walkthrough begins, so `:SherpaNext` advances through a fixed plan.
+- Selection and diff reviews guarantee every line is visited; free-form reviews let the model pick what matters.
 - `:SherpaSearch` is read-only and returns structured locations into quickfix plus picker-backed selection.
-- `:SherpaReview diff|file|last|searches` creates explicit review sessions with range highlighting and a dedicated review pane.
-- While waiting on long-running agent responses, Sherpa marks its review/log buffers busy and emits built-in Neovim progress messages.
+- While waiting on long-running agent responses, Sherpa marks its review/log buffers busy and emits Neovim progress messages.
 - `:'<,'>SherpaComment` comments on a visual selection inside the active review, and `:SherpaComment` can open a multiline editor.
 - `:SherpaPatch` is selection-first and intended for small local edits.
 - Code restoration is not implemented yet; checkpoints are history anchors for now, not workspace restores.

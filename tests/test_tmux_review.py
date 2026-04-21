@@ -99,32 +99,39 @@ class TmuxReviewTests(unittest.TestCase):
             summary = h.lua("require('sherpa.state').get_session().review.items[1].summary")
             self.assertNotEqual("", summary)
 
-    def test_top_level_review_starts_model_led_project_review(self) -> None:
+    def test_top_level_review_starts_planned_project_review(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("SherpaReview Explain what this repo is about")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
-            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 1)
+            # plan arrives from the fake pi's sherpa_plan tool emission
+            h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
+            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2, timeout=8.0)
 
             item_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
-            self.assertEqual(1, item_count)
+            self.assertGreaterEqual(item_count, 2)
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
             self.assertIn("- source: `review`", review_text)
             self.assertNotIn("sherpa://log", review_text)
 
-    def test_model_led_review_accumulates_items_over_time(self) -> None:
+    def test_planned_review_next_advances_through_fixed_plan(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("SherpaReview Explain what this repo is about")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
-            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 1)
+            h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
+            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2, timeout=8.0)
 
             first_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
-            self.assertEqual(1, first_count)
+            first_index = int(h.lua("require('sherpa.state').get_session().review.current_index"))
+            self.assertGreaterEqual(first_count, 2)
+            self.assertEqual(1, first_index)
 
             h.ex("SherpaNext")
-            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2)
+            h.wait_until(lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) >= 2, timeout=5.0)
+
+            # plan length is fixed — advancing doesn't grow the list
             second_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
-            self.assertGreaterEqual(second_count, 2)
+            self.assertEqual(first_count, second_count)
 
     def test_file_review_keeps_focus_on_named_file_when_log_opens_on_start(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:

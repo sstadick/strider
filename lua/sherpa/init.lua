@@ -23,15 +23,16 @@ end
 local function activity_title(operation)
   local titles = {
     patch = "Sherpa patch running...",
+    plan = "Sherpa planning review...",
+    review = "Sherpa review running...",
     search = "Sherpa search running...",
-    teach = "Sherpa review running...",
     work = "Sherpa work running...",
   }
   return titles[operation] or "Sherpa running..."
 end
 
 local function activity_target(operation)
-  if operation == "teach" and review.has_active_review() then
+  if (operation == "review" or operation == "plan") and review.has_active_review() then
     return "review"
   end
   return "log"
@@ -102,29 +103,30 @@ local function read_excerpt(path, start_line, end_line)
 end
 
 local function send_review_prompt(prompt, label)
-  return send("/teach " .. prompt, label, {
-    operation = "teach",
+  return send("/review " .. prompt, label, {
+    operation = "review",
     debug_prompt = prompt,
   })
 end
 
-local function start_review(scope, opts)
+local function start_selection_review(opts)
   if not ensure_backend() then
     return false
   end
-  local item = review.start(scope, opts)
+  local item = review.start_planned("selection", opts)
   if not item then
+    ui.notify("No review items found for the selected range", vim.log.levels.WARN)
     return false
   end
   local prompt = review.build_prompt(opts and opts.focus)
   if not prompt then
     return false
   end
-  local label = opts and opts.focus ~= "" and opts.focus or ("Review " .. scope)
+  local label = opts and opts.focus ~= "" and opts.focus or "Review selection"
   return send_review_prompt(prompt, label)
 end
 
-local function start_dynamic_review(focus)
+local function start_free_review(focus)
   local text = trimmed(focus)
   if text == "" then
     ui.notify("SherpaReview requires input", vim.log.levels.WARN)
@@ -133,10 +135,57 @@ local function start_dynamic_review(focus)
   if not ensure_backend() then
     return false
   end
-  if not review.start_dynamic(text) then
+  if not review.start_planning(text) then
     return false
   end
-  return send_review_prompt(text, text)
+  return send("/plan " .. text, text, {
+    operation = "plan",
+    debug_prompt = text,
+  })
+end
+
+-- Called from rpc.lua after a /plan turn finishes and a plan has been
+-- ingested. Dispatches the first /review for stop 1 so the model's next
+-- turn explains the first stop instead of idling.
+-- Called from rpc.lua once a plan has been ingested. With pre-computed
+-- explanations (smwyg-browser style), focusing stop 1 is sufficient —
+-- the explanation is already in `items[1].explanation` and the sidebar
+-- renders it. No second model round-trip needed.
+function M.dispatch_first_review()
+  if not review.has_active_review() then
+    return false
+  end
+  if review.is_planning() then
+    return false
+  end
+  -- `ingest_plan` already called focus_item for stop 1 and rendered the
+  -- sidebar. Nothing else to do here — this hook exists so rpc.lua can
+  -- still signal "plan turn complete" without hard-coding navigation.
+  return true
+end
+
+-- Re-dispatch the plan turn if it stalled. Only useful while planning;
+-- once a plan has landed, explanations are already pre-computed so
+-- there is nothing to retry mid-review.
+function M.retry()
+  if not review.has_active_review() then
+    ui.notify("No active Sherpa review to retry", vim.log.levels.WARN)
+    return false
+  end
+  if review.is_planning() then
+    local session = state.get_session()
+    local goal = session and session.review and session.review.goal
+    if not goal or goal == "" then
+      ui.notify("Cannot retry plan: review goal is missing", vim.log.levels.WARN)
+      return false
+    end
+    return send("/plan " .. goal, goal, {
+      operation = "plan",
+      debug_prompt = goal,
+    })
+  end
+  ui.notify("Nothing to retry — explanations are pre-computed.", vim.log.levels.INFO)
+  return false
 end
 
 function M.setup(opts)
@@ -210,7 +259,7 @@ function M.review(args, opts)
     if empty_args then
       ui.open_prompt_editor("Sherpa review context", function(input)
         local focus_text = trimmed(input)
-        start_review("selection", {
+        start_selection_review({
           endLine = range.endLine,
           focus = focus_text,
           path = range.path,
@@ -222,7 +271,7 @@ function M.review(args, opts)
       return
     end
 
-    start_review("selection", {
+    start_selection_review({
       endLine = range.endLine,
       focus = text,
       path = range.path,
@@ -233,14 +282,14 @@ function M.review(args, opts)
 
   if empty_args then
     ui.open_prompt_editor("Sherpa review context", function(input)
-      start_dynamic_review(trimmed(input))
+      start_free_review(trimmed(input))
     end, {
       "Describe what you want reviewed.",
     })
     return
   end
 
-  start_dynamic_review(text)
+  start_free_review(text)
 end
 
 local function dispatch_patch(prompt, range)
@@ -293,53 +342,31 @@ function M.patch(prompt, opts)
 end
 
 function M.next_step()
-  if review.has_active_review() then
-    local item, finished = review.advance(1)
-    if item then
-      if not review.is_dynamic() then
-        send_review_prompt(review.build_prompt(), "Next review item")
-      end
-      return
-    end
-    if review.is_dynamic() then
-      if review.has_unresolved_comments() then
-        local prompt = review.finish()
-        ui.open_log()
-        local comment_lines = review.pending_comment_lines()
-        if comment_lines then
-          ui.append_block("review-comments", table.concat(comment_lines, "\n"))
-        end
-        if prompt then
-          send_review_prompt(prompt, "Summarize unresolved review comments")
-        else
-          ui.notify("Sherpa review complete", vim.log.levels.INFO)
-        end
-        return
-      end
-      local prompt = review.next_prompt()
-      if prompt then
-        review.prepare_next_dynamic()
-        send_review_prompt(prompt, "Next review item")
-        return
-      end
-    end
-    if finished then
-      local prompt = review.finish()
-      ui.open_log()
-      local comment_lines = review.pending_comment_lines()
-      if comment_lines then
-        ui.append_block("review-comments", table.concat(comment_lines, "\n"))
-      end
-      if prompt then
-        send_review_prompt(prompt, "Summarize unresolved review comments")
-      else
-        ui.notify("Sherpa review complete", vim.log.levels.INFO)
-      end
-      return
-    end
+  if not review.has_active_review() then
+    ui.notify("No active Sherpa review session", vim.log.levels.WARN)
+    return
   end
 
-  ui.notify("No active Sherpa review session", vim.log.levels.WARN)
+  -- Explanations are pre-computed at plan time. Navigation is a pure
+  -- index++ that focuses the next stop; no model round-trip.
+  local item, finished = review.advance(1)
+  if item then
+    return
+  end
+
+  if finished then
+    local prompt = review.finish()
+    ui.open_log()
+    local comment_lines = review.pending_comment_lines()
+    if comment_lines then
+      ui.append_block("review-comments", table.concat(comment_lines, "\n"))
+    end
+    if prompt then
+      send_review_prompt(prompt, "Summarize unresolved review comments")
+    else
+      ui.notify("Sherpa review complete", vim.log.levels.INFO)
+    end
+  end
 end
 
 function M.prev_step()
@@ -351,9 +378,6 @@ function M.prev_step()
   if not item then
     ui.notify("Already at the first review item", vim.log.levels.WARN)
     return
-  end
-  if not review.is_dynamic() then
-    send_review_prompt(review.build_prompt(), "Previous review item")
   end
 end
 

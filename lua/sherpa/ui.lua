@@ -47,17 +47,8 @@ local spin_labels = {
 local spin_index = 0
 local spin_timer = nil
 
-local function progress_echo(message, status, id)
-  local opts = {
-    kind = "progress",
-    status = status or "running",
-    title = "sherpa",
-    source = "sherpa",
-  }
-  if id then
-    opts.id = id
-  end
-  return pcall(vim.api.nvim_echo, { { message } }, true, opts)
+local function activity_echo(message)
+  return pcall(vim.api.nvim_echo, { { "sherpa: " .. message } }, false, {})
 end
 
 local function stop_spin()
@@ -78,11 +69,9 @@ local function spin_tick()
   spin_index = (spin_index % #labels) + 1
   local label = labels[spin_index]
   local message = string.format("%s · %s", progress.title, label)
-  if progress.id then
-    local ok = progress_echo(message, "running", progress.id)
-    if ok then
-      return
-    end
+  local ok = activity_echo(message)
+  if ok then
+    return
   end
   M.append({ "[sherpa] " .. label })
 end
@@ -172,18 +161,26 @@ function M.show_log()
   M.open_log()
 end
 
-function M.open_log()
+function M.open_log(opts)
+  opts = opts or {}
+  local previous = opts.preserve_focus and (target_window() or vim.api.nvim_get_current_win()) or nil
   local buf = M.ensure_log_buffer()
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_set_current_win(win)
+      if not opts.preserve_focus then
+        vim.api.nvim_set_current_win(win)
+      end
       scroll_log_windows(buf)
       return
     end
   end
   vim.cmd("botright split")
-  vim.api.nvim_win_set_buf(0, buf)
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, buf)
   scroll_log_windows(buf)
+  if previous and vim.api.nvim_win_is_valid(previous) then
+    vim.api.nvim_set_current_win(previous)
+  end
 end
 
 function M.hide_log()
@@ -287,10 +284,7 @@ function M.start_activity(title, target, operation)
   for _, buf in ipairs(progress_buffers(session.progress.target)) do
     set_buffer_busy(buf, true)
   end
-  local ok, id = progress_echo(title, "running")
-  if ok then
-    session.progress.id = id
-  end
+  activity_echo(title)
   start_spin()
 end
 
@@ -303,9 +297,7 @@ function M.finish_activity(message, status)
   for _, buf in ipairs(progress_buffers(progress.target)) do
     set_buffer_busy(buf, false)
   end
-  if progress.id then
-    progress_echo(message or progress.title, status or "success", progress.id)
-  end
+  activity_echo(message or progress.title)
   session.progress = nil
   stop_spin()
 end

@@ -420,7 +420,7 @@ function M.start(cwd)
 
   session.job_id = job_id
   if state.get_config().open_log_on_start then
-    ui.open_log()
+    ui.open_log({ preserve_focus = true })
   end
   ui.append({ "[sherpa] backend started", "" })
   return true

@@ -5,7 +5,12 @@ local ui = require("sherpa.ui")
 
 local M = {}
 
+local git_run
+local relative_path
+
 local MAX_REVIEW_LINES = 40
+local MAX_PROJECT_FILE_BYTES = 256 * 1024
+local MAX_PROJECT_REVIEW_FILES = 10
 
 local function active_review()
   local session = state.get_session()
@@ -26,6 +31,21 @@ local function current_buffer_path()
   return path
 end
 
+local function file_stat(path)
+  if not path or path == "" then
+    return nil
+  end
+  return vim.uv.fs_stat(path)
+end
+
+local function is_reviewable_file(path)
+  if not path or path == "" or path:match("^%a+://") then
+    return false
+  end
+  local stat = file_stat(path)
+  return stat ~= nil and stat.type == "file"
+end
+
 local function read_lines(path, start_line, end_line)
   local buf = vim.fn.bufnr(path)
   if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
@@ -43,6 +63,79 @@ local function excerpt(path, start_line, end_line)
   local final_line = math.min(end_line, start_line + 12)
   local lines = read_lines(path, start_line, final_line)
   return table.concat(lines, "\n")
+end
+
+local function truncate(text, width)
+  width = width or 72
+  if #text <= width then
+    return text
+  end
+  return text:sub(1, width - 1) .. "…"
+end
+
+local function first_meaningful_line(text)
+  for _, raw in ipairs(vim.split(text or "", "\n", { plain = true })) do
+    local line = vim.trim(raw)
+    if line ~= ""
+      and not line:match("^#")
+      and not line:match("^//")
+      and not line:match("^%-%-")
+      and not line:match("^/%*")
+      and not line:match("^%*")
+      and line ~= "{" and line ~= "}" and line ~= "end" then
+      return line
+    end
+  end
+  return nil
+end
+
+local function excerpt_synopsis(text)
+  local line = first_meaningful_line(text)
+  if not line then
+    return nil
+  end
+
+  if line:match("^import%s") or line:match("^from%s") or line:match("^require%(") or line:match("^use%s") then
+    return "Imports and setup"
+  end
+
+  for _, pattern in ipairs({
+    "^local%s+function%s+([%w_]+)",
+    "^function%s+([%w_%.:]+)",
+    "^export%s+function%s+([%w_]+)",
+    "^async%s+function%s+([%w_]+)",
+    "^def%s+([%w_]+)",
+    "^class%s+([%w_]+)",
+    "^interface%s+([%w_]+)",
+    "^type%s+([%w_]+)",
+    "^const%s+([%w_]+)%s*=",
+    "^let%s+([%w_]+)%s*=",
+    "^var%s+([%w_]+)%s*=",
+    "^fn%s+([%w_]+)",
+    "^struct%s+([%w_]+)",
+    "^enum%s+([%w_]+)",
+  }) do
+    local name = line:match(pattern)
+    if name then
+      return "Defines " .. name
+    end
+  end
+
+  return truncate(line)
+end
+
+local function chunk_title(kind, path, fallback_title, excerpt_text)
+  if kind == "project-file" then
+    return relative_path(path)
+  end
+  return excerpt_synopsis(excerpt_text) or fallback_title
+end
+
+local function chunk_summary(kind, fallback_summary, excerpt_text)
+  if kind == "change" then
+    return fallback_summary
+  end
+  return excerpt_synopsis(excerpt_text) or fallback_summary
 end
 
 local fence_languages = {
@@ -120,15 +213,16 @@ local function push_chunks(items, path, start_line, end_line, kind, title, summa
   local chunk_start = start_line
   while chunk_start <= end_line do
     local chunk_end = math.min(chunk_start + MAX_REVIEW_LINES - 1, end_line)
+    local chunk_excerpt = excerpt(path, chunk_start, chunk_end)
     table.insert(items, {
       id = string.format("%s:%d-%d", path, chunk_start, chunk_end),
       path = path,
       startLine = chunk_start,
       endLine = chunk_end,
       kind = kind,
-      title = title,
-      summary = summary,
-      excerpt = excerpt(path, chunk_start, chunk_end),
+      title = chunk_title(kind, path, title, chunk_excerpt),
+      summary = chunk_summary(kind, summary, chunk_excerpt),
+      excerpt = chunk_excerpt,
     })
     chunk_start = chunk_end + 1
   end
@@ -137,6 +231,134 @@ end
 local function file_items(path, start_line, end_line, kind, title, summary)
   local items = {}
   push_chunks(items, path, start_line, end_line, kind, title, summary)
+  return items
+end
+
+local function file_line_count(path)
+  local buf = vim.fn.bufnr(path)
+  if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
+    return vim.api.nvim_buf_line_count(buf)
+  end
+  local ok, lines = pcall(vim.fn.readfile, path)
+  if not ok then
+    return 0
+  end
+  return #lines
+end
+
+local function focus_tokens(text)
+  local tokens = {}
+  local seen = {}
+  for token in (text or ""):lower():gmatch("[%w_]+") do
+    if #token >= 3 and not seen[token] then
+      seen[token] = true
+      table.insert(tokens, token)
+    end
+  end
+  return tokens
+end
+
+local function wants_full_project_review(focus)
+  local text = (focus or ""):lower()
+  return text:find("every file", 1, true)
+    or text:find("all files", 1, true)
+    or text:find("entire repo", 1, true)
+    or text:find("whole repo", 1, true)
+    or text:find("entire project", 1, true)
+    or text:find("whole project", 1, true)
+end
+
+local function project_file_score(path, focus)
+  local relative = relative_path(path):lower()
+  local score = 0
+  local wants_tests = (focus or ""):lower():match("test") ~= nil
+  local wants_docs = (focus or ""):lower():match("readme") ~= nil or (focus or ""):lower():match("doc") ~= nil
+
+  if relative == "readme.md" or relative:match("/readme%.md$") then score = score + 60 end
+  if relative:match("package%.json$") or relative:match("pyproject%.toml$") or relative:match("cargo%.toml$")
+    or relative:match("go%.mod$") or relative:match("setup%.py$") then
+    score = score + 45
+  end
+  if relative:match("^plugin/") then score = score + 35 end
+  if relative:match("^lua/") or relative:match("^src/") or relative:match("^app/") or relative:match("^lib/") then
+    score = score + 20
+  end
+  if relative:match("main%.") or relative:match("index%.") or relative:match("app%.") or relative:match("init%.") then
+    score = score + 20
+  end
+  if relative:match("^test/") or relative:match("^tests/") then
+    score = score + (wants_tests and 25 or -20)
+  end
+  if relative:match("^docs/") then
+    score = score + (wants_docs and 20 or 5)
+  end
+  if relative:match("package%-lock%.json$") or relative:match("pnpm%-lock%.yaml$") or relative:match("yarn%.lock$") then
+    score = score - 25
+  end
+
+  local content = table.concat(read_lines(path, 1, math.min(file_line_count(path), 40)), "\n"):lower()
+  for _, token in ipairs(focus_tokens(focus)) do
+    if relative:find(token, 1, true) then
+      score = score + 15
+    end
+    if content:find(token, 1, true) then
+      score = score + 6
+    end
+  end
+
+  return score
+end
+
+local function project_files(focus)
+  local session = state.get_session()
+  if not session then
+    return {}
+  end
+
+  local candidates = {}
+  local tracked = git_run(session.cwd, "ls-files") or {}
+  if #tracked > 0 then
+    for _, relative in ipairs(tracked) do
+      table.insert(candidates, vim.fs.joinpath(session.cwd, relative))
+    end
+  else
+    candidates = vim.fn.globpath(session.cwd, "**/*", false, true)
+  end
+
+  local scored = {}
+  for _, path in ipairs(candidates) do
+    local stat = file_stat(path)
+    if stat and stat.type == "file" and stat.size <= MAX_PROJECT_FILE_BYTES then
+      table.insert(scored, {
+        path = path,
+        score = project_file_score(path, focus),
+      })
+    end
+  end
+
+  table.sort(scored, function(a, b)
+    if a.score == b.score then
+      return a.path < b.path
+    end
+    return a.score > b.score
+  end)
+
+  local limit = wants_full_project_review(focus) and #scored or math.min(#scored, MAX_PROJECT_REVIEW_FILES)
+  local files = {}
+  for index = 1, limit do
+    table.insert(files, scored[index].path)
+  end
+  return files
+end
+
+local function project_items(focus)
+  local items = {}
+  for _, path in ipairs(project_files(focus)) do
+    local line_count = file_line_count(path)
+    if line_count > 0 then
+      push_chunks(items, path, 1, line_count, "project-file", relative_path(path), "Project file")
+    end
+  end
   return items
 end
 
@@ -169,7 +391,7 @@ local function parse_hunk(line)
   return start_line, start_line + count - 1
 end
 
-local function git_run(cwd, args)
+git_run = function(cwd, args)
   local cmd = string.format("git -C %s %s", vim.fn.shellescape(cwd), args)
   local output = vim.fn.systemlist(cmd)
   if vim.v.shell_error ~= 0 then
@@ -320,7 +542,7 @@ local function review_state()
   return session and session.review or nil
 end
 
-local function relative_path(path)
+relative_path = function(path)
   local session = state.get_session()
   local cwd = session and session.cwd or nil
   if cwd and vim.startswith(path, cwd .. "/") then
@@ -490,11 +712,17 @@ function M.build_items(scope, opts)
 
   if scope == "file" then
     local path = opts.path or current_buffer_path()
-    if not path then
-      return {}
+    if not is_reviewable_file(path) then
+      opts.resolved_source = "project"
+      return project_items(opts.focus)
     end
-    local line_count = vim.api.nvim_buf_line_count(0)
+    local line_count = file_line_count(path)
     return file_items(path, 1, line_count, "tour-stop", "File walkthrough", "Current file")
+  end
+
+  if scope == "project" then
+    opts.resolved_source = "project"
+    return project_items(opts.focus)
   end
 
   if scope == "diff" then
@@ -543,7 +771,7 @@ function M.start(scope, opts)
 
   ui.clear_comment_markers()
   ui.hide_log()
-  local source = scope
+  local source = opts.resolved_source or scope
   if scope == "branch" and opts.resolved_base then
     source = "branch (" .. opts.resolved_base .. ")"
   end
@@ -580,6 +808,8 @@ function M.build_prompt(focus)
     item.title and ("Title: " .. item.title) or nil,
     item.summary and ("Summary: " .. item.summary) or nil,
     "Stay focused on this item.",
+    "Across the overall review, follow the most sensible order for understanding the user's question rather than discovery order.",
+    "Unless the user explicitly asks for a file-by-file audit, focus on the files and chunks most relevant to understanding the project.",
     "You may inspect nearby code if needed, but keep the explanation centered on this range.",
     item.excerpt and "<REVIEW_EXCERPT>\n" .. item.excerpt .. "\n</REVIEW_EXCERPT>" or nil,
     "User focus: " .. user_focus,

@@ -188,6 +188,56 @@ class TmuxReviewTests(unittest.TestCase):
                 second_review = "\n".join(h.buffer_lines("sherpa://review"))
                 self.assertIn("`long_review.py:41-80`", second_review)
 
+    def test_review_items_include_chunk_synopsis(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.ex("edit src/main.tsx")
+            h.ex("SherpaReview file")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+
+            summary = h.lua("require('sherpa.state').get_session().review.items[1].summary")
+            self.assertNotEqual("Current file", summary)
+            self.assertNotEqual("", summary)
+
+    def test_top_level_review_with_focus_text_expands_to_project_review(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.ex("SherpaReview Explain what this repo is about")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+
+            item_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
+            self.assertGreater(item_count, 1)
+
+            review_text = "\n".join(h.buffer_lines("sherpa://review"))
+            self.assertIn("- source: `project`", review_text)
+            self.assertNotIn("sherpa://log", review_text)
+
+    def test_project_review_defaults_to_relevant_subset_unless_user_asks_for_all_files(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            for index in range(12):
+                extra = project_root / f"notes_{index}.txt"
+                extra.write_text(f"scratch note {index}\n", encoding="utf-8")
+
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaReview Explain what this repo is about")
+                h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+                default_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
+
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaReview Explain every file in this repo")
+                h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+                full_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
+
+            self.assertLess(default_count, full_count)
+
+    def test_file_review_keeps_focus_on_current_file_when_log_opens_on_start(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.lua("(function() require('sherpa').setup({ open_log_on_start = true }); return true end)()")
+            h.ex("edit src/main.tsx")
+            h.ex("SherpaReview file")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+
+            item_path = h.lua("require('sherpa.state').get_session().review.items[1].path")
+            self.assertTrue(item_path.endswith("src/main.tsx"), item_path)
+
 
 if __name__ == "__main__":
     unittest.main()

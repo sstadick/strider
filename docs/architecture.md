@@ -47,7 +47,9 @@ Owns:
 - the `sherpa_clarify` tool used during `prompt` and `patch` for
   mid-turn questions, plan proposals, and yes/no confirmations
 - read-only guardrails for plan / review / search
-- widget/status updates for Neovim
+- widget/status updates for Neovim (model, context usage, running cost)
+- `/models` and `/tree` commands that drive fuzzy pickers via
+  `ctx.ui.select` to switch models or jump through the session tree
 
 ## Core flows
 
@@ -195,16 +197,29 @@ text is treated as a question about the current review item.
   - jump to files
   - highlight read/edit/write ranges
 - `extension_ui_request`
-  - `notify` / `setStatus` / `setWidget` — fire-and-forget UI updates
+  - `notify` / `setStatus` / `setWidget` / `setTitle` — fire-and-forget
+    UI updates. `setWidget` payloads are flattened into the log
+    window's winbar.
   - `editor` — open a floating scratch editor with a prefill; plugin
     replies via `extension_ui_response` with `{value}` on submit or
-    `{cancelled: true}` on cancel
+    `{cancelled: true}` on cancel. Plan-proposal titles tagged with a
+    `[sherpa-plan-proposal]` sentinel route through a read-only
+    preview + accept/modify/reject picker.
   - `confirm` — yes/no picker via `vim.ui.select`; plugin replies with
-    `{confirmed: bool}` or `{cancelled: true}`
+    `{confirmed: bool}` or `{cancelled: true}`.
+  - `select` — fuzzy picker via telescope / fzf-lua / `vim.ui.select`
+    fallback; plugin replies with `{value}` or `{cancelled: true}`.
+  - `input` — single-line input via `vim.ui.input`; plugin replies
+    with `{value}` or `{cancelled: true}`.
 
 ### To pi
 
-- `prompt` — user prompt message
+- `prompt` — user prompt message (slash-commands are passed through
+  verbatim so pi routes them to the matching extension command; other
+  text is wrapped in `/prompt`)
+- `steer` — mid-turn user redirect delivered after the current assistant
+  turn's tool calls complete. Slash-commands are rejected as steers
+  (pi forbids them).
 - `extension_ui_response` — reply to an awaiting `extension_ui_request`
   (carries the request `id` plus `value` / `confirmed` / `cancelled`)
 

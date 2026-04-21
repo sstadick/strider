@@ -44,8 +44,10 @@ class TmuxSearchTests(unittest.TestCase):
             h.ex("SherpaSearch where is the main entrypoint?")
             h.wait_until(lambda: len(h.current_state()["qf"]["items"]) == 1)
 
+            # Hide the chat/log surfaces so the next SherpaSearch has to
+            # reopen the log from scratch. SherpaChat toggles; calling
+            # it here just to close (no args, both surfaces visible).
             h.ex("SherpaChat")
-            h.ex("edit src/App.tsx")
             h.ex("SherpaSearch show all entry roots")
 
             h.wait_until(lambda: "sherpa://log" in h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})'))

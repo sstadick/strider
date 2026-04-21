@@ -1,16 +1,18 @@
-# Clarify plan (scratch)
+# Clarify plan
 
-Design notes for giving the model a way to ask clarifying questions,
-propose plans, or confirm destructive actions before proceeding. Not
-user-facing docs — just the design to argue about before implementing.
+Design rationale for the `sherpa_clarify` tool, which lets the model
+pause mid-turn to ask a clarifying question, propose a plan, or confirm
+a destructive action before proceeding. Shipped and wired into
+`:SherpaChat` and `:SherpaPatch` today; this doc captures the shape and
+trade-offs.
 
 ## Why
 
-Today `:SherpaWork`, `:SherpaPatch`, and `:SherpaReview` (for questions)
-go straight from user prompt → model action. There's no handshake. When
-the user's request is ambiguous, or the model realizes the change is
-bigger than it looks, the options are: guess, or bail with text. Both
-are bad.
+Before clarify existed, `:SherpaChat`, `:SherpaPatch`, and
+`:SherpaReview` (for questions) went straight from user prompt → model
+action. There was no handshake. When the user's request was ambiguous,
+or the model realized the change was bigger than it looked, the options
+were: guess, or bail with text. Both were bad.
 
 We want an explicit escape hatch: the model can pause mid-turn, ask the
 user something, and continue with the answer. Not required — only when
@@ -119,7 +121,7 @@ everything" behavior.
 ## Where it applies
 
 Enable clarify for:
-- **`work`** — broadest implementation, highest ambiguity payoff
+- **`prompt`** — broadest implementation, highest ambiguity payoff
 - **`patch`** — small edits; lower value but cheap to include
 
 Do NOT enable for:
@@ -130,11 +132,11 @@ Do NOT enable for:
 - **`search`** — read-only structured output; no ambiguity to resolve
 
 Implementation: the tool is registered globally but its prompt-time
-guidance only appears in `workRules()` and `patchRules()`.
+guidance only appears in `promptRules()` and `patchRules()`.
 
 ## Prompt guidance
 
-Append to `workRules()` and `patchRules()`:
+Append to `promptRules()` and `patchRules()`:
 
 ```
 If the request is genuinely ambiguous, or you've discovered the change
@@ -152,8 +154,8 @@ for a large change where the user should see the shape before you act,
 
 ## Lifecycle
 
-1. User: `:SherpaWork add session revocation to the auth middleware`.
-2. Plugin sends `/work ...`; pi starts the work turn.
+1. User: `:SherpaChat add session revocation to the auth middleware`.
+2. Plugin sends `/prompt ...`; pi starts the prompt turn.
 3. Model reads some files, then calls `sherpa_clarify`:
    ```json
    {
@@ -190,7 +192,7 @@ saw/typed.
 
 ## Open questions
 
-1. **Opt-out per request.** Flag like `:SherpaWork --no-ask <prompt>`
+1. **Opt-out per request.** Flag like `:SherpaChat --no-ask <prompt>`
    or config `allow_clarification = false`. Worth adding if the model
    clarifies annoyingly often in practice. v1: skip, just rely on the
    budget + prompt.
@@ -211,8 +213,8 @@ saw/typed.
 ## Alternative: plan-first-work
 
 Instead of a generic clarify tool, make planning the default for
-`:SherpaWork`. Every work request goes:
-`:SherpaWork` → `/plan-work` → `sherpa_work_plan` tool → user approves
+`:SherpaChat`. Every work request goes:
+`:SherpaChat` → `/plan-work` → `sherpa_work_plan` tool → user approves
 or edits → model executes the approved plan.
 
 Pros:
@@ -231,7 +233,7 @@ Cons:
 1. Implement Lua-side handlers for `editor` and `confirm` UI methods.
 2. Register `sherpa_clarify` with `kind: question | plan_proposal | confirm`.
 3. One-call budget per turn, reset on `message_end`.
-4. Prompt guidance in `workRules` and `patchRules`.
+4. Prompt guidance in `promptRules` and `patchRules`.
 5. Log the round-trip to `sherpa://log`.
 6. Tests: fake_pi can emit a clarify call; plugin opens the editor;
    test harness submits a canned response; assert model "sees" it.

@@ -896,9 +896,10 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, removed_chunk_hl, { default = true, fg = "#F14C4C" })
   vim.api.nvim_set_hl(0, comment_hl, { default = true, fg = "#D7BA7D" })
   vim.api.nvim_set_hl(0, annotation_hl, { default = true, link = "Comment" })
-  -- Log pane hierarchy: user messages stand out in blue; assistant and
-  -- tool blocks use normal text so user input is visually primary.
-  vim.api.nvim_set_hl(0, log_assistant_hl, { default = true, link = "Normal" })
+  -- Log pane hierarchy: user messages stand out in blue; assistant
+  -- blocks are green so replies are visually distinct from tool output
+  -- and rules; tool blocks use normal text.
+  vim.api.nvim_set_hl(0, log_assistant_hl, { default = true, fg = "#73C991", bold = true })
   vim.api.nvim_set_hl(0, log_user_hl, { default = true, fg = "#7BB5FF", bold = true })
   vim.api.nvim_set_hl(0, log_tool_hl, { default = true, link = "Normal" })
   vim.api.nvim_set_hl(0, log_rule_hl, { default = true, link = "NonText" })

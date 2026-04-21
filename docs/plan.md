@@ -78,9 +78,10 @@ SHERPA_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
 Goal: stay under a minute; cover at least review + patch on the bundled
 fixture project.
 
-## Future: Session persistence
+## Deferred: Saved sessions
 
-See `docs/session-persistence.md`.
+See `docs/saved-sessions.md` — full design, kept ready to execute if
+we decide resumption is worth the context drift.
 
 ## Non-goals right now
 
@@ -96,6 +97,6 @@ See `docs/session-persistence.md`.
 - `docs/architecture.md`
 - `docs/review-mode.md`
 - `docs/review-planning.md`
-- `docs/session-persistence.md`
+- `docs/saved-sessions.md`
 - `tests/README.md`
 - `recordings/README.md`

@@ -184,6 +184,18 @@ export default function (pi: ExtensionAPI) {
 		return model.provider ? `${model.provider}/${name}` : name;
 	}
 
+	// Compact token count: 14000 → "14k", 1_200_000 → "1.2M". Keeps the
+	// winbar readable in narrow log windows. Numbers under 1k render as-is.
+	function formatTokens(n: number): string {
+		if (n < 1000) return `${n}`;
+		if (n < 1_000_000) {
+			const k = n / 1000;
+			return k >= 100 ? `${Math.round(k)}k` : `${k.toFixed(k >= 10 ? 0 : 1).replace(/\.0$/, "")}k`;
+		}
+		const m = n / 1_000_000;
+		return m >= 100 ? `${Math.round(m)}M` : `${m.toFixed(m >= 10 ? 0 : 1).replace(/\.0$/, "")}M`;
+	}
+
 	function statusSuffix(ctx: any): string[] {
 		const lines: string[] = [];
 		const model = ctx.model;
@@ -198,9 +210,9 @@ export default function (pi: ExtensionAPI) {
 			const tokens = usage.tokens;
 			const percent = usage.percent;
 			if (tokens != null && percent != null) {
-				lines.push(`Context: ${tokens.toLocaleString()} / ${usage.contextWindow.toLocaleString()} (${percent}%)`);
+				lines.push(`Context: ${formatTokens(tokens)} / ${formatTokens(usage.contextWindow)} (${percent.toFixed(1)}%)`);
 			} else {
-				lines.push(`Context window: ${usage.contextWindow.toLocaleString()}`);
+				lines.push(`Context window: ${formatTokens(usage.contextWindow)}`);
 			}
 		}
 		if (state.sessionCost != null) {

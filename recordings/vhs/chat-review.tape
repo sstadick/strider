@@ -1,7 +1,8 @@
-# Sherpa work+review demo — run :SherpaWork, then review the resulting diff.
-# Run:   vhs recordings/vhs/work-review.tape
+# Sherpa chat+review demo — send a message via :SherpaChat, then review the
+# resulting diff.
+# Run:   vhs recordings/vhs/chat-review.tape
 
-Output recordings/work-review.gif
+Output recordings/chat-review.gif
 
 Set Shell "bash"
 Set FontSize 14
@@ -11,7 +12,7 @@ Set Theme "Catppuccin Mocha"
 Set TypingSpeed 45ms
 
 Hide
-Type `WS=$(recordings/vhs/prep.sh work_review app --git)`
+Type `WS=$(recordings/vhs/prep.sh chat_review app --git)`
 Enter
 Sleep 400ms
 Type `clear && recordings/vhs/run-nvim.sh "$WS" src/App.tsx`
@@ -21,16 +22,16 @@ Show
 
 Sleep 2500ms
 
-# Kick off a broader work request.
-Type ":SherpaWork add loading states to the lobby flow"
+# Send a broader request through the chat command.
+Type ":SherpaChat add loading states to the lobby flow"
 Sleep 2800ms
 Enter
 
-# Let the work pass complete.
+# Let the chat pass complete.
 Sleep 3500ms
 
 # Review the resulting working-tree diff.
-Type ":SherpaReview diff"
+Type ":SherpaReview walk me through the diff on this branch"
 Sleep 2200ms
 Enter
 Sleep 3500ms

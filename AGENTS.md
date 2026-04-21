@@ -1,20 +1,21 @@
-# Sherpa is a guided, chunked code generation workflow for Neovim powered by pi
+# Sherpa is a guided code workflow for Neovim powered by pi
 
 ## Project intent
 
-Sherpa is a Neovim-first interface for a pi-backed coding workflow.
+A Neovim-first interface for a pi-backed coding workflow.
 
 The product should feel like disciplined pair programming:
 - work in bounded chunks
 - keep the user in Neovim
 - jump to touched files
 - stay linear by default
-- pause for another question or chunk acceptance before continuing
+- pause for a question, a plan proposal, or a stop acceptance before
+  continuing
 
-## Code Conventions
+## Code conventions
 
-- Files should not be larger than 500 lines unless there is a very compelling reason.
-- Functions should not be larger then 30 lines without reason.
+- Files should not exceed 500 lines without a compelling reason.
+- Functions should not exceed 30 lines without reason.
 - Composition over inheritance.
 - Keep objects small and data oriented.
 
@@ -27,9 +28,15 @@ The product should feel like disciplined pair programming:
 
 ## Product rules
 
-- `:SherpaQ` starts or continues the current linear chunk flow.
-- `:SherpaNext` accepts the current chunk or stop and advances linearly.
-- Accepted chunks and tour stops should be recorded in pi's built-in history for future restoration work.
-- Code chunks may mutate exactly one file.
-- Review mode is read-only and should keep each stop to one file and one small section.
-- The agent should stop after each bounded chunk or stop and wait for user input.
+- `:SherpaReview` is the primary walkthrough surface. Reviews are
+  pre-planned via the `sherpa_plan` tool; navigation is mechanical.
+- `:SherpaNext` advances through the planned stops; `:SherpaPrev`
+  walks back.
+- Review mode is read-only — one file, one small section per stop.
+- `:SherpaPatch` is selection-scoped and intended for small local edits.
+- `:SherpaChat` is the agent catch-all; slash-commands typed into the
+  compose buffer (e.g. `/models`, `/tree`) are routed to pi extensions.
+- Accepted stops and reviewed chunks are recorded in pi's session
+  history for future restoration work.
+- The agent should stop after each bounded chunk or stop and wait for
+  user input.

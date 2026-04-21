@@ -181,9 +181,6 @@ function M.search(prompt)
   })
 end
 
--- When :SherpaReview is called with empty args, open an editor whose behavior
--- depends on whether a review is already active. The first word still acts as
--- a scope key in the starting case, matching the ex-command UX.
 
 function M.review(args, opts)
   local range = range_from_opts(opts)
@@ -230,7 +227,7 @@ function M.review(args, opts)
     return
   end
 
-  send("/teach " .. trimmed(args), trimmed(args), { operation = "teach" })
+  start_review("file", { focus = trimmed(args) })
 end
 
 local function dispatch_patch(prompt, range)

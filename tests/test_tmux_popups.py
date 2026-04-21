@@ -40,18 +40,41 @@ class TmuxPopupTests(unittest.TestCase):
             state = h.current_state()
             self.assertEqual(0, len(state["qf"]["items"]))
 
-    def test_empty_prompt_opens_popup_and_dispatches(self) -> None:
-        # Use a fixture copy because the fake-pi prompt response mutates App.tsx.
+    def test_empty_prompt_draft_cancel_clears_region(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaPrompt")
-                h.wait_until(lambda: _popup_open(h))
+                h.wait_until(
+                    lambda: h.lua_bool("require('sherpa.ui').has_active_draft()"),
+                    timeout=3.0,
+                )
+                # Cancel with <Esc><Esc> while in insert mode.
+                h.send("Escape", "Escape", pause=0.3)
+                h.wait_until(
+                    lambda: not h.lua_bool("require('sherpa.ui').has_active_draft()"),
+                    timeout=3.0,
+                )
 
+    def test_empty_prompt_opens_log_draft_and_dispatches(self) -> None:
+        # :SherpaPrompt with no args opens the log buffer with a draft
+        # scaffold. The user types into the draft region and hits <C-s>
+        # to send. The draft lines stay in the log as history.
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaPrompt")
+                # A draft extmark should exist on the log buffer.
+                h.wait_until(
+                    lambda: h.lua_bool("require('sherpa.ui').has_active_draft()"),
+                    timeout=3.0,
+                )
+                # Type into the draft and send.
                 h.send("add a banner", "C-s", pause=0.3)
-                h.wait_until(lambda: not _popup_open(h))
-
-                # The fake backend logs the /prompt request; we only care that
-                # the popup closed and dispatch reached the log.
+                # The draft extmark should clear after sending.
+                h.wait_until(
+                    lambda: not h.lua_bool("require('sherpa.ui').has_active_draft()"),
+                    timeout=3.0,
+                )
+                # Message reached the fake backend.
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("add a banner", log_text)
 

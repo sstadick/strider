@@ -195,12 +195,24 @@ end
 function M.prompt(prompt)
   prompt = trimmed(prompt)
   if prompt == "" then
-    ui.open_prompt_editor("Sherpa prompt", function(text)
+    -- Spin up the backend first so peek_pending_request has a session.
+    if not ensure_backend() then
+      return
+    end
+    -- Reject-with-notify if a request is already in flight. Composing
+    -- a draft on top of a pending turn is confusing; the user should
+    -- wait for the reply (or explicitly abort) before composing.
+    local pending = state.peek_pending_request()
+    if pending then
+      ui.notify(
+        string.format("Sherpa is already running a %s request; wait for the reply.", pending.operation),
+        vim.log.levels.WARN
+      )
+      return
+    end
+    ui.open_log_with_draft(function(text)
       M.prompt(text)
-    end, {
-      "Agent prompt. No Sherpa-specific behavior — uses your global pi prompt.",
-      "Model may call sherpa_clarify to ask clarifying questions before acting.",
-    })
+    end)
     return
   end
   send("/prompt " .. prompt, prompt, { operation = "prompt", open_log = true })

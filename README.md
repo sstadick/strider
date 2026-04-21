@@ -9,6 +9,8 @@ It keeps the user in Neovim and jumps to touched files or reviewed ranges. Revie
 - Neovim 0.10+
 - `pi` installed and available on `$PATH`
 - a configured pi model/provider
+- [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim) (recommended — renders markdown in all Sherpa output buffers)
+- [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) or [fzf](https://github.com/junegunn/fzf) (optional — for search result pickers)
 
 ## Install
 

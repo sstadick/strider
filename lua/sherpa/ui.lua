@@ -48,7 +48,7 @@ function M.ensure_log_buffer()
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, log_name())
-  configure_scratch_buffer(buf)
+  configure_scratch_buffer(buf, "markdown")
   session.log_buf = buf
   return buf
 end

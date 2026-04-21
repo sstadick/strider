@@ -81,15 +81,36 @@ local function quickfix_items(results)
   return items
 end
 
-local function result_label(result)
-  local notes = result.text ~= "" and result.text or "Search result"
+local function location_label(result)
   return string.format(
-    "%s:%d-%d %s",
+    "%s:%d-%d",
     vim.fn.fnamemodify(result.filename, ":."),
     result.lnum,
-    result.end_lnum,
-    truncate(notes, 90)
+    result.end_lnum
   )
+end
+
+local function result_label(result, location_width)
+  local notes = result.text ~= "" and result.text or "Search result"
+  local location = location_label(result)
+  local padding = math.max((location_width or 0) - vim.fn.strdisplaywidth(location), 0) + 4
+  return location .. string.rep(" ", padding) .. truncate(notes, 90)
+end
+
+function M.picker_items(results)
+  local location_width = 0
+  for _, result in ipairs(results or {}) do
+    location_width = math.max(location_width, vim.fn.strdisplaywidth(location_label(result)))
+  end
+
+  local items = {}
+  for _, result in ipairs(results or {}) do
+    table.insert(items, {
+      label = result_label(result, location_width),
+      value = result,
+    })
+  end
+  return items
 end
 
 function M.open_result(result)
@@ -113,13 +134,7 @@ local function present_result_set(result_set)
   local count = #result_set.results
 
   if picker.available() then
-    local items = {}
-    for _, result in ipairs(result_set.results) do
-      table.insert(items, {
-        label = result_label(result),
-        value = result,
-      })
-    end
+    local items = M.picker_items(result_set.results)
     store_quickfix(result_set, false)
     return picker.select("Sherpa Search Results", items, function(item)
       M.open_result(item.value)

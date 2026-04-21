@@ -33,7 +33,7 @@ class RealPiSmokeTests(unittest.TestCase):
                 self.assertIn("[assistant]", review_log)
 
                 h.wait_until(
-                    lambda: "Current explanation" in "\n".join(h.buffer_lines("sherpa://review"))
+                    lambda: "## Explanation" in "\n".join(h.buffer_lines("sherpa://review"))
                     and "Waiting for the explanation" not in "\n".join(h.buffer_lines("sherpa://review")),
                     timeout=20,
                 )

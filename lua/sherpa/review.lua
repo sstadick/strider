@@ -586,7 +586,6 @@ local function panel_lines(review)
     "",
     string.format("- source: `%s`", review.source),
     string.format("- item: `%d/%d`", review.current_index or 1, #review.items),
-    string.format("- state: `%s`", review.active and "active" or "complete"),
     "",
   }
 
@@ -594,24 +593,13 @@ local function panel_lines(review)
     table.insert(lines, string.format("**%s**", item.title or "Review item"))
     table.insert(lines, string.format("`%s:%d-%d`", relative_path(item.path), item.startLine, item.endLine))
     if item.summary and item.summary ~= "" then
-      table.insert(lines, "")
-      table.insert(lines, item.summary)
+      table.insert(lines, string.format("Synopsis: %s", item.summary))
     end
     table.insert(lines, "")
   end
 
-  append_section(lines, "Controls", {
-    "- `:SherpaNext` / `:SherpaPrev` move between review items",
-    "- `:SherpaReview <question>` asks about the current review item",
-    "- `:'<,'>SherpaReview <question>` asks about a selected range",
-    "- `:SherpaLog` reopens the transcript / agent buffer",
-    "- `:SherpaComment` opens the multiline comment editor",
-    "- `:'<,'>SherpaComment <text>` comments on a selected range",
-    "- `:'<,'>SherpaPatch <prompt>` patches the selected range",
-  })
-
   local explanation = item and item.explanation or nil
-  local explanation_title = "Current explanation"
+  local explanation_title = "Explanation"
   if review.awaiting_summary then
     explanation_title = "End of review"
     explanation = "Waiting for the end-of-review summary from the agent..."
@@ -621,7 +609,15 @@ local function panel_lines(review)
   elseif not explanation or explanation == "" then
     explanation = review.active and "Waiting for the explanation for this review item..." or "Review complete."
   end
-  append_section(lines, explanation_title, explanation)
+  if explanation_title == "Explanation" then
+    append_section(lines, explanation_title, {
+      "Sherpa's current explanation of the highlighted review item:",
+      "",
+      explanation,
+    })
+  else
+    append_section(lines, explanation_title, explanation)
+  end
 
   if item and item.excerpt and item.excerpt ~= "" then
     append_section(lines, "Excerpt", {
@@ -641,6 +637,16 @@ local function panel_lines(review)
     end
     append_section(lines, "Comments on this item", comment_lines)
   end
+
+  append_section(lines, "Controls", {
+    "- `:SherpaNext` / `:SherpaPrev` move between review items",
+    "- `:SherpaReview <question>` asks about the current review item",
+    "- `:'<,'>SherpaReview <question>` asks about a selected range",
+    "- `:SherpaLog` reopens the transcript / agent buffer",
+    "- `:SherpaComment` opens the multiline comment editor",
+    "- `:'<,'>SherpaComment <text>` comments on a selected range",
+    "- `:'<,'>SherpaPatch <prompt>` patches the selected range",
+  })
 
   return lines
 end
@@ -810,6 +816,8 @@ function M.build_prompt(focus)
     "Stay focused on this item.",
     "Across the overall review, follow the most sensible order for understanding the user's question rather than discovery order.",
     "Unless the user explicitly asks for a file-by-file audit, focus on the files and chunks most relevant to understanding the project.",
+    "Keep the explanation compact and low-chrome.",
+    "Avoid generic sections like 'Requirements' or 'Overview' unless the user explicitly asks for them.",
     "You may inspect nearby code if needed, but keep the explanation centered on this range.",
     item.excerpt and "<REVIEW_EXCERPT>\n" .. item.excerpt .. "\n</REVIEW_EXCERPT>" or nil,
     "User focus: " .. user_focus,

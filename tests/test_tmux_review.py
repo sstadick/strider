@@ -47,7 +47,7 @@ class TmuxReviewTests(unittest.TestCase):
             h.wait_until(lambda: "This range is part of the current review" in "\n".join(h.buffer_lines("sherpa://review")))
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
-            self.assertIn("Current explanation", review_text)
+            self.assertIn("## Explanation", review_text)
             self.assertIn("This range is part of the current review", review_text)
 
     def test_file_review_populates_current_explanation(self) -> None:
@@ -55,10 +55,10 @@ class TmuxReviewTests(unittest.TestCase):
             h.ex("edit src/main.tsx")
             h.ex("SherpaReview file")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
-            h.wait_until(lambda: "Current explanation" in "\n".join(h.buffer_lines("sherpa://review")) and "Waiting" not in "\n".join(h.buffer_lines("sherpa://review")))
+            h.wait_until(lambda: "## Explanation" in "\n".join(h.buffer_lines("sherpa://review")) and "Waiting" not in "\n".join(h.buffer_lines("sherpa://review")))
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
-            self.assertIn("Current explanation", review_text)
+            self.assertIn("## Explanation", review_text)
             self.assertNotIn("Waiting for the explanation", review_text)
 
     def test_review_excerpt_uses_tsx_fence(self) -> None:
@@ -102,7 +102,7 @@ class TmuxReviewTests(unittest.TestCase):
 
             h.wait_until(
                 lambda: h.lua_bool("require('sherpa.review').has_active_review()")
-                and "Current explanation" in "\n".join(h.buffer_lines("sherpa://review"))
+                and "## Explanation" in "\n".join(h.buffer_lines("sherpa://review"))
             )
             self.assertTrue(h.lua_bool("require('sherpa.review').has_active_review()"))
 

@@ -80,7 +80,7 @@ local function start_spin()
   stop_spin()
   spin_index = 0
   spin_timer = vim.uv.new_timer()
-  spin_timer:start(3000, 3000, vim.schedule_wrap(function()
+  spin_timer:start(250, 3000, vim.schedule_wrap(function()
     spin_tick()
   end))
 end
@@ -284,7 +284,9 @@ function M.start_activity(title, target, operation)
   for _, buf in ipairs(progress_buffers(session.progress.target)) do
     set_buffer_busy(buf, true)
   end
-  activity_echo(title)
+  vim.schedule(function()
+    activity_echo(title)
+  end)
   start_spin()
 end
 

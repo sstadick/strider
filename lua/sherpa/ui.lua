@@ -164,6 +164,43 @@ local function scroll_log_windows(buf)
   end
 end
 
+-- Build a single-line winbar from the widget that the extension pushes
+-- via setWidget("sherpa", [...]). We flatten meaningful lines (Model,
+-- Context, Cost, last response, etc.) joined with ` · `. Empty widget
+-- renders a minimal idle label.
+local function format_log_winbar()
+  local session = state.get_session()
+  local widget = session and session.widget or {}
+  local parts = {}
+  for _, line in ipairs(widget) do
+    local trimmed = vim.trim(line or "")
+    if trimmed ~= "" and not trimmed:match("^Sherpa operation:") and not trimmed:match("^Sherpa: idle$") and not trimmed:match("^Use ") and not trimmed:match("^Waiting for ") and not trimmed:match("^Mode:") then
+      table.insert(parts, trimmed)
+    end
+  end
+  if #parts == 0 then
+    return "Sherpa"
+  end
+  -- %#Normal# keeps it plain; escape `%` so winbar formatting doesn't
+  -- interpret our payload as a statusline directive.
+  local joined = table.concat(parts, " · "):gsub("%%", "%%%%")
+  return joined
+end
+
+-- Apply the winbar to every window currently showing the log buffer.
+-- Idempotent; safe to call on every widget update.
+function M.refresh_log_winbar()
+  local session = state.get_session()
+  local buf = session and session.log_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  local value = format_log_winbar()
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(function() vim.wo[win].winbar = value end)
+    end
+  end
+end
+
 function M.open_log(opts)
   opts = opts or {}
   local previous = opts.preserve_focus and (target_window() or vim.api.nvim_get_current_win()) or nil
@@ -174,6 +211,7 @@ function M.open_log(opts)
         vim.api.nvim_set_current_win(win)
       end
       scroll_log_windows(buf)
+      M.refresh_log_winbar()
       return
     end
   end
@@ -183,6 +221,7 @@ function M.open_log(opts)
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
   scroll_log_windows(buf)
+  M.refresh_log_winbar()
   if previous and vim.api.nvim_win_is_valid(previous) then
     vim.api.nvim_set_current_win(previous)
   end

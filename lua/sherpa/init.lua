@@ -195,7 +195,38 @@ function M.setup(opts)
   state.setup(opts or {})
 end
 
+-- Slash-commands that pi routes to our /prompt etc. handlers which DO
+-- send a user message to the model — treat these as normal prompt turns
+-- (they produce message_end and need pending-request tracking).
+local sherpa_prompt_commands = {
+  prompt = true, patch = true, review = true, search = true, plan = true,
+}
+
+-- Pure extension commands — run a handler, may open UI, but never
+-- dispatch an LLM turn. No pending request, no activity spinner. The
+-- list is intentionally conservative; anything not listed that starts
+-- with `/` is also treated as a pure command (safer to leave spinner
+-- off than leave it hanging).
+local function is_prompt_slash(text)
+  local name = text:match("^/([%w%-_:]+)")
+  return name and sherpa_prompt_commands[name] or false
+end
+
 local function dispatch_prompt(text)
+  -- If the user typed a slash-command (e.g. /models, /tree, /compact),
+  -- pass it through verbatim so pi routes it to the matching extension
+  -- command instead of wrapping it in /prompt (which would send the
+  -- slash-command to the LLM as prose and never fire the handler).
+  if text:sub(1, 1) == "/" then
+    if is_prompt_slash(text) then
+      send(text, text, { operation = "prompt", open_log = true })
+    else
+      -- Pure command — no LLM turn, no pending request. Just open the
+      -- log so the user sees the command echo + any UI the handler opens.
+      send(text, text, { open_log = true })
+    end
+    return
+  end
   send("/prompt " .. text, text, { operation = "prompt", open_log = true })
 end
 
@@ -210,6 +241,13 @@ local function dispatch_compose(text)
 
   local pending = state.peek_pending_request()
   if pending then
+    -- Extension commands (/models, /tree, etc.) are not allowed as steer
+    -- messages — pi requires them to come through prompt. Reject with a
+    -- helpful notice instead of silently dropping.
+    if text:sub(1, 1) == "/" then
+      ui.notify("Slash-commands can't be sent mid-turn — wait for the current request to finish.", vim.log.levels.WARN)
+      return false
+    end
     -- Steer: the pending request stays the same, the model gets the
     -- new message mid-stream. No new operation, no new activity.
     ui.append_block("user", text)

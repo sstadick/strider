@@ -11,12 +11,17 @@ type SherpaState = {
 	// Budget: at most one sherpa_clarify call per user request. Reset in
 	// startOperation so the next /prompt or /patch starts fresh.
 	clarifyCount: number;
+	// Accumulated cost ($) across assistant turns in this session. Pi
+	// reports per-turn cost on `message.usage.cost.total`; we sum it so
+	// the log widget shows running total. Reset on session_start.
+	sessionCost: number;
 };
 
 function emptyState(): SherpaState {
 	return {
 		recentFiles: [],
 		clarifyCount: 0,
+		sessionCost: 0,
 	};
 }
 
@@ -173,12 +178,44 @@ export default function (pi: ExtensionAPI) {
 		state.recentFiles = [path, ...state.recentFiles.filter((item) => item !== path)].slice(0, 5);
 	}
 
-	function renderStatus(): string[] {
+	function modelLabel(model: any): string | undefined {
+		if (!model) return undefined;
+		const name = model.name ?? model.id;
+		return model.provider ? `${model.provider}/${name}` : name;
+	}
+
+	function statusSuffix(ctx: any): string[] {
+		const lines: string[] = [];
+		const model = ctx.model;
+		const label = modelLabel(model);
+		if (label) lines.push(`Model: ${label}`);
+
+		// Context usage: ctx.getContextUsage() returns { tokens, contextWindow, percent }
+		// or undefined (no active model / pre-first-turn). tokens/percent can be null
+		// immediately after compaction.
+		const usage = typeof ctx.getContextUsage === "function" ? ctx.getContextUsage() : undefined;
+		if (usage && usage.contextWindow) {
+			const tokens = usage.tokens;
+			const percent = usage.percent;
+			if (tokens != null && percent != null) {
+				lines.push(`Context: ${tokens.toLocaleString()} / ${usage.contextWindow.toLocaleString()} (${percent}%)`);
+			} else {
+				lines.push(`Context window: ${usage.contextWindow.toLocaleString()}`);
+			}
+		}
+		if (state.sessionCost != null) {
+			lines.push(`Cost: $${state.sessionCost.toFixed(4)}`);
+		}
+		return lines;
+	}
+
+	function renderStatus(ctx: any): string[] {
+		const suffix = statusSuffix(ctx);
 		if (!state.activeOperation) {
-			const lines = ["Sherpa: idle", "Use /review, /search, /prompt, or /patch to start."];
+			const lines = ["Sherpa: idle", "Use /review, /search, /prompt, /patch, /models, or /tree."];
 			if (state.lastTouchedFile) lines.push(`Last file: ${state.lastTouchedFile}`);
 			if (state.lastAssistantSummary) lines.push(`Last response: ${state.lastAssistantSummary}`);
-			return lines;
+			return [...lines, ...suffix];
 		}
 
 		const readOnly =
@@ -191,11 +228,11 @@ export default function (pi: ExtensionAPI) {
 			"Waiting for assistant response...",
 		];
 		if (state.lastTouchedFile) lines.push(`Last file: ${state.lastTouchedFile}`);
-		return lines;
+		return [...lines, ...suffix];
 	}
 
 	function updateWidget(ctx: any) {
-		ctx.ui.setWidget("sherpa", renderStatus());
+		ctx.ui.setWidget("sherpa", renderStatus(ctx));
 		ctx.ui.setStatus("sherpa-kind", state.activeOperation);
 		ctx.ui.setStatus("sherpa-operation", state.activeOperation);
 		ctx.ui.setStatus("sherpa", state.activeOperation ? `${state.activeOperation} active` : "idle");
@@ -265,6 +302,12 @@ export default function (pi: ExtensionAPI) {
 		const text = assistantText(event.message);
 		if (text) {
 			state.lastAssistantSummary = collapseWhitespace(text);
+		}
+		// Accumulate per-turn cost from assistant message usage. Absent on
+		// non-assistant messages and on free-tier / subscription paths.
+		const cost = event.message?.usage?.cost?.total;
+		if (typeof cost === "number" && Number.isFinite(cost)) {
+			state.sessionCost += cost;
 		}
 		if (state.activeOperation) finishOperation(ctx);
 		else updateWidget(ctx);
@@ -486,6 +529,115 @@ export default function (pi: ExtensionAPI) {
 			}
 			startOperation("patch", ctx);
 			pi.sendUserMessage(patchPrompt(request));
+		},
+	});
+
+	// /models — fuzzy pick a model. Drives the Lua-side fzf/telescope picker
+	// via ctx.ui.select. The extension handles apply via pi.setModel so the
+	// Neovim plugin stays a dumb UI shell.
+	pi.registerCommand("models", {
+		description: "Switch the active pi model (fuzzy picker)",
+		handler: async (args: any, ctx: any) => {
+			const models = ctx.modelRegistry.getAvailable();
+			if (!models || models.length === 0) {
+				ctx.ui.notify("No available models (check API keys)", "warning");
+				return;
+			}
+			// Filter by arg if given — substring match on provider/id/name.
+			const filter = (args ?? "").trim().toLowerCase();
+			const candidates = filter
+				? models.filter((m: any) =>
+					`${m.provider}/${m.id} ${m.name ?? ""}`.toLowerCase().includes(filter),
+				)
+				: models;
+			if (candidates.length === 0) {
+				ctx.ui.notify(`No models match: ${filter}`, "warning");
+				return;
+			}
+
+			const current = ctx.model;
+			const currentKey = current ? `${current.provider}/${current.id}` : undefined;
+			const labelFor = (m: any) => {
+				const key = `${m.provider}/${m.id}`;
+				const marker = key === currentKey ? " ●" : "";
+				const name = m.name && m.name !== m.id ? ` — ${m.name}` : "";
+				return `${key}${name}${marker}`;
+			};
+			const byLabel = new Map<string, any>();
+			const options: string[] = [];
+			for (const m of candidates) {
+				const label = labelFor(m);
+				byLabel.set(label, m);
+				options.push(label);
+			}
+
+			const choice = await ctx.ui.select("Switch model", options);
+			if (!choice) return;
+			const chosen = byLabel.get(choice);
+			if (!chosen) {
+				ctx.ui.notify(`Unknown selection: ${choice}`, "error");
+				return;
+			}
+			const ok = await pi.setModel(chosen);
+			if (!ok) {
+				ctx.ui.notify(`No API key for ${chosen.provider}/${chosen.id}`, "error");
+				return;
+			}
+			ctx.ui.notify(`Model: ${chosen.provider}/${chosen.name ?? chosen.id}`, "info");
+			updateWidget(ctx);
+		},
+	});
+
+	// /tree — fuzzy pick any user-message entry to navigate the session tree
+	// to. Flat picker over user messages (same surface as /fork) driven via
+	// pi.navigateTree. For full tree visualization, use pi's TUI /tree.
+	pi.registerCommand("tree", {
+		description: "Jump to a previous user message (session tree)",
+		handler: async (_args: any, ctx: any) => {
+			const entries = ctx.sessionManager.getEntries() ?? [];
+			const leafId = ctx.sessionManager.getLeafId?.();
+			const candidates: Array<{ id: string; preview: string; isLeaf: boolean }> = [];
+			for (const entry of entries) {
+				// Session entries wrap messages: { type: "message", id, message: { role, content, ... } }.
+				// Skip non-message entries (model_change, compaction, etc.) and non-user messages.
+				if (entry?.type !== "message") continue;
+				const msg = entry.message;
+				if (!msg || msg.role !== "user") continue;
+				const content = msg.content;
+				const raw = typeof content === "string"
+					? content
+					: Array.isArray(content)
+						? content
+							.filter((c: any) => c?.type === "text")
+							.map((c: any) => c.text)
+							.join(" ")
+						: "";
+				const preview = collapseWhitespace(raw)?.slice(0, 120) ?? "(empty)";
+				candidates.push({ id: entry.id, preview, isLeaf: entry.id === leafId });
+			}
+			if (candidates.length === 0) {
+				ctx.ui.notify("No user messages to navigate to", "warning");
+				return;
+			}
+
+			const byLabel = new Map<string, string>();
+			const options: string[] = [];
+			candidates.forEach((c, i) => {
+				const marker = c.isLeaf ? " ●" : "";
+				const label = `${String(i + 1).padStart(3, " ")}: ${c.preview}${marker}`;
+				byLabel.set(label, c.id);
+				options.push(label);
+			});
+
+			const choice = await ctx.ui.select("Navigate to message", options);
+			if (!choice) return;
+			const targetId = byLabel.get(choice);
+			if (!targetId) return;
+			const result = await ctx.navigateTree(targetId);
+			if (result?.cancelled) {
+				ctx.ui.notify("Tree navigation cancelled", "info");
+			}
+			updateWidget(ctx);
 		},
 	});
 }

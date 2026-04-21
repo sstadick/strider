@@ -1,3 +1,4 @@
+local picker = require("sherpa.picker")
 local review = require("sherpa.review")
 local search = require("sherpa.search")
 local state = require("sherpa.state")
@@ -410,6 +411,7 @@ local function handle_extension_ui(event)
   end
   if event.method == "setWidget" then
     state.set_widget(event.widgetLines)
+    ui.refresh_log_winbar()
     return
   end
   if event.method == "editor" then
@@ -466,6 +468,59 @@ local function handle_extension_ui(event)
           local confirmed = choice == "Yes"
           ui.append({ string.format("[sherpa] confirm: %s", choice) })
           send_ui_response(id, { confirmed = confirmed })
+        end
+      end)
+    end)
+    return
+  end
+  if event.method == "select" then
+    -- Fuzzy picker (telescope → fzf-lua → vim.ui.select). Response shape
+    -- is `{value: <selected option string>}` or `{cancelled: true}`.
+    local id = event.id
+    local title = event.title or "Sherpa select"
+    local options = event.options or {}
+    local items = {}
+    for _, opt in ipairs(options) do
+      table.insert(items, { label = tostring(opt), value = opt })
+    end
+    ui.append_block("sherpa", string.format("select: %s", title))
+    local delivered = false
+    local function deliver(chosen)
+      if delivered then return end
+      delivered = true
+      if chosen == nil then
+        ui.append({ "[sherpa] select cancelled" })
+        send_ui_response(id, { cancelled = true })
+      else
+        ui.append({ string.format("[sherpa] select: %s", chosen) })
+        send_ui_response(id, { value = chosen })
+      end
+    end
+    vim.schedule(function()
+      local ok = picker.select(title, items, function(item)
+        deliver(item and item.value or nil)
+      end)
+      if not ok then
+        deliver(nil)
+      end
+    end)
+    return
+  end
+  if event.method == "input" then
+    -- Single-line input via vim.ui.input. Response shape is `{value: text}`
+    -- or `{cancelled: true}`. Multi-line input is served by `editor`.
+    local id = event.id
+    local title = event.title or "Sherpa input"
+    local placeholder = event.placeholder or ""
+    ui.append_block("sherpa", string.format("input: %s", title))
+    vim.schedule(function()
+      vim.ui.input({ prompt = title .. ": ", default = placeholder }, function(value)
+        if value == nil then
+          ui.append({ "[sherpa] input cancelled" })
+          send_ui_response(id, { cancelled = true })
+        else
+          ui.append_block("user", value)
+          send_ui_response(id, { value = value })
         end
       end)
     end)

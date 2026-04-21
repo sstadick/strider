@@ -417,9 +417,29 @@ local function handle_extension_ui(event)
     -- `prefill` seeds the buffer. On submit send `{value: text}`; on
     -- cancel send `{cancelled: true}`. Tool's execute() in the extension
     -- awaits this response.
+    --
+    -- Plan proposals are a special case: the extension tags their title
+    -- with a `[sherpa-plan-proposal]` sentinel so we route through a
+    -- read-only preview + accept/modify/reject picker rather than the
+    -- one-box edit-and-submit flow.
     local id = event.id
     local title = event.title or "Sherpa clarify"
     local prefill = event.prefill or ""
+    local plan_prefix = "[sherpa-plan-proposal] "
+    if title:sub(1, #plan_prefix) == plan_prefix then
+      local display_title = title:sub(#plan_prefix + 1)
+      ui.append_block("sherpa", string.format("plan proposal: %s", display_title))
+      ui.clarify_plan_proposal(display_title, prefill, function(result)
+        if result == nil then
+          ui.append({ "[sherpa] plan proposal rejected" })
+          send_ui_response(id, { cancelled = true })
+        else
+          ui.append_block("user", result)
+          send_ui_response(id, { value = result })
+        end
+      end)
+      return
+    end
     ui.append_block("sherpa", string.format("clarify opened: %s", title))
     ui.open_clarify_editor(title, prefill, function(result)
       if result == nil then

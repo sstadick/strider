@@ -230,6 +230,62 @@ class PlanHelperTests(unittest.TestCase):
         self.assertEqual(20, end_line)  # 12 + 8
         self.assertEqual(17, ann_line)  # 9 + 8
 
+    # --- plan-proposal clarify flow --------------------------------------
+
+    def test_plan_proposal_accept_delivers_plan_text(self) -> None:
+        project = self.repo_root / "tests" / "fixtures" / "app"
+        with TmuxNvimHarness(self.repo_root, project) as h:
+            # Stub vim.ui.select to auto-pick "Accept" and capture
+            # whatever value the clarify callback receives.
+            h.lua(
+                "(function() "
+                "  _G.sherpa_test_clarify_result = 'UNSET'; "
+                "  vim.ui.select = function(items, opts, cb) cb('Accept') end; "
+                "  return true "
+                "end)()"
+            )
+            h.lua(
+                "(function() "
+                "  require('sherpa.ui').clarify_plan_proposal("
+                "    'Proposed plan', 'line1\\nline2\\nline3', "
+                "    function(v) _G.sherpa_test_clarify_result = v end); "
+                "  return true "
+                "end)()"
+            )
+            # Picker fires on the next scheduler tick and delivers the
+            # body text. The preview buffer is a transient implementation
+            # detail and may already be closed by the time we check.
+            h.wait_until(
+                lambda: h.lua("tostring(_G.sherpa_test_clarify_result)") != "UNSET",
+                timeout=3.0,
+            )
+            result = h.lua("tostring(_G.sherpa_test_clarify_result)")
+            self.assertIn("line1", result)
+            self.assertIn("line3", result)
+
+    def test_plan_proposal_reject_delivers_nil(self) -> None:
+        project = self.repo_root / "tests" / "fixtures" / "app"
+        with TmuxNvimHarness(self.repo_root, project) as h:
+            h.lua(
+                "(function() "
+                "  _G.sherpa_test_clarify_nil = false; "
+                "  vim.ui.select = function(items, opts, cb) cb('Reject') end; "
+                "  return true "
+                "end)()"
+            )
+            h.lua(
+                "(function() "
+                "  require('sherpa.ui').clarify_plan_proposal("
+                "    'Proposed plan', 'hello', "
+                "    function(v) if v == nil then _G.sherpa_test_clarify_nil = true end end); "
+                "  return true "
+                "end)()"
+            )
+            h.wait_until(
+                lambda: h.lua_bool("_G.sherpa_test_clarify_nil"),
+                timeout=3.0,
+            )
+
     # --- clarify editor dialog --------------------------------------------
 
     def test_clarify_editor_opens_with_prefill_and_submits_value(self) -> None:

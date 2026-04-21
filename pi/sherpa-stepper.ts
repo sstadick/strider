@@ -404,11 +404,19 @@ export default function (pi: ExtensionAPI) {
 				return text(confirmed ? "yes" : "no");
 			}
 
-			// question + plan_proposal both use the editor; plan_proposal
-			// prefills the editor with the proposal so the user can accept
-			// as-is, edit, or cancel. question leaves the editor empty.
-			const prefill = params.kind === "plan_proposal" ? params.body : "";
-			const answer = await ctx.ui.editor(params.title, prefill);
+			// question uses the floating editor directly.
+			// plan_proposal uses a read-only preview + accept/modify/reject
+			// picker on the Lua side. Both go through ctx.ui.editor; we
+			// tag the plan_proposal title with a sentinel so the Lua
+			// handler can route to the multi-step flow. The user-facing
+			// title has the sentinel stripped before display.
+			let title = params.title;
+			let prefill = "";
+			if (params.kind === "plan_proposal") {
+				title = `[sherpa-plan-proposal] ${params.title}`;
+				prefill = params.body;
+			}
+			const answer = await ctx.ui.editor(title, prefill);
 			if (answer === undefined) {
 				return text("[user cancelled clarification]");
 			}

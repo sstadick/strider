@@ -85,10 +85,16 @@ Register in `pi/sherpa-stepper.ts`:
 Execute:
 - `question` → `const reply = await ctx.ui.editor(title, "")` →
   return `{ output: reply ?? "[cancelled]", details: {cancelled: !reply} }`.
-- `plan_proposal` → `const approved = await ctx.ui.editor(title, body)`
-  — user sees the proposed plan, may edit in place, submits the
-  (possibly edited) text. Cancel aborts. Return the submitted text as
-  the "approved plan" the model should follow.
+- `plan_proposal` → extension tags the title with a
+  `[sherpa-plan-proposal]` sentinel and calls `ctx.ui.editor`. Lua
+  strips the sentinel and routes to a three-step flow:
+  1. Read-only floating preview of the proposal.
+  2. `vim.ui.select({"Accept", "Modify", "Reject"})`.
+  3. Accept → return the plan text as-is. Modify → open the standard
+     clarify editor prefilled for in-place edits; submit returns the
+     edited text. Reject → return cancellation.
+  Separates reading (wide preview pane) from authoring (compose editor)
+  rather than cramming both into one small box.
 - `confirm` → `const ok = await ctx.ui.confirm(title, body)` →
   return `{ output: ok ? "yes" : "no" }`.
 

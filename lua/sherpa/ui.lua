@@ -523,6 +523,84 @@ function M.open_clarify_editor(title, prefill, cb)
   }, function(text) deliver(text) end)
 end
 
+-- Plan-proposal clarify flow. Three steps:
+--   1. Read-only preview of the proposed plan in a floating window.
+--   2. vim.ui.select picker: Accept / Modify / Reject.
+--   3. On Modify, open the existing clarify editor prefilled with the plan.
+--
+-- cb(value) on accept or modify-submit; cb(nil) on reject or cancel.
+function M.clarify_plan_proposal(title, body, cb)
+  local delivered = false
+  local function deliver(value)
+    if delivered then return end
+    delivered = true
+    cb(value)
+  end
+
+  -- Preview window — read-only markdown view of the proposal. Sits on
+  -- screen while the user reads and picks; closes before any follow-up
+  -- editor opens so the float doesn't stack.
+  local preview_buf = vim.api.nvim_create_buf(false, true)
+  pcall(vim.api.nvim_buf_set_name, preview_buf, "sherpa://plan-proposal")
+  vim.bo[preview_buf].buftype = "nofile"
+  vim.bo[preview_buf].swapfile = false
+  vim.bo[preview_buf].filetype = "markdown"
+  vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, vim.split(body or "", "\n", { plain = true }))
+  vim.bo[preview_buf].modifiable = false
+  vim.bo[preview_buf].bufhidden = "wipe"
+
+  local ui_info = vim.api.nvim_list_uis()[1] or { width = 120, height = 30 }
+  local width = math.min(100, math.max(60, math.floor(ui_info.width * 0.7)))
+  local height = math.min(24, math.max(10, math.floor(ui_info.height * 0.6)))
+  local row = math.floor((ui_info.height - height) / 2)
+  local col = math.floor((ui_info.width - width) / 2)
+
+  local preview_win = vim.api.nvim_open_win(preview_buf, false, {
+    relative = "editor",
+    row = row,
+    col = col,
+    width = width,
+    height = height,
+    border = "rounded",
+    title = string.format(" Proposed plan — %s ", title or "Sherpa"),
+    title_pos = "center",
+    style = "minimal",
+  })
+  vim.wo[preview_win].wrap = true
+  vim.wo[preview_win].linebreak = true
+  vim.wo[preview_win].cursorline = false
+  vim.wo[preview_win].winhighlight = "NormalFloat:Normal,FloatBorder:FloatBorder"
+
+  local function close_preview()
+    if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+      pcall(vim.api.nvim_win_close, preview_win, true)
+    end
+  end
+
+  -- Picker runs in the next scheduler tick so the preview paints first.
+  vim.schedule(function()
+    vim.ui.select({ "Accept", "Modify", "Reject" }, {
+      prompt = "Plan proposal — accept, modify, or reject?",
+    }, function(choice)
+      if choice == "Accept" then
+        close_preview()
+        deliver(body or "")
+      elseif choice == "Modify" then
+        close_preview()
+        -- Hand the proposal to the standard clarify editor for in-place
+        -- editing. Submit sends the edited text; cancel rejects.
+        M.open_clarify_editor(title or "Modify proposed plan", body or "", function(edited)
+          deliver(edited)
+        end)
+      else
+        -- Reject or picker cancelled.
+        close_preview()
+        deliver(nil)
+      end
+    end)
+  end)
+end
+
 function M.open_prompt_editor(label, on_submit, hint_lines)
   open_scratch_editor({
     name = "sherpa://prompt",

@@ -346,17 +346,6 @@ function M.open_prompt_editor(label, on_submit, hint_lines)
   }, on_submit)
 end
 
--- Editor that permits an empty submission. Used by review question mode,
--- where empty input means "continue with the current item".
-function M.open_prompt_editor_allow_empty(label, on_submit, hint_lines)
-  open_scratch_editor({
-    name = "sherpa://prompt",
-    title = label,
-    hint_lines = hint_lines,
-    allow_empty = true,
-  }, on_submit)
-end
-
 local function is_normal_window(win)
   if not vim.api.nvim_win_is_valid(win) then
     return false

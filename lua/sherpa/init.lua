@@ -184,33 +184,6 @@ end
 -- When :SherpaReview is called with empty args, open an editor whose behavior
 -- depends on whether a review is already active. The first word still acts as
 -- a scope key in the starting case, matching the ex-command UX.
-local function review_opts_from_range(range)
-  if not range then return nil end
-  return {
-    range = 2,
-    line1 = range.startLine,
-    line2 = range.endLine,
-  }
-end
-
-local function open_review_editor(range)
-  if review.has_active_review() then
-    ui.open_prompt_editor_allow_empty("Ask about this review item", function(text)
-      M.review(text, review_opts_from_range(range))
-    end, {
-      "Question about the current review item. Empty = continue.",
-    })
-    return
-  end
-
-  ui.open_prompt_editor("Start Sherpa review", function(text)
-    M.review(text, review_opts_from_range(range))
-  end, {
-    "First word picks the scope:",
-    "  file · diff · last · searches · branch <ref>",
-    "Anything else is a one-shot teach/review question.",
-  })
-end
 
 function M.review(args, opts)
   local range = range_from_opts(opts)
@@ -233,7 +206,15 @@ function M.review(args, opts)
   end
 
   if trimmed(args) == "" then
-    open_review_editor(range)
+    if range then
+      start_review("selection", {
+        endLine = range.endLine,
+        path = range.path,
+        startLine = range.startLine,
+      })
+    else
+      start_review("file", { focus = nil })
+    end
     return
   end
 

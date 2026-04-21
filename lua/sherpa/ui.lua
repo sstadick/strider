@@ -399,6 +399,9 @@ local function open_scratch_editor(opts, on_submit)
     end
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local text = vim.trim(table.concat(lines, "\n"))
+    -- Drop out of insert before closing the float, so the previous
+    -- window inherits normal mode instead of staying in insert.
+    pcall(vim.cmd, "stopinsert")
     if vim.api.nvim_win_is_valid(win) then
       pcall(vim.api.nvim_win_close, win, true)
     end

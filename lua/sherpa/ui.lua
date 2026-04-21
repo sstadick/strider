@@ -79,8 +79,7 @@ function M.show_log()
   local buf = M.ensure_log_buffer()
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_set_current_win(win)
-      scroll_log_windows(buf)
+      close_windows_for_buffer(buf)
       return
     end
   end

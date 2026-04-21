@@ -22,9 +22,15 @@ Supporting UX:
 
 Done:
 - model-led planning via the `sherpa_plan` tool (one-shot plan, fixed navigation)
-- plan-time explanations: stops carry a pre-written 2-4 sentence
-  explanation, so `:SherpaNext` is instant (no per-stop model call)
-- TOC in the review pane for multi-stop plans
+- plan-time explanations at three detail tiers (`why` → sidebar hook,
+  `summary` → sidebar synopsis, `explanation` → in-buffer block annotation
+  above startLine)
+- optional inline annotations per stop (`kind: "block"` or `kind: "line"`)
+  pinned to sub-ranges of the code; budgeted at ≤1 block + 25% of lines
+- annotation lifecycle: cleared when the active stop changes or the review
+  ends; extmarks are in-memory only so nvim exit cleans up automatically
+- `:SherpaNext` / `:SherpaPrev` are instant — no per-stop model call
+- TOC in the review pane for multi-stop plans (rendered below comments)
 - coverage guarantees for `selection` and `diff` scopes
 - append-only mid-review plan growth for free-scope (`sherpa_append_stops`)
 - no auto-jump during review — code window stays on the active stop

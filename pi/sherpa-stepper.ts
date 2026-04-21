@@ -88,12 +88,22 @@ function planRules(): string[] {
 		"Classify the review in the tool call: scope is 'selection' (user gave a range), 'diff' (user wants changes vs a branch/base — include the base ref), or 'free' (open-ended).",
 		"Stops must be small — keep each stop ≤ 40 lines. Order them pedagogically (foundations → consumers → tests), not in discovery order.",
 		"For 'selection' and 'diff' scopes, the union of stops must cover every line in the selected range / every changed line in the diff.",
-		"Each stop requires:",
-		"  - a short `title` for the sidebar",
-		"  - a one-sentence `why` explaining why the stop is on the list",
-		"  - a 2-4 sentence `explanation` that the user will see when they visit the stop. Ground the explanation in the actual code at that range — what it does, why it matters, and any notable decisions or tradeoffs.",
-		"The explanation is what the user reads in place of a later follow-up turn. Write it as if you were guiding someone through the code, not as a one-liner.",
-		"Do NOT write a long prose reply outside the tool call — the explanations live inside `sherpa_plan`.",
+		"",
+		"LINE NUMBERS — read carefully. Your line numbers must be absolute file line numbers matching the actual file content. Do NOT use offsets relative to the stop's start. If you haven't read the exact range in this turn, read it before writing the plan — do not guess. For each stop you MUST include a `firstLineText` field containing the verbatim (trimmed) content of the file at `startLine`; Sherpa uses it to self-correct if your numbers are off.",
+		"",
+		"Each stop requires three tiers of detail, written for different surfaces:",
+		"  - `title` — short label for the sidebar and TOC",
+		"  - `why` — one-sentence hook shown on the current-item card",
+		"  - `summary` — 2-3 sentence synopsis for the sidebar Explanation section; skimmable",
+		"  - `explanation` — 3-5 sentence narrative rendered as a block annotation in the code buffer, pinned above the stop's start line. Grounded in the actual code — what it does, why it matters, any notable decisions or tradeoffs.",
+		"`summary` and `explanation` should not be duplicates. `summary` is the sidebar view; `explanation` is the in-buffer narrative.",
+		"",
+		"Optional `annotations` array attaches extra pinned notes inside the stop:",
+		"  - `kind: 'block'` with `startLine` + `endLine` renders a multi-line note above that sub-range.",
+		"  - `kind: 'line'` with `line` renders an end-of-line inline comment on a single line.",
+		"Annotation budget (strict): at most one `kind: 'block'` annotation per stop, and at most 25% of the stop's lines may receive a `kind: 'line'` annotation. Use them only when a specific line or sub-range carries real insight — skip them otherwise.",
+		"",
+		"Do NOT write a long prose reply outside the tool call — all explanations live inside `sherpa_plan`.",
 	];
 }
 
@@ -246,16 +256,50 @@ export default function (pi: ExtensionAPI) {
 		else updateWidget(ctx);
 	});
 
+	const annotationSchema = Type.Object({
+		kind: Type.Union([Type.Literal("block"), Type.Literal("line")], {
+			description:
+				"'block' renders as a multi-line note above a sub-range; 'line' renders as an end-of-line inline comment on a single line.",
+		}),
+		line: Type.Optional(
+			Type.Number({ description: "Required for kind='line': 1-based target line within the stop." }),
+		),
+		startLine: Type.Optional(
+			Type.Number({ description: "Required for kind='block': 1-based first line of the sub-range (inclusive)." }),
+		),
+		endLine: Type.Optional(
+			Type.Number({ description: "Required for kind='block': 1-based last line of the sub-range (inclusive)." }),
+		),
+		text: Type.String({
+			description:
+				"Annotation content. For line annotations keep it to a short phrase (≤ ~80 chars). For block annotations a short paragraph is fine.",
+		}),
+	});
+
 	const stopSchema = Type.Object({
 		path: Type.String({ description: "Absolute or cwd-relative path to the file for this stop" }),
-		startLine: Type.Number({ description: "1-based first line of the stop (inclusive)" }),
-		endLine: Type.Number({ description: "1-based last line of the stop (inclusive)" }),
+		startLine: Type.Number({ description: "1-based first line of the stop (inclusive), absolute file line number" }),
+		endLine: Type.Number({ description: "1-based last line of the stop (inclusive), absolute file line number" }),
+		firstLineText: Type.String({
+			description:
+				"Verbatim content of the file at `startLine` (trimmed of leading/trailing whitespace). Used as an anchor to self-correct if your line numbers are off. Must match a line that actually exists in the file.",
+		}),
 		title: Type.String({ description: "Short label for the stop, shown in the sidebar" }),
-		why: Type.String({ description: "One-sentence justification for including this stop" }),
+		why: Type.String({ description: "One-sentence hook shown in the sidebar current-item card and TOC" }),
+		summary: Type.String({
+			description:
+				"2-3 sentence high-level synopsis shown in the review pane's Explanation section. Skimmable; complements the longer buffer annotation.",
+		}),
 		explanation: Type.String({
 			description:
-				"2-4 sentence explanation the user sees when they visit this stop. Grounded in the actual code at this range — what it does, why it matters, any notable decisions.",
+				"3-5 sentence narrative rendered as a block annotation above the stop's start line in the code buffer. Grounded in the actual code — what it does, why it matters, notable decisions.",
 		}),
+		annotations: Type.Optional(
+			Type.Array(annotationSchema, {
+				description:
+					"Optional extra pinned notes inside this stop. Line numbers are absolute file line numbers (same frame as startLine/endLine), NOT offsets from the stop's start. Use sparingly — limit to lines that carry real insight. At most 25% of the stop's lines should receive a line annotation.",
+			}),
+		),
 	});
 
 	const planSchema = Type.Object({

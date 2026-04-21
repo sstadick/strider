@@ -167,6 +167,69 @@ class PlanHelperTests(unittest.TestCase):
 
     # --- coverage helper ---------------------------------------------------
 
+    # --- firstLineText rebases misaligned plans ---------------------------
+
+    def test_plan_with_wrong_line_numbers_is_rebased_via_first_line_text(self) -> None:
+        # Simulates the common LLM failure: model returns a plan whose
+        # line numbers are off, but `firstLineText` pinpoints the real
+        # anchor. Sherpa should shift startLine/endLine and annotations
+        # by the detected offset.
+        project = self.repo_root / "tests" / "fixtures" / "app"
+        with TmuxNvimHarness(self.repo_root, project) as h:
+            # Need the backend up so we have a session. Kick off any
+            # review first — we'll overwrite the review state below.
+            h.ex("SherpaReview prime the session")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            h.wait_until(
+                lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
+                timeout=6.0,
+            )
+
+            # Seed a fixture file in the project with a distinctive anchor
+            # at line 15 (1-based). Done after the session exists.
+            target_path = self.repo_root / "tests" / "fixtures" / "app" / "__rebase_fixture.txt"
+            try:
+                header = "\n".join(["# header"] * 14)
+                body = "MARKER_LINE\n" + "\n".join(
+                    "line {}".format(i) for i in range(16, 30)
+                )
+                target_path.write_text(header + "\n" + body + "\n")
+
+                # Reset into planning state, then ingest a plan with wrong
+                # line numbers but a correct firstLineText anchor.
+                h.lua(
+                    "(function() require('sherpa.review').start_planning('test'); return true end)()"
+                )
+                lua_call = (
+                    "(function() "
+                    "  local args = { scope = 'free', stops = { { "
+                    "    path = " + json.dumps(str(target_path)) + ", "
+                    "    startLine = 7, endLine = 12, "
+                    "    firstLineText = 'MARKER_LINE', "
+                    "    title = 'Misaligned stop', "
+                    "    why = 'Testing rebase.', "
+                    "    summary = 'Rebase test.', "
+                    "    explanation = 'The model got the numbers wrong but the anchor right.', "
+                    "    annotations = { { kind = 'line', line = 9, text = 'Should land at 17' } } "
+                    "  } } }; "
+                    "  require('sherpa.review').ingest_plan(args); "
+                    "  return true "
+                    "end)()"
+                )
+                h.lua(lua_call)
+
+                start_line = int(h.lua("require('sherpa.state').get_session().review.items[1].startLine"))
+                end_line = int(h.lua("require('sherpa.state').get_session().review.items[1].endLine"))
+                ann_line = int(h.lua("require('sherpa.state').get_session().review.items[1].annotations[1].line"))
+            finally:
+                if target_path.exists():
+                    target_path.unlink()
+
+        # Model said startLine=7, real anchor is at line 15 → offset = +8.
+        self.assertEqual(15, start_line)
+        self.assertEqual(20, end_line)  # 12 + 8
+        self.assertEqual(17, ann_line)  # 9 + 8
+
     # --- selection reviews go through start_planned ----------------------
 
     def test_selection_review_uses_planned_state_shape(self) -> None:
@@ -196,6 +259,47 @@ class PlanHelperTests(unittest.TestCase):
             self.assertIn("## Review plan", review_text)
 
     # --- free-scope review via /plan + sherpa_plan tool --------------------
+
+    def test_plan_time_annotations_render_and_clear_between_stops(self) -> None:
+        # When a stop is focused, its explanation should render as a
+        # virtual-lines extmark in the stop's buffer. Advancing to the
+        # next stop clears the previous buffer's annotations.
+        project = self.repo_root / "tests" / "fixtures" / "app"
+        with TmuxNvimHarness(self.repo_root, project) as h:
+            h.ex("SherpaReview explain the app")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            h.wait_until(
+                lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
+                timeout=8.0,
+            )
+            h.wait_until(
+                lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2,
+                timeout=8.0,
+            )
+
+            # Stop 1 is in src/main.tsx — focused automatically after plan.
+            # Count annotation extmarks in that buffer.
+            count_expr = (
+                "(function() "
+                "  local ns = vim.api.nvim_get_namespaces()['sherpa-annotations']; "
+                "  if not ns then return 0 end; "
+                "  local buf = vim.fn.bufnr('src/main.tsx'); "
+                "  if buf <= 0 then return 0 end; "
+                "  return #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}) "
+                "end)()"
+            )
+            h.wait_until(lambda: int(h.lua(count_expr)) >= 1, timeout=4.0)
+            stop1_count = int(h.lua(count_expr))
+            self.assertGreaterEqual(
+                stop1_count,
+                1,
+                "stop 1 should have at least one annotation extmark (the explanation block)",
+            )
+
+            # Advance to stop 2 — annotations on main.tsx should clear
+            # (stop 2 is in App.tsx, a different buffer).
+            h.ex("SherpaNext")
+            h.wait_until(lambda: int(h.lua(count_expr)) == 0, timeout=3.0)
 
     def test_plan_time_explanations_land_without_follow_up_review_turn(self) -> None:
         # With pre-computed explanations, the first stop's explanation

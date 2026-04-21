@@ -63,8 +63,10 @@ How a review works:
    the model will plan a diff review; if you gave it a visual selection, it
    plans a selection review; otherwise it's a free-form review.
 2. The model produces a full plan up front — an ordered list of stops,
-   each with a file range, a title, a `why`, and a pre-written 2-4
-   sentence explanation. The plan lands via the `sherpa_plan` tool and
+   each with a file range, a title, a `why` hook, a sidebar `summary`,
+   and a longer `explanation` rendered inline in the code buffer above
+   the stop's start line. Optional pinned annotations call out specific
+   lines or sub-ranges. The plan lands via the `sherpa_plan` tool and
    shows up in the review pane as a TOC.
 3. `:SherpaNext` / `:SherpaPrev` walk the fixed plan. Navigation is
    instant — explanations were written at plan time, so no per-stop

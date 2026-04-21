@@ -4,9 +4,11 @@ local M = {}
 
 local chunk_namespace = vim.api.nvim_create_namespace("sherpa-chunk")
 local comment_namespace = vim.api.nvim_create_namespace("sherpa-comments")
+local annotation_namespace = vim.api.nvim_create_namespace("sherpa-annotations")
 local added_chunk_hl = "SherpaChunkAddedGutter"
 local removed_chunk_hl = "SherpaChunkRemovedGutter"
 local comment_hl = "SherpaCommentGutter"
+local annotation_hl = "SherpaAnnotation"
 local close_windows_for_buffer
 local target_window
 
@@ -508,6 +510,7 @@ local function ensure_chunk_style()
   vim.api.nvim_set_hl(0, added_chunk_hl, { default = true, fg = "#73C991" })
   vim.api.nvim_set_hl(0, removed_chunk_hl, { default = true, fg = "#F14C4C" })
   vim.api.nvim_set_hl(0, comment_hl, { default = true, fg = "#D7BA7D" })
+  vim.api.nvim_set_hl(0, annotation_hl, { default = true, link = "Comment" })
 end
 
 local function get_buffer(path)
@@ -604,6 +607,113 @@ function M.highlight_range(path, first_line, last_line)
     table.insert(lines, { line = line, kind = "added" })
   end
   M.highlight_lines(path, lines)
+end
+
+-- Wrap a text blob into roughly `width`-char lines. Splits on whitespace;
+-- a single long word stays unbroken rather than getting arbitrarily cut.
+local function wrap_text(text, width)
+  width = width or 78
+  local out = {}
+  for raw_line in string.gmatch(text or "", "[^\n]*") do
+    if raw_line == "" then
+      table.insert(out, "")
+    else
+      local current = ""
+      for word in string.gmatch(raw_line, "%S+") do
+        if current == "" then
+          current = word
+        elseif #current + 1 + #word <= width then
+          current = current .. " " .. word
+        else
+          table.insert(out, current)
+          current = word
+        end
+      end
+      if current ~= "" then
+        table.insert(out, current)
+      end
+    end
+  end
+  return out
+end
+
+-- Clear all sherpa annotations across all buffers that have any. We don't
+-- track which buffers received extmarks in this namespace — just walk all
+-- loaded buffers and clear. Extmarks are per-buffer so this is cheap.
+function M.clear_stop_annotations()
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      pcall(vim.api.nvim_buf_clear_namespace, buf, annotation_namespace, 0, -1)
+    end
+  end
+end
+
+-- Render annotations for a single plan stop. `item` is a stop from the
+-- review plan; it may carry `explanation` (rendered as a block above the
+-- stop's startLine) and `annotations` (optional extras). See stop schema
+-- in pi/sherpa-stepper.ts for the shape.
+--
+-- Caller is responsible for clearing prior annotations first.
+function M.set_stop_annotations(item)
+  if not item or not item.path then
+    return
+  end
+  local buf = get_buffer(item.path)
+  if not buf then
+    return
+  end
+  ensure_chunk_style()
+
+  local max_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
+  local stop_start = math.min(math.max(tonumber(item.startLine) or 1, 1), max_line)
+  local stop_end = math.min(math.max(tonumber(item.endLine) or stop_start, stop_start), max_line)
+
+  -- Default block: the stop's `explanation`, pinned above the stop's
+  -- first line. virt_lines_above renders on the line *of* the anchor.
+  local function render_block_above(anchor_line, text)
+    if not text or text == "" then
+      return
+    end
+    local virt_lines = {}
+    table.insert(virt_lines, { { "┌─ sherpa ─────────────────────", annotation_hl } })
+    for _, line in ipairs(wrap_text(text, 78)) do
+      table.insert(virt_lines, { { "│ " .. line, annotation_hl } })
+    end
+    table.insert(virt_lines, { { "└──────────────────────────────", annotation_hl } })
+    pcall(vim.api.nvim_buf_set_extmark, buf, annotation_namespace, anchor_line - 1, 0, {
+      virt_lines = virt_lines,
+      virt_lines_above = true,
+      priority = 40,
+    })
+  end
+
+  local function render_line_annotation(line_no, text)
+    if not text or text == "" then
+      return
+    end
+    local target = math.min(math.max(tonumber(line_no) or stop_start, stop_start), stop_end)
+    pcall(vim.api.nvim_buf_set_extmark, buf, annotation_namespace, target - 1, 0, {
+      virt_text = { { "  ◂ " .. text, annotation_hl } },
+      virt_text_pos = "eol",
+      priority = 40,
+    })
+  end
+
+  if item.explanation and item.explanation ~= "" then
+    render_block_above(stop_start, item.explanation)
+  end
+
+  for _, ann in ipairs(item.annotations or {}) do
+    if ann.kind == "block" then
+      local s = tonumber(ann.startLine)
+      if s then
+        local anchor = math.min(math.max(s, stop_start), stop_end)
+        render_block_above(anchor, ann.text)
+      end
+    elseif ann.kind == "line" then
+      render_line_annotation(ann.line, ann.text)
+    end
+  end
 end
 
 function M.clear_comment_markers()

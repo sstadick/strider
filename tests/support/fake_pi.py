@@ -217,17 +217,24 @@ def plan_response(message: str) -> str:
             "path": fixture_path("src/main.tsx"),
             "startLine": 1,
             "endLine": 6,
+            "firstLineText": 'import React from "react"',
             "title": "main.tsx entry",
             "why": "React entrypoint — where the app is bootstrapped.",
-            "explanation": "This file is the React bootstrap. It creates the root and mounts the App component into the #root element. Standard Vite/React entrypoint pattern.",
+            "summary": "The React bootstrap. Creates the DOM root and mounts App into #root.",
+            "explanation": "This file is the React bootstrap. It creates the root via ReactDOM and mounts the App component into the #root element. Standard Vite/React entrypoint pattern — short, functional, no surprises.",
+            "annotations": [
+                {"kind": "line", "line": 1, "text": "React + ReactDOM imports"},
+            ],
         })
         if project_has("src/App.tsx"):
             stops.append({
                 "path": fixture_path("src/App.tsx"),
                 "startLine": 1,
                 "endLine": 3,
+                "firstLineText": "export function App() {",
                 "title": "App component",
                 "why": "Top-level UI component rendered by main.",
+                "summary": "Top-level App component rendered by main.tsx.",
                 "explanation": "The top-level App component. Renders the application UI surface. This is what main.tsx mounts.",
             })
     elif project_has("app.py"):
@@ -235,8 +242,10 @@ def plan_response(message: str) -> str:
             "path": fixture_path("app.py"),
             "startLine": 1,
             "endLine": 5,
+            "firstLineText": "from pathlib import Path",
             "title": "app greeting",
             "why": "Pure greeting helper at the top of the file.",
+            "summary": "Pure greeting helper used by the entrypoint.",
             "explanation": "A pure helper that formats a greeting string. No side effects. Used by the main entrypoint.",
         })
     elif project_has("wide.txt"):
@@ -244,8 +253,10 @@ def plan_response(message: str) -> str:
             "path": fixture_path("wide.txt"),
             "startLine": 1,
             "endLine": 5,
+            "firstLineText": "line 1",
             "title": "top of wide.txt",
             "why": "First section of the fixture.",
+            "summary": "Opening section of the test fixture file.",
             "explanation": "Opening section of the test fixture file. Used to exercise the review pane's rendering for long-line content.",
         })
     if stops:

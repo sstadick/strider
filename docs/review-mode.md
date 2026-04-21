@@ -115,13 +115,41 @@ A stop:
   endLine    = 42,
   kind       = "selection" | "diff" | "planned",
   title      = "Short label for the TOC",
-  why        = "One-sentence justification, written by the planner",
-  summary    = "Presentation alias for `why`",
+  why        = "One-sentence hook, sidebar current-item card",
+  summary    = "2-3 sentence synopsis, sidebar Explanation section",
   excerpt    = "Cached snippet of the range",
-  explanation = "2-4 sentence explanation, written by the planner",
+  explanation = "3-5 sentence narrative, rendered as a block annotation above startLine in the code buffer",
+  annotations = {           -- optional extras
+    { kind = "block", startLine = ..., endLine = ..., text = "..." },
+    { kind = "line",  line = ...,                      text = "..." },
+  },
   status     = "pending" | "reviewed" | "commented",
 }
 ```
+
+### Three tiers of detail
+
+The planner writes each stop at three levels:
+
+| Field | Length | Where it renders |
+|---|---|---|
+| `why` | 1 sentence | Sidebar current-item card and TOC |
+| `summary` | 2-3 sentences | Sidebar Explanation section — skimmable |
+| `explanation` | 3-5 sentences | Block annotation above the stop's startLine in the code buffer |
+
+`summary` and `explanation` are not duplicates — one is for the sidebar,
+one is pinned to the code.
+
+### Inline annotations
+
+`annotations` are optional extra pinned notes inside a stop:
+- `kind: "block"` with `startLine`/`endLine` → multi-line note above the sub-range.
+- `kind: "line"` with `line` → end-of-line inline comment.
+
+Budget (enforced in prompt, not code): at most one `block` annotation per
+stop, and at most 25% of the stop's lines may receive a `line` annotation.
+They're rendered as virtual text/lines via a dedicated extmark namespace
+and cleared when the active stop changes or the review ends.
 
 ## Comments
 

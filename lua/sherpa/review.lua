@@ -318,7 +318,10 @@ local function panel_lines(review)
     table.insert(lines, "")
   end
 
-  local explanation = item and item.explanation
+  -- Sidebar Explanation shows the shorter `summary`. The longer
+  -- `explanation` is rendered as a virtual-line block in the code buffer
+  -- instead, so we don't duplicate it here.
+  local explanation = item and (item.summary or item.why or item.explanation)
   local explanation_title = "Explanation"
   if review.awaiting_summary then
     explanation_title = "End of review"
@@ -333,7 +336,7 @@ local function panel_lines(review)
   end
   if explanation_title == "Explanation" then
     append_section(lines, explanation_title, {
-      "Sherpa's current explanation of the highlighted review item:",
+      "Synopsis of the current stop (full explanation is shown inline in the code):",
       "",
       explanation,
     })
@@ -434,6 +437,10 @@ function M.focus_item(item)
   end
   ui.jump_to_file(item.path, item.startLine)
   ui.highlight_range(item.path, item.startLine, item.endLine)
+  -- Swap inline annotations: clear prior stop's, render this one's.
+  -- Each step clears the annotations of the previous step (by design).
+  ui.clear_stop_annotations()
+  ui.set_stop_annotations(item)
   M.render()
   return true
 end
@@ -594,6 +601,51 @@ function M._ranges_cover(target_ranges, stop_ranges)
   return ranges_cover(target_ranges, stop_ranges)
 end
 
+-- Search `path` for the line whose trimmed content equals `needle` and
+-- whose position is closest to `hint_line`. Returns the found line
+-- (1-based) or nil. Used to self-correct plans whose absolute line
+-- numbers are slightly off — a common LLM failure mode.
+local function find_anchor_line(path, needle, hint_line)
+  if not path or not needle or needle == "" then
+    return nil
+  end
+  local trimmed_needle = vim.trim(needle)
+  if trimmed_needle == "" then
+    return nil
+  end
+
+  local line_count = 0
+  local all_lines
+  local buf = vim.fn.bufnr(path)
+  if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
+    all_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    line_count = #all_lines
+  else
+    local ok, lines = pcall(vim.fn.readfile, path)
+    if not ok then
+      return nil
+    end
+    all_lines = lines
+    line_count = #lines
+  end
+  if line_count == 0 then
+    return nil
+  end
+
+  local best_line = nil
+  local best_distance = math.huge
+  for index = 1, line_count do
+    if vim.trim(all_lines[index] or "") == trimmed_needle then
+      local distance = math.abs(index - (hint_line or index))
+      if distance < best_distance then
+        best_distance = distance
+        best_line = index
+      end
+    end
+  end
+  return best_line
+end
+
 local function normalize_plan_stop(cwd, raw)
   if not raw or not raw.path or not raw.startLine or not raw.endLine then
     return nil
@@ -607,13 +659,64 @@ local function normalize_plan_stop(cwd, raw)
   if not start_line or not end_line or start_line > end_line then
     return nil
   end
+
+  -- Self-correct the model's absolute line numbers using firstLineText.
+  -- LLMs frequently report line numbers that are off by several lines —
+  -- they get the content right but the position wrong. When we can find
+  -- an exact match for `firstLineText` elsewhere in the file, shift the
+  -- whole stop (and its annotation lines) by the offset so the block and
+  -- inline pins land where they should.
+  local offset = 0
+  if raw.firstLineText and raw.firstLineText ~= "" then
+    local anchor = find_anchor_line(path, raw.firstLineText, start_line)
+    if anchor and anchor ~= start_line then
+      offset = anchor - start_line
+      start_line = anchor
+      end_line = end_line + offset
+    end
+  end
+
   local stop = make_plan_stop(path, start_line, end_line, raw.kind or "planned", raw.why)
   if raw.title and raw.title ~= "" then
     stop.title = raw.title
   end
-  stop.summary = stop.why
+  -- `summary` populates the sidebar's Explanation section. Fall back to
+  -- `why` (one-liner) if the planner didn't supply a summary.
+  if raw.summary and raw.summary ~= "" then
+    stop.summary = raw.summary
+  else
+    stop.summary = stop.why
+  end
   if raw.explanation and raw.explanation ~= "" then
     stop.explanation = raw.explanation
+  end
+  if type(raw.annotations) == "table" then
+    local clean = {}
+    for _, ann in ipairs(raw.annotations) do
+      if type(ann) == "table" and ann.text and ann.text ~= "" then
+        -- Apply the same offset found for the stop to any annotation
+        -- line numbers. The model picks annotation lines in the same
+        -- (wrong) frame as its startLine, so a uniform shift is correct.
+        local line_num = tonumber(ann.line)
+        local ann_start = tonumber(ann.startLine)
+        local ann_end = tonumber(ann.endLine)
+        if offset ~= 0 then
+          if line_num then line_num = line_num + offset end
+          if ann_start then ann_start = ann_start + offset end
+          if ann_end then ann_end = ann_end + offset end
+        end
+        table.insert(clean, {
+          kind = ann.kind == "line" and "line" or "block",
+          line = line_num,
+          startLine = ann_start,
+          endLine = ann_end,
+          text = tostring(ann.text),
+        })
+      end
+    end
+    if #clean > 0 then
+      stop.annotations = clean
+    end
   end
   return stop
 end
@@ -631,6 +734,7 @@ function M.start_planning(focus, opts)
   end
 
   ui.clear_comment_markers()
+  ui.clear_stop_annotations()
   ui.hide_log()
   session.review = {
     active = true,
@@ -766,6 +870,7 @@ function M.start_planned(scope, opts)
   end
 
   ui.clear_comment_markers()
+  ui.clear_stop_annotations()
   ui.hide_log()
   local source = opts.resolved_source or scope
   session.review = {
@@ -846,6 +951,7 @@ function M.finish()
 
   local comments = unresolved_comments(review)
   review.active = false
+  ui.clear_stop_annotations()
   if #comments == 0 then
     review.awaiting_summary = false
     review.pending_comments = nil

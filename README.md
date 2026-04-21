@@ -103,11 +103,13 @@ GitHub PR review integration, but Sherpa doesn't submit or sync them yet.
 - `:SherpaPrompt {prompt}` — send a plain agent turn. Sherpa adds no
   mode-specific prompting beyond making the `sherpa_clarify` tool
   available; your global pi system prompt governs everything else.
-- `:SherpaPrompt` (no args) — opens the `sherpa://log` buffer with a
-  `── [draft] ──` scaffold at the bottom. Type your message inline,
-  `<C-s>` to send, `<Esc><Esc>` to cancel. The draft region stays as
-  history once sent, letting the log double as a chat transcript. Only
-  works when no other Sherpa request is already in flight.
+- `:SherpaPrompt` (no args) — opens the `sherpa://log` buffer in a
+  right-hand vertical split and the `sherpa://compose` buffer in a
+  horizontal split below it. Type in compose, `<C-s>` to send. Compose
+  clears on successful send and persists across sends so you can
+  immediately type the next message. Sending while a request is in
+  flight steers the running turn (pi's `steer` command) — you can
+  pile up mid-stream corrections freely.
 
 ## Examples
 

@@ -192,30 +192,53 @@ function M.setup(opts)
   state.setup(opts or {})
 end
 
+local function dispatch_prompt(text)
+  send("/prompt " .. text, text, { operation = "prompt", open_log = true })
+end
+
+-- Send a user message from the compose buffer. If a request is already
+-- in flight, deliver as a steer (mid-turn redirect) instead of a new
+-- prompt. Either way the log gets a [user] block so the transcript
+-- reads correctly.
+local function dispatch_compose(text)
+  text = trimmed(text)
+  if text == "" then return false end
+  if not ensure_backend() then return false end
+
+  local pending = state.peek_pending_request()
+  if pending then
+    -- Steer: the pending request stays the same, the model gets the
+    -- new message mid-stream. No new operation, no new activity.
+    ui.append_block("user", text)
+    local ok = rpc.send_steer(text)
+    if not ok then
+      ui.notify("Steer failed to send", vim.log.levels.ERROR)
+      return false
+    end
+    return true
+  end
+  -- No pending — start a new prompt turn. send() handles the [user]
+  -- append, pending state, and activity spinner.
+  dispatch_prompt(text)
+  return true
+end
+
 function M.prompt(prompt)
   prompt = trimmed(prompt)
   if prompt == "" then
-    -- Spin up the backend first so peek_pending_request has a session.
+    -- No args: open the log and compose surfaces and focus compose.
+    -- The compose buffer is persistent; multiple sends / steers are
+    -- fine, no state to track.
     if not ensure_backend() then
       return
     end
-    -- Reject-with-notify if a request is already in flight. Composing
-    -- a draft on top of a pending turn is confusing; the user should
-    -- wait for the reply (or explicitly abort) before composing.
-    local pending = state.peek_pending_request()
-    if pending then
-      ui.notify(
-        string.format("Sherpa is already running a %s request; wait for the reply.", pending.operation),
-        vim.log.levels.WARN
-      )
-      return
-    end
-    ui.open_log_with_draft(function(text)
-      M.prompt(text)
+    ui.open_log({ preserve_focus = true })
+    ui.open_compose(function(text)
+      return dispatch_compose(text)
     end)
     return
   end
-  send("/prompt " .. prompt, prompt, { operation = "prompt", open_log = true })
+  dispatch_prompt(prompt)
 end
 
 function M.search(prompt)

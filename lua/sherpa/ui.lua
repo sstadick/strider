@@ -6,7 +6,6 @@ local chunk_namespace = vim.api.nvim_create_namespace("sherpa-chunk")
 local comment_namespace = vim.api.nvim_create_namespace("sherpa-comments")
 local annotation_namespace = vim.api.nvim_create_namespace("sherpa-annotations")
 local log_namespace = vim.api.nvim_create_namespace("sherpa-log")
-local draft_namespace = vim.api.nvim_create_namespace("sherpa-draft")
 local added_chunk_hl = "SherpaChunkAddedGutter"
 local removed_chunk_hl = "SherpaChunkRemovedGutter"
 local comment_hl = "SherpaCommentGutter"
@@ -187,7 +186,9 @@ function M.open_log(opts)
       return
     end
   end
-  vim.cmd("botright split")
+  -- Log opens as a right-hand vertical split. Compose window, if opened,
+  -- stacks below the log in that same vertical column.
+  vim.cmd("botright vsplit")
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
   scroll_log_windows(buf)
@@ -199,6 +200,133 @@ end
 function M.hide_log()
   local session = state.get_session()
   close_windows_for_buffer(session and session.log_buf)
+end
+
+-- Compose buffer: a persistent scratch buffer for user input. Sits in
+-- a horizontal split below the log (right-hand column). <C-s> sends
+-- its contents via the provided dispatcher; buffer is cleared on
+-- successful send but kept alive across sends.
+local compose_ns = vim.api.nvim_create_namespace("sherpa-compose-hint")
+
+local function compose_buffer_name()
+  return "sherpa://compose"
+end
+
+function M.ensure_compose_buffer(on_send)
+  local session = state.get_session()
+  if session.compose_buf and vim.api.nvim_buf_is_valid(session.compose_buf) then
+    return session.compose_buf
+  end
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  pcall(vim.api.nvim_buf_set_name, buf, compose_buffer_name())
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].bufhidden = "hide"
+  vim.bo[buf].filetype = "markdown"
+  session.compose_buf = buf
+
+  local function render_hint()
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+    vim.api.nvim_buf_clear_namespace(buf, compose_ns, 0, -1)
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local is_empty = (#lines == 0) or (#lines == 1 and lines[1] == "")
+    if is_empty then
+      pcall(vim.api.nvim_buf_set_extmark, buf, compose_ns, 0, 0, {
+        virt_text = { { "Type a message · <C-s> to send", "Comment" } },
+        virt_text_pos = "overlay",
+      })
+    end
+  end
+
+  render_hint()
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    buffer = buf,
+    callback = render_hint,
+  })
+
+  local function send_compose()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local text = vim.trim(table.concat(lines, "\n"))
+    if text == "" then
+      notify("Nothing to send — type a message first", vim.log.levels.WARN)
+      return
+    end
+    -- Dispatch first; only clear the buffer if the send actually
+    -- succeeded. Undo history is reset so `u` doesn't resurrect the
+    -- just-sent text — surprising since it's now in the log as history.
+    local ok = on_send(text)
+    if ok ~= false then
+      pcall(vim.api.nvim_buf_set_lines, buf, 0, -1, false, {})
+      -- Reset undo so `u` can't resurrect a message already in flight.
+      vim.bo[buf].undolevels = -1
+      vim.bo[buf].undolevels = vim.o.undolevels
+      render_hint()
+    end
+  end
+
+  local function leave_insert()
+    pcall(vim.cmd, "stopinsert")
+  end
+
+  vim.keymap.set({ "n", "i" }, "<C-s>", send_compose, {
+    buffer = buf, nowait = true, silent = true, desc = "Send Sherpa compose"
+  })
+  vim.keymap.set("i", "<Esc><Esc>", leave_insert, {
+    buffer = buf, nowait = true, silent = true, desc = "Leave insert without sending"
+  })
+
+  return buf
+end
+
+-- Open the compose window as a horizontal split below an existing log
+-- window (or, if the log isn't open, in the bottom-right corner).
+-- Focus the compose window and drop into insert.
+function M.open_compose(on_send)
+  local buf = M.ensure_compose_buffer(on_send)
+  local session = state.get_session()
+
+  -- Already visible somewhere? Just focus.
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_set_current_win(win)
+      vim.schedule(function()
+        if vim.api.nvim_win_is_valid(win) then vim.cmd("startinsert") end
+      end)
+      return win
+    end
+  end
+
+  -- Prefer splitting below the log window so they share the right-hand
+  -- column. Fall back to botright vsplit if the log isn't visible yet.
+  local log_buf = session and session.log_buf
+  local log_wins = log_buf and vim.fn.win_findbuf(log_buf) or {}
+  if #log_wins > 0 and vim.api.nvim_win_is_valid(log_wins[1]) then
+    vim.api.nvim_set_current_win(log_wins[1])
+    vim.cmd("belowright split")
+  else
+    vim.cmd("botright vsplit")
+  end
+
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, buf)
+  -- Compose is a thin input surface; keep it short by default.
+  pcall(vim.api.nvim_win_set_height, win, 8)
+  vim.wo[win].wrap = true
+  vim.wo[win].linebreak = true
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].winfixheight = true
+  vim.schedule(function()
+    if vim.api.nvim_win_is_valid(win) then vim.cmd("startinsert") end
+  end)
+  return win
+end
+
+function M.hide_compose()
+  local session = state.get_session()
+  close_windows_for_buffer(session and session.compose_buf)
 end
 
 function M.append(lines)
@@ -267,142 +395,6 @@ function M.append_block(label, text)
   })
 
   scroll_log_windows(buf)
-end
-
--- Draft flow in the log buffer.
---
--- `open_log_with_draft(on_submit)` appends a `── [draft] ──` header and
--- a blank line at the bottom of sherpa://log, anchors a draft extmark
--- to the blank line, focuses the log window at the cursor position,
--- and enters insert mode. Buffer-local <C-s> reads lines from the
--- draft extmark to end-of-buffer and calls `on_submit(text)` with the
--- trimmed prompt. <Esc><Esc> cancels — removes the draft lines and
--- the extmark.
---
--- The extmark is what lets us track the draft region through any log
--- writes that land during composition (tool calls, stderr, etc.). It
--- moves with buffer mutations above it.
-local function active_draft_extmark(buf)
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then
-    return nil
-  end
-  local marks = vim.api.nvim_buf_get_extmarks(buf, draft_namespace, 0, -1, {})
-  if #marks == 0 then
-    return nil
-  end
-  -- There should only ever be one draft at a time. If somehow there
-  -- are multiple, prefer the last (newest).
-  local last = marks[#marks]
-  return { id = last[1], row = last[2] }
-end
-
-local function clear_draft(buf)
-  if buf and vim.api.nvim_buf_is_valid(buf) then
-    pcall(vim.api.nvim_buf_clear_namespace, buf, draft_namespace, 0, -1)
-  end
-end
-
--- Deletes the draft region (header line + draft body) from the buffer.
--- Used on cancel. Relies on the draft header being exactly one line
--- above the draft extmark.
-local function delete_draft_region(buf)
-  local mark = active_draft_extmark(buf)
-  if not mark then return end
-  -- Header is immediately above the draft anchor row. Remove header +
-  -- everything below.
-  local start_row = math.max(mark.row - 1, 0)
-  local end_row = vim.api.nvim_buf_line_count(buf)
-  pcall(vim.api.nvim_buf_set_lines, buf, start_row, end_row, false, {})
-  clear_draft(buf)
-end
-
-function M.open_log_with_draft(on_submit)
-  ensure_chunk_style()
-  local buf = M.ensure_log_buffer()
-
-  -- Append a draft header + a blank line for the user to type into.
-  -- The extmark anchors the blank line so late log writes from other
-  -- operations don't detach us.
-  local header = string.format("── [draft] %s", string.rep("─", 60))
-  local pre_count = vim.api.nvim_buf_line_count(buf)
-  vim.api.nvim_buf_set_lines(buf, -1, -1, false, { header, "" })
-  local header_row = pre_count              -- 0-based index of header line
-  local draft_row = header_row + 1          -- 0-based index of blank body line
-
-  -- Color the header row with the log rule style so it reads as a
-  -- "draft" separator, same visual rhythm as assistant/user blocks.
-  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, header_row, 0, {
-    end_row = header_row + 1,
-    hl_group = log_user_hl,  -- draft is a user-authored block
-    priority = 10,
-  })
-
-  -- Anchor the draft on the blank body line. Tracks through subsequent
-  -- buffer mutations above it.
-  local mark_id = vim.api.nvim_buf_set_extmark(buf, draft_namespace, draft_row, 0, {
-    right_gravity = false,
-  })
-
-  -- Focus the log window (opening one if needed), jump cursor to the
-  -- draft row, enter insert.
-  M.open_log()
-  local wins = vim.fn.win_findbuf(buf)
-  local win = wins[1]
-  if win and vim.api.nvim_win_is_valid(win) then
-    vim.api.nvim_set_current_win(win)
-    local line_count = vim.api.nvim_buf_line_count(buf)
-    pcall(vim.api.nvim_win_set_cursor, win, { line_count, 0 })
-    vim.schedule(function()
-      if vim.api.nvim_win_is_valid(win) then
-        vim.cmd("startinsert!")
-      end
-    end)
-  end
-
-  local function read_draft_text()
-    local b = M.ensure_log_buffer()
-    local mark = active_draft_extmark(b)
-    if not mark then return nil end
-    local lines = vim.api.nvim_buf_get_lines(b, mark.row, -1, false)
-    local text = vim.trim(table.concat(lines, "\n"))
-    return text
-  end
-
-  local function send_draft()
-    local text = read_draft_text()
-    if not text or text == "" then
-      notify("Draft is empty — type a message or <Esc><Esc> to cancel", vim.log.levels.WARN)
-      return
-    end
-    -- Clear the draft extmark so this region becomes normal history.
-    -- The lines stay in the buffer; only the "this is still editable"
-    -- tracking goes away.
-    clear_draft(buf)
-    pcall(vim.cmd, "stopinsert")
-    on_submit(text)
-  end
-
-  local function cancel_draft()
-    pcall(vim.cmd, "stopinsert")
-    delete_draft_region(buf)
-    scroll_log_windows(buf)
-  end
-
-  vim.keymap.set({ "n", "i" }, "<C-s>", send_draft, {
-    buffer = buf, nowait = true, silent = true, desc = "Send Sherpa draft"
-  })
-  vim.keymap.set("i", "<Esc><Esc>", cancel_draft, {
-    buffer = buf, nowait = true, silent = true, desc = "Cancel Sherpa draft"
-  })
-  vim.keymap.set("n", "<Esc><Esc>", cancel_draft, {
-    buffer = buf, nowait = true, silent = true, desc = "Cancel Sherpa draft"
-  })
-end
-
-function M.has_active_draft()
-  local session = state.get_session()
-  if not session or not session.log_buf then return false end
-  return active_draft_extmark(session.log_buf) ~= nil
 end
 
 local function configure_review_window(win)

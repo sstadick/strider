@@ -40,43 +40,80 @@ class TmuxPopupTests(unittest.TestCase):
             state = h.current_state()
             self.assertEqual(0, len(state["qf"]["items"]))
 
-    def test_empty_prompt_draft_cancel_clears_region(self) -> None:
+    def test_empty_prompt_opens_compose_and_sends(self) -> None:
+        # :SherpaPrompt with no args opens the log buffer and a persistent
+        # compose buffer. <C-s> in compose sends and clears. The sent
+        # text lands in the log as a [user] block.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaPrompt")
+                # Compose buffer should come into existence.
                 h.wait_until(
-                    lambda: h.lua_bool("require('sherpa.ui').has_active_draft()"),
+                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
                     timeout=3.0,
                 )
-                # Cancel with <Esc><Esc> while in insert mode.
-                h.send("Escape", "Escape", pause=0.3)
-                h.wait_until(
-                    lambda: not h.lua_bool("require('sherpa.ui').has_active_draft()"),
-                    timeout=3.0,
-                )
-
-    def test_empty_prompt_opens_log_draft_and_dispatches(self) -> None:
-        # :SherpaPrompt with no args opens the log buffer with a draft
-        # scaffold. The user types into the draft region and hits <C-s>
-        # to send. The draft lines stay in the log as history.
-        with FixtureProject(self.project_root) as project_root:
-            with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaPrompt")
-                # A draft extmark should exist on the log buffer.
-                h.wait_until(
-                    lambda: h.lua_bool("require('sherpa.ui').has_active_draft()"),
-                    timeout=3.0,
-                )
-                # Type into the draft and send.
                 h.send("add a banner", "C-s", pause=0.3)
-                # The draft extmark should clear after sending.
+                # Compose buffer should be cleared after successful send.
                 h.wait_until(
-                    lambda: not h.lua_bool("require('sherpa.ui').has_active_draft()"),
+                    lambda: h.lua(
+                        "(function() local b=vim.fn.bufnr('sherpa://compose'); "
+                        "if b<=0 then return 'no-buf' end; "
+                        "local l=vim.api.nvim_buf_get_lines(b,0,-1,false); "
+                        "return (#l==0 or (#l==1 and l[1]=='')) and 'empty' or 'non-empty' end)()"
+                    ) == "empty",
                     timeout=3.0,
                 )
                 # Message reached the fake backend.
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("add a banner", log_text)
+
+    def test_compose_steers_when_request_is_in_flight(self) -> None:
+        # While a request is pending, compose <C-s> dispatches via
+        # send_steer instead of starting a new prompt. The fake pi sees
+        # it as a separate line of input and records it; we verify the
+        # log shows both [user] blocks (original + steer).
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaPrompt")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    timeout=3.0,
+                )
+                # Fake a pending request so compose routes via steer.
+                h.lua(
+                    "(function() require('sherpa.state').set_pending_request("
+                    "'prompt', {}); return true end)()"
+                )
+                h.send("steering input", "C-s", pause=0.3)
+                # Wait for the compose buffer to clear (send succeeded).
+                h.wait_until(
+                    lambda: h.lua(
+                        "(function() local b=vim.fn.bufnr('sherpa://compose'); "
+                        "local l=vim.api.nvim_buf_get_lines(b,0,-1,false); "
+                        "return (#l==0 or (#l==1 and l[1]=='')) and 'empty' or 'non-empty' end)()"
+                    ) == "empty",
+                    timeout=3.0,
+                )
+                log_text = "\n".join(h.log_lines())
+                self.assertIn("steering input", log_text)
+
+    def test_compose_buffer_persists_across_sends(self) -> None:
+        # After a send, the compose buffer is cleared but still exists.
+        # A subsequent :SherpaPrompt reopens it rather than spawning a
+        # second compose buffer.
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaPrompt")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    timeout=3.0,
+                )
+                first_id = h.expr("bufnr('sherpa://compose')")
+                h.send("first", "C-s", pause=0.3)
+                # Run SherpaPrompt again — compose buffer should be the same.
+                h.ex("SherpaPrompt")
+                second_id = h.expr("bufnr('sherpa://compose')")
+                self.assertEqual(first_id, second_id)
 
     def test_empty_review_without_active_session_opens_context_editor(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:

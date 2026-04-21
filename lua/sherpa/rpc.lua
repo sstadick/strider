@@ -605,4 +605,24 @@ function M.send_prompt(message)
   return true
 end
 
+-- Steer an already-running turn with additional user input. Pi inserts
+-- the steer message mid-stream; the model sees it and adjusts without
+-- a new turn being started. No new pending_request is created — the
+-- existing one continues to resolve on the next message_end.
+function M.send_steer(message)
+  local session = state.get_session()
+  if not session or not session.job_id then
+    ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
+    return false
+  end
+
+  local payload = {
+    id = state.next_request_id(),
+    message = message,
+    type = "steer",
+  }
+  vim.fn.chansend(session.job_id, vim.json.encode(payload) .. "\n")
+  return true
+end
+
 return M

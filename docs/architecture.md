@@ -54,8 +54,8 @@ Owns:
 2. plugin sends `/search <prompt>`
 3. extension constrains the model to structured search output
 4. plugin parses result lines
-5. single match jumps directly to the file
-6. multiple matches open telescope/fzf when available, otherwise quickfix
+5. results open through telescope/fzf when available for a consistent selection flow
+6. without a picker, Sherpa falls back to quickfix and jumps/highlights the lone match when only one exists
 
 ## Review
 

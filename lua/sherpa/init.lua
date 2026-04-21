@@ -197,6 +197,15 @@ function M.review(args, opts)
   end
 
   if trimmed(args) == "" then
+    if review.has_active_review() then
+      local item = review.current_item()
+      if item then
+        review.focus_item(item)
+      else
+        review.render()
+      end
+      return
+    end
     if range then
       start_review("selection", {
         endLine = range.endLine,
@@ -282,7 +291,7 @@ function M.next_step()
     end
     if finished then
       local prompt = review.finish()
-      ui.show_log()
+      ui.open_log()
       local comment_lines = review.pending_comment_lines()
       if comment_lines then
         ui.append_block("review-comments", table.concat(comment_lines, "\n"))

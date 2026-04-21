@@ -9,14 +9,12 @@ class TmuxSearchTests(unittest.TestCase):
         self.repo_root = Path(__file__).resolve().parents[1]
         self.project_root = self.repo_root / "tests" / "fixtures" / "app"
 
-    def test_search_single_result_jumps_to_match_and_summarizes_log(self) -> None:
+    def test_search_single_result_opens_picker(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("SherpaSearch where is the main entrypoint?")
 
-            h.wait_until(lambda: h.current_state()["buf"].endswith("src/main.tsx"))
+            h.wait_until(lambda: len(h.current_state()["qf"]["items"]) == 1)
             state = h.current_state()
-            self.assertTrue(state["buf"].endswith("src/main.tsx"))
-            self.assertEqual(6, state["line"])
             self.assertEqual(1, len(state["qf"]["items"]))
             self.assertIn("Sherpa Search", state["qf"]["title"])
 

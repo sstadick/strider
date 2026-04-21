@@ -10,6 +10,43 @@ local comment_hl = "SherpaCommentGutter"
 local close_windows_for_buffer
 local target_window
 
+local spin_labels = {
+  "thinking...",
+  "reading files...",
+  "analyzing...",
+  "still working...",
+  "almost there...",
+  "crunching...",
+}
+local spin_index = 0
+local spin_timer = nil
+
+local function stop_spin()
+  if spin_timer then
+    spin_timer:stop()
+    spin_timer:close()
+    spin_timer = nil
+  end
+end
+
+local function spin_tick()
+  local session = state.get_session()
+  if not session or not session.progress then
+    return
+  end
+  spin_index = (spin_index % #spin_labels) + 1
+  M.append({ "[sherpa] " .. spin_labels[spin_index] })
+end
+
+local function start_spin()
+  stop_spin()
+  spin_index = 0
+  spin_timer = vim.uv.new_timer()
+  spin_timer:start(6000, 8000, vim.schedule_wrap(function()
+    spin_tick()
+  end))
+end
+
 local function notify(message, level)
   vim.notify(message, level or vim.log.levels.INFO, { title = "sherpa" })
 end
@@ -80,6 +117,18 @@ function M.show_log()
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       close_windows_for_buffer(buf)
+      return
+    end
+  end
+  M.open_log()
+end
+
+function M.open_log()
+  local buf = M.ensure_log_buffer()
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_set_current_win(win)
+      scroll_log_windows(buf)
       return
     end
   end
@@ -197,6 +246,7 @@ function M.start_activity(title, target)
   if ok then
     session.progress.id = id
   end
+  start_spin()
 end
 
 function M.finish_activity(message, status)
@@ -218,6 +268,7 @@ function M.finish_activity(message, status)
     })
   end
   session.progress = nil
+  stop_spin()
 end
 
 local editor_ns = vim.api.nvim_create_namespace("sherpa-editor-hint")

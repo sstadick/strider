@@ -44,8 +44,8 @@ editor with ghost-text guidance. Submit with `<C-s>`, cancel with `<Esc><Esc>`.
 - `:SherpaSearches` — reopen recent search result sets
 
 Search uses a p99-style structured result format.
-A single match jumps directly to the file and highlights the range.
-Multiple matches use a wrapped telescope/fzf picker when available and otherwise fall back to quickfix.
+Matches open through the same telescope/fzf picker when available for a consistent flow, and otherwise fall back to quickfix.
+If only one match exists and no picker is available, Sherpa still highlights that file/range after populating quickfix.
 
 ### Review
 

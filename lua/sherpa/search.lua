@@ -111,10 +111,6 @@ end
 
 local function present_result_set(result_set)
   local count = #result_set.results
-  if count == 1 then
-    store_quickfix(result_set, false)
-    return M.open_result(result_set.results[1])
-  end
 
   if picker.available() then
     local items = {}
@@ -131,6 +127,9 @@ local function present_result_set(result_set)
   end
 
   store_quickfix(result_set, true)
+  if count == 1 then
+    M.open_result(result_set.results[1])
+  end
   return true
 end
 

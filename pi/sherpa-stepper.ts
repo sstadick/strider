@@ -257,15 +257,56 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setStatus("sherpa", state.activeOperation ? `${state.activeOperation} active` : "idle");
 	}
 
+	// Sherpa-owned tools whose validity is operation-scoped. These are
+	// always registered (pi's registerTool is load-time only), but we
+	// toggle which ones are *active* per turn via pi.setActiveTools so
+	// the model only sees them when they'd actually do something.
+	//
+	// Without this gating, the model tends to call sherpa_plan during
+	// prose turns because the tool name is suggestive — the call
+	// quietly no-ops on our side but wastes tokens and looks weird in
+	// the transcript.
+	const SHERPA_OP_SCOPED_TOOLS = new Set(["sherpa_plan", "sherpa_append_stops"]);
+
+	function toolsForOperation(allNames: string[], kind?: OperationKind): string[] {
+		const keep = (name: string): boolean => {
+			if (!SHERPA_OP_SCOPED_TOOLS.has(name)) return true;   // non-scoped tools always active
+			if (name === "sherpa_plan") return kind === "plan";
+			// sherpa_append_stops is only meaningful during plan (appending
+			// to the plan being built) or during a /review turn on a free-
+			// scope review. We enable it for both — the Lua side silently
+			// rejects appends on non-free scopes so the overreach is safe.
+			if (name === "sherpa_append_stops") return kind === "plan" || kind === "review";
+			return false;
+		};
+		return allNames.filter(keep);
+	}
+
+	function applyOperationTools(ctx: any, kind?: OperationKind) {
+		if (typeof pi.getAllTools !== "function" || typeof pi.setActiveTools !== "function") {
+			return; // older pi runtimes: leave tool visibility alone
+		}
+		const allNames = pi.getAllTools().map((t: any) => t.name);
+		const active = toolsForOperation(allNames, kind);
+		try {
+			pi.setActiveTools(active);
+		} catch (_err) {
+			// Non-fatal: if pi rejects the list (e.g. unknown tool name),
+			// fall through with whatever was already active.
+		}
+	}
+
 	function startOperation(kind: OperationKind, ctx: any) {
 		state.activeOperation = kind;
 		state.lastAssistantSummary = undefined;
 		state.clarifyCount = 0;
+		applyOperationTools(ctx, kind);
 		updateWidget(ctx);
 	}
 
 	function finishOperation(ctx: any) {
 		state.activeOperation = undefined;
+		applyOperationTools(ctx, undefined);
 		updateWidget(ctx);
 	}
 
@@ -279,6 +320,9 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event: any, ctx: any) => {
 		state = emptyState();
+		// Start with Sherpa's op-scoped tools hidden. They'll be turned
+		// on by startOperation when a command that needs them runs.
+		applyOperationTools(ctx, undefined);
 		updateWidget(ctx);
 	});
 

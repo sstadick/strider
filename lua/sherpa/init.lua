@@ -502,22 +502,21 @@ end
 
 function M.comment(text, opts)
   local range = range_from_opts(opts)
-  text = trimmed(text)
+  local item = review.current_item()
+  local prefill = trimmed(text)
+
+  if not item then
+    ui.notify("No active review item to comment on", vim.log.levels.WARN)
+    return
+  end
 
   local function log_comment(comment)
     ui.append_block("review", string.format("%s:%d-%d\n%s", comment.path, comment.startLine, comment.endLine, comment.text))
   end
 
-  if text == "" then
-    review.open_comment_editor(range, log_comment)
-    return
-  end
-
-  local comment = review.add_comment(text, range)
-  if not comment then
-    return
-  end
-  log_comment(comment)
+  review.open_comment_editor(range, log_comment, {
+    prefill = prefill ~= "" and prefill or nil,
+  })
 end
 
 function M.comments()

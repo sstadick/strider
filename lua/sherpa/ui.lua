@@ -707,11 +707,13 @@ local function open_scratch_editor(opts, on_submit)
   end)
 end
 
-function M.open_comment_editor(on_submit)
+function M.open_comment_editor(on_submit, opts)
+  opts = opts or {}
   open_scratch_editor({
     name = "sherpa://comment",
     title = "Sherpa comment",
-    hint_lines = { "Leave a review comment. Multiple lines are fine." },
+    prefill = opts.prefill,
+    hint_lines = opts.hint_lines or { "Leave a review comment. Multiple lines are fine." },
   }, on_submit)
 end
 

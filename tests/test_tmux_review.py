@@ -88,7 +88,17 @@ class TmuxReviewTests(unittest.TestCase):
             self.assertTrue(h.lua_bool("require('sherpa.review').has_active_review()"))
 
             h.ex("1,2SherpaComment why does this helper matter?")
+            h.wait_until(lambda: h.expr("bufexists('sherpa://comment')") == "1")
+
+            editor_text = "\n".join(h.buffer_lines("sherpa://comment"))
+            self.assertIn("why does this helper matter?", editor_text)
+
+            h.send("Enter", "Please document the intent too.", "C-s", pause=1.0)
             h.wait_until(lambda: h.expr("luaeval(\"#require('sherpa.state').get_session().review.comments\")") == "1")
+
+            comment_text = h.expr("luaeval(\"require('sherpa.state').get_session().review.comments[1].text\")")
+            self.assertIn("why does this helper matter?", comment_text)
+            self.assertIn("Please document the intent too.", comment_text)
 
             h.ex("SherpaNext")
             h.wait_until(

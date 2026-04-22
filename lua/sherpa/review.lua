@@ -398,7 +398,7 @@ local function panel_lines(review)
     "- `:'<,'>SherpaReview <question>` asks about a selected range",
     "- `:SherpaChat` toggles the chat surfaces (log + compose)",
     "- `:SherpaComment` opens the multiline comment editor",
-    "- `:'<,'>SherpaComment <text>` comments on a selected range",
+    "- `:'<,'>SherpaComment [text]` opens the multiline editor for a selected range",
     "- `:'<,'>SherpaPatch <prompt>` patches the selected range",
   })
 
@@ -1160,13 +1160,17 @@ function M.add_comment(text, range)
   return comment
 end
 
-function M.open_comment_editor(range, on_submit)
+function M.open_comment_editor(range, on_submit, opts)
+  opts = opts or {}
   ui.open_comment_editor(function(text)
     local comment = M.add_comment(text, range)
     if comment and on_submit then
       on_submit(comment)
     end
-  end)
+  end, {
+    prefill = opts.prefill,
+    hint_lines = opts.hint_lines,
+  })
 end
 
 function M.comment_picker()

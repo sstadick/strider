@@ -17,6 +17,13 @@ Supporting UX:
 - local review comments summarized back to the agent at review end
 - `[Tangent]` badge in the compose winbar while a `:SherpaQ` branch is
   active; any other `:Sherpa*` command implicitly ends it
+- clarify and plan-proposal flows in the chat log (no popups);
+  compose hijacked for replies with a `[Clarify]` badge
+- `:SherpaStop` to abort in-flight turns (pi `abort` RPC)
+- inline red `[error]` blocks surface provider / model / transport
+  errors that used to silently hang the log
+- `<S-Tab>` in compose cycles the pi thinking level; active level
+  shows in the winbar as `Model: …/… (level)`
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests
 

@@ -100,6 +100,31 @@ local function handle_response(event)
   ui.notify(reason, vim.log.levels.ERROR)
 end
 
+-- Runtime extension errors: pi emits these when sendUserMessage (or
+-- another extension-side call) throws before a turn can start — e.g.
+-- "No API key found for <provider>", or a provider returning 400
+-- before the stream opens. The preceding `response` event reports
+-- success:true because the RPC command itself dispatched cleanly; the
+-- failure happens later in the extension's async promise chain.
+-- Without a handler here, these silently evaporate and the log just
+-- hangs on "Waiting for assistant response...".
+local function handle_extension_error(event)
+  local reason = event.error or "Sherpa extension error"
+  -- Collapse multi-line reasons to the first non-empty line for the
+  -- notify + activity echo; put the full text in the [error] block so
+  -- detail isn't lost.
+  local first_line = reason
+  for line in reason:gmatch("[^\r\n]+") do
+    if vim.trim(line) ~= "" then first_line = line; break end
+  end
+  ui.append_block("error", reason)
+  ui.finish_activity(first_line, "error")
+  ui.notify(first_line, vim.log.levels.ERROR)
+  -- Clear the pending request so the activity spinner actually stops
+  -- and the next send doesn't think a turn is still in flight.
+  state.consume_pending_request()
+end
+
 local function ensure_stream_log(pending)
   if not pending or pending.log_opened or pending.operation == "plan" then
     return
@@ -545,28 +570,48 @@ local function handle_extension_ui(event)
     local plan_prefix = "[sherpa-plan-proposal] "
     if title:sub(1, #plan_prefix) == plan_prefix then
       local display_title = title:sub(#plan_prefix + 1)
-      ui.append_block("sherpa", string.format("plan proposal: %s", display_title))
-      ui.clarify_plan_proposal(display_title, prefill, function(result)
-        if result == nil then
+      -- Put the full proposal body in the chat log first so the user can
+      -- read it in-place before the Accept/Modify/Reject picker pops.
+      -- No floating preview — everything lives in the chat transcript.
+      local body = prefill ~= "" and prefill or "(empty proposal)"
+      ui.append_block("plan", string.format("%s\n\n%s", display_title, body))
+      ui.clarify_plan_proposal_picker(function(choice)
+        if choice == "accept" then
+          ui.append_block("user", prefill ~= "" and prefill or "(accepted)")
+          send_ui_response(id, { value = prefill })
+        elseif choice == "modify" then
+          -- Hijack compose as the clarify-reply surface, seeded with
+          -- the proposal body. The user edits in-place and hits <C-s>
+          -- to submit the edited text as the clarify value.
+          state.set_pending_clarify(id, display_title)
+          state.set_status("sherpa-clarify", "clarify")
+          ui.refresh_compose_winbar()
+          require("sherpa").open_compose_for_clarify()
+          ui.seed_compose(prefill)
+        else
           ui.append({ "[sherpa] plan proposal rejected" })
           send_ui_response(id, { cancelled = true })
-        else
-          ui.append_block("user", result)
-          send_ui_response(id, { value = result })
         end
       end)
       return
     end
-    ui.append_block("sherpa", string.format("clarify opened: %s", title))
-    ui.open_clarify_editor(title, prefill, function(result)
-      if result == nil then
-        ui.append({ "[sherpa] clarify cancelled" })
-        send_ui_response(id, { cancelled = true })
-      else
-        ui.append_block("user", result)
-        send_ui_response(id, { value = result })
-      end
-    end)
+    -- Non-plan clarify: render the question inline in the chat log and
+    -- hijack the next compose send to route back as the clarify reply.
+    -- Matches the "everything in chat, no popout" principle used for
+    -- plan proposals.
+    local body_parts = { title }
+    if prefill ~= "" then
+      table.insert(body_parts, "")
+      table.insert(body_parts, prefill)
+    end
+    ui.append_block("clarify", table.concat(body_parts, "\n"))
+    state.set_pending_clarify(id, title)
+    state.set_status("sherpa-clarify", "clarify")
+    ui.refresh_compose_winbar()
+    ui.open_log({ preserve_focus = true })
+    -- Bring compose up; dispatch_compose (init.lua) checks
+    -- pending_clarify before anything else and routes there.
+    require("sherpa").open_compose_for_clarify()
     return
   end
   if event.method == "confirm" then
@@ -646,6 +691,10 @@ end
 local function dispatch(event)
   if event.type == "response" then
     handle_response(event)
+    return
+  end
+  if event.type == "extension_error" then
+    handle_extension_error(event)
     return
   end
   if event.type == "message_update" then
@@ -757,6 +806,22 @@ function M.stop()
   end
   vim.fn.jobstop(session.job_id)
   session.job_id = nil
+end
+
+-- Abort the current in-flight turn. Pi's RPC layer handles the rest:
+-- it cancels the provider stream and emits a final `message_end` with
+-- `stopReason = "aborted"`, which `handle_message_end` already renders
+-- as a cancel-flavored `[error]` block and clears pending state.
+-- No-op when no turn is in flight (still sends the RPC; pi answers
+-- with success=true either way, costs nothing).
+function M.abort()
+  local session = state.get_session()
+  if not session or not session.job_id then
+    ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
+    return false
+  end
+  vim.fn.chansend(session.job_id, vim.json.encode({ type = "abort" }) .. "\n")
+  return true
 end
 
 function M.send_prompt(message)

@@ -139,17 +139,28 @@ end
 
 local function compose_status_line(progress)
   local session = state.get_session()
-  local q_badge = session and session.status and session.status["sherpa-q"]
-  local q_prefix = (q_badge and q_badge ~= "") and "[Tangent] " or ""
+  local statuses = session and session.status or {}
+  local clarify_badge = statuses["sherpa-clarify"]
+  local q_badge = statuses["sherpa-q"]
+  -- Clarify takes visual precedence — the model is actively waiting on
+  -- an answer, which blocks everything else. Tangent badge still shows
+  -- when no clarify is pending.
+  local prefix = ""
+  local idle_msg = nil
+  if clarify_badge and clarify_badge ~= "" then
+    prefix = "[Clarify] "
+    idle_msg = "Sherpa is asking — type your answer (<Esc><Esc> to reject)."
+  elseif q_badge and q_badge ~= "" then
+    prefix = "[Tangent] "
+    idle_msg = "Sherpa tangent — :SherpaQ to end."
+  end
   if not progress then
-    if q_prefix ~= "" then
-      return q_prefix .. "Sherpa tangent — :SherpaQ to end."
-    end
+    if idle_msg then return prefix .. idle_msg end
     return "Chat: Sherpa is ready."
   end
-  local prefix = activity_prefixes[progress.operation] or "Sherpa"
+  local op_prefix = activity_prefixes[progress.operation] or "Sherpa"
   local label = progress.spin_label or activity_labels(progress.operation)[1]
-  return string.format("%s%s: %s", q_prefix, prefix, label)
+  return string.format("%s%s: %s", prefix, op_prefix, label)
 end
 
 function M.refresh_compose_winbar()
@@ -432,6 +443,15 @@ function M.ensure_compose_buffer(on_send)
   end
 
   local function leave_insert()
+    -- If a clarify is pending, <Esc><Esc> rejects it (same intuition
+    -- as the old floating clarify editor's cancel). The reject reply
+    -- goes back to the extension, the badge clears, and then we drop
+    -- out of insert as usual. Lazy-required to avoid a load-order cycle
+    -- (ui is required by init).
+    local ok, sherpa = pcall(require, "sherpa")
+    if ok and sherpa and sherpa.cancel_pending_clarify_if_any then
+      sherpa.cancel_pending_clarify_if_any()
+    end
     pcall(vim.cmd, "stopinsert")
   end
 
@@ -440,6 +460,14 @@ function M.ensure_compose_buffer(on_send)
   })
   vim.keymap.set({ "n", "i" }, "<C-v>", paste_image, {
     buffer = buf, nowait = true, silent = true, desc = "Paste clipboard image into Sherpa compose"
+  })
+  vim.keymap.set({ "n", "i" }, "<S-Tab>", function()
+    -- Mirror pi's own shift-tab UX: cycle the thinking level without
+    -- leaving the compose buffer. The new level shows up in the log
+    -- winbar's Model: ... (level) suffix once the widget refreshes.
+    require("sherpa").cycle_thinking()
+  end, {
+    buffer = buf, nowait = true, silent = true, desc = "Cycle Sherpa thinking level"
   })
   vim.keymap.set("i", "<Esc><Esc>", leave_insert, {
     buffer = buf, nowait = true, silent = true, desc = "Leave insert without sending"
@@ -544,6 +572,8 @@ local log_label_hl = {
   sherpa = log_tool_hl,
   stderr = log_tool_hl,
   error = log_error_hl,
+  plan = log_tool_hl,
+  clarify = log_tool_hl,
   ["review-prompt"] = log_tool_hl,
   ["review-comments"] = log_tool_hl,
 }
@@ -857,104 +887,60 @@ function M.open_comment_editor(on_submit, opts)
   }, on_submit)
 end
 
--- Open a floating editor for clarification. Passes a single callback
--- that receives either the submitted text or `nil` on cancel.
-function M.open_clarify_editor(title, prefill, cb)
-  local delivered = false
-  local function deliver(value)
-    if delivered then return end
-    delivered = true
-    cb(value)
-  end
-  open_scratch_editor({
-    name = "sherpa://clarify",
-    title = title or "Sherpa clarify",
-    prefill = prefill,
-    hint_lines = {
-      "Sherpa is asking for clarification. Edit or reply below.",
-      "Submit to answer · Cancel to decline.",
-    },
-    allow_empty = false,
-    on_cancel = function() deliver(nil) end,
-  }, function(text) deliver(text) end)
-end
-
--- Plan-proposal clarify flow. Three steps:
---   1. Read-only preview of the proposed plan in a floating window.
---   2. vim.ui.select picker: Accept / Modify / Reject.
---   3. On Modify, open the existing clarify editor prefilled with the plan.
+-- Plan proposal picker. The proposal body is already in the chat log
+-- (as a [plan] block, pushed by rpc.lua before this runs). This just
+-- asks the user what to do with it.
 --
--- cb(value) on accept or modify-submit; cb(nil) on reject or cancel.
-function M.clarify_plan_proposal(title, body, cb)
-  local delivered = false
-  local function deliver(value)
-    if delivered then return end
-    delivered = true
-    cb(value)
-  end
-
-  -- Preview window — read-only markdown view of the proposal. Sits on
-  -- screen while the user reads and picks; closes before any follow-up
-  -- editor opens so the float doesn't stack.
-  local preview_buf = vim.api.nvim_create_buf(false, true)
-  pcall(vim.api.nvim_buf_set_name, preview_buf, "sherpa://plan-proposal")
-  vim.bo[preview_buf].buftype = "nofile"
-  vim.bo[preview_buf].swapfile = false
-  vim.bo[preview_buf].filetype = "markdown"
-  vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, vim.split(body or "", "\n", { plain = true }))
-  vim.bo[preview_buf].modifiable = false
-  vim.bo[preview_buf].bufhidden = "wipe"
-
-  local ui_info = vim.api.nvim_list_uis()[1] or { width = 120, height = 30 }
-  local width = math.min(100, math.max(60, math.floor(ui_info.width * 0.7)))
-  local height = math.min(24, math.max(10, math.floor(ui_info.height * 0.6)))
-  local row = math.floor((ui_info.height - height) / 2)
-  local col = math.floor((ui_info.width - width) / 2)
-
-  local preview_win = vim.api.nvim_open_win(preview_buf, false, {
-    relative = "editor",
-    row = row,
-    col = col,
-    width = width,
-    height = height,
-    border = "rounded",
-    title = string.format(" Proposed plan — %s ", title or "Sherpa"),
-    title_pos = "center",
-    style = "minimal",
-  })
-  vim.wo[preview_win].wrap = true
-  vim.wo[preview_win].linebreak = true
-  vim.wo[preview_win].cursorline = false
-  vim.wo[preview_win].winhighlight = "NormalFloat:Normal,FloatBorder:FloatBorder"
-
-  local function close_preview()
-    if preview_win and vim.api.nvim_win_is_valid(preview_win) then
-      pcall(vim.api.nvim_win_close, preview_win, true)
-    end
-  end
-
-  -- Picker runs in the next scheduler tick so the preview paints first.
+-- Invokes cb with one of:
+--   "accept"            — user accepted the proposal as-is
+--   "modify"            — user wants to edit; caller handles compose hijack
+--   nil                 — user rejected or dismissed the picker
+--
+-- No floating preview, no editor — everything that needs editing
+-- happens in the compose buffer, owned by the caller.
+function M.clarify_plan_proposal_picker(cb)
   vim.schedule(function()
     vim.ui.select({ "Accept", "Modify", "Reject" }, {
       prompt = "Plan proposal — accept, modify, or reject?",
     }, function(choice)
       if choice == "Accept" then
-        close_preview()
-        deliver(body or "")
+        cb("accept")
       elseif choice == "Modify" then
-        close_preview()
-        -- Hand the proposal to the standard clarify editor for in-place
-        -- editing. Submit sends the edited text; cancel rejects.
-        M.open_clarify_editor(title or "Modify proposed plan", body or "", function(edited)
-          deliver(edited)
-        end)
+        cb("modify")
       else
-        -- Reject or picker cancelled.
-        close_preview()
-        deliver(nil)
+        cb(nil)
       end
     end)
   end)
+end
+
+-- Seed the compose buffer with text. Used by the plan-proposal Modify
+-- flow: the user wants to edit the proposed plan in-place, so we drop
+-- it into compose and they adjust it before sending. Refuses to
+-- overwrite non-empty compose content so we don't stomp on draft text
+-- the user was already typing.
+function M.seed_compose(text)
+  local session = state.get_session()
+  local buf = session and session.compose_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return false end
+  local existing = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local nonempty = false
+  for _, line in ipairs(existing) do
+    if vim.trim(line) ~= "" then nonempty = true; break end
+  end
+  if nonempty then
+    notify("Compose has draft text — send or clear it before modifying the proposal.",
+      vim.log.levels.WARN)
+    return false
+  end
+  local lines = vim.split(text or "", "\n", { plain = true })
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  -- Reset undo so `u` from the seeded state doesn't unwind the whole
+  -- buffer back to empty — consistent with the compose-cleared-on-send
+  -- treatment.
+  vim.bo[buf].undolevels = -1
+  vim.bo[buf].undolevels = vim.o.undolevels
+  return true
 end
 
 function M.open_prompt_editor(label, on_submit, hint_lines)

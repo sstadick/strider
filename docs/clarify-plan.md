@@ -6,6 +6,15 @@ a destructive action before proceeding. Shipped and wired into
 `:SherpaChat` and `:SherpaPatch` today; this doc captures the shape and
 trade-offs.
 
+> **Status update:** the UX described below has since been simplified.
+> Clarify questions and plan-proposal bodies now render inline in the
+> chat log, and the reply flows back through the compose buffer rather
+> than a floating editor (a `[Clarify]` badge marks the hijacked state).
+> The floating editor and floating preview windows were removed. See
+> `docs/architecture.md` (Input editor / RPC events sections) for the
+> current shape. The design reasoning below still explains *why* the
+> tool exists and when the model should invoke it.
+
 ## Why
 
 Before clarify existed, `:SherpaChat`, `:SherpaPatch`, and

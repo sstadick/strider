@@ -201,7 +201,13 @@ export default function (pi: ExtensionAPI) {
 		const lines: string[] = [];
 		const model = ctx.model;
 		const label = modelLabel(model);
-		if (label) lines.push(`Model: ${label}`);
+		// Attach thinking level to the model line — it's a property of
+		// how the model runs, not a separate axis, so pairing them keeps
+		// the winbar dense and scannable.
+		const thinking = typeof pi.getThinkingLevel === "function" ? pi.getThinkingLevel() : undefined;
+		if (label) {
+			lines.push(thinking ? `Model: ${label} (${thinking})` : `Model: ${label}`);
+		}
 
 		// Context usage: ctx.getContextUsage() returns { tokens, contextWindow, percent }
 		// or undefined (no active model / pre-first-turn). tokens/percent can be null
@@ -597,6 +603,40 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			ctx.ui.notify(`Model: ${chosen.provider}/${chosen.name ?? chosen.id}`, "info");
+			updateWidget(ctx);
+		},
+	});
+
+	// /thinking — cycle or set the thinking level. With no args, cycles
+	// to the next supported level (same as pi's own shift-tab). With an
+	// arg, sets explicitly; pi clamps if the model doesn't support the
+	// requested level. Widget refreshes so the `(level)` suffix on the
+	// model line reflects the change immediately.
+	const THINKING_CYCLE = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+	pi.registerCommand("thinking", {
+		description: "Cycle or set the thinking level (model-clamped)",
+		handler: async (args: any, ctx: any) => {
+			const arg = (args ?? "").trim().toLowerCase();
+			const current = typeof pi.getThinkingLevel === "function" ? pi.getThinkingLevel() : undefined;
+			if (arg) {
+				if (!(THINKING_CYCLE as readonly string[]).includes(arg)) {
+					ctx.ui.notify(
+						`Unknown thinking level: ${arg}. Valid: ${THINKING_CYCLE.join(", ")}`,
+						"warning",
+					);
+					return;
+				}
+				pi.setThinkingLevel(arg as any);
+			} else {
+				// Cycle: find current in the list, advance by one. If the
+				// model clamps (e.g. non-reasoning model forced to "off"),
+				// getThinkingLevel() next read reflects the actual setting.
+				const idx = current ? THINKING_CYCLE.indexOf(current as any) : -1;
+				const next = THINKING_CYCLE[(idx + 1) % THINKING_CYCLE.length];
+				pi.setThinkingLevel(next as any);
+			}
+			const now = typeof pi.getThinkingLevel === "function" ? pi.getThinkingLevel() : undefined;
+			ctx.ui.notify(`Thinking: ${now ?? "unknown"}`, "info");
 			updateWidget(ctx);
 		},
 	});

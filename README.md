@@ -60,6 +60,7 @@ require("sherpa").setup()
 | `:'<,'>SherpaQ [prompt]` | Tangent with a selection excerpt |
 | `:SherpaQ` (while active) | End the tangent (drops it from active history) |
 | `:SherpaChat [prompt]` | Toggle chat surfaces; with args, send directly |
+| `:SherpaStop` | Abort the current in-flight turn |
 | `:SherpaRetry` | Re-dispatch a stalled plan turn |
 
 `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, and `:SherpaComment`
@@ -75,6 +76,10 @@ extensions instead of the model. Beyond Sherpa's own `/prompt`,
 
 - `/models [filter]` — fuzzy-pick a model via telescope/fzf
 - `/tree` — jump to any previous user message in the session tree
+- `/thinking [level]` — cycle or set the reasoning level
+  (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`); also bound to
+  `<S-Tab>` in compose, mirroring pi's own shift-tab. Pi clamps the
+  level to what the current model supports.
 
 ## Examples
 
@@ -160,14 +165,32 @@ when the review ends. No external sync.
 Compose clears on successful send and survives across turns. Sending
 while a reply is streaming steers the running turn via pi's `steer`
 command — pile up mid-stream corrections freely. Slash-commands
-(`/models`, `/tree`, etc.) are rejected mid-turn.
+(`/models`, `/tree`, etc.) are rejected mid-turn. `:SherpaStop` aborts
+the in-flight turn; the abort shows up as a cancel-flavored `[error]`
+block in the log and the activity spinner stops.
 
-The log's winbar shows live model, context usage, and running cost,
-pushed by pi after every turn:
+Errors from pi (no API key, model rejected by the provider, etc.)
+render inline as red `[error]` blocks in the log rather than silent
+hangs, so failed turns are always visible.
+
+The log's winbar shows live model, thinking level, context usage, and
+running cost, pushed by pi after every turn:
 
 ```
-Model: anthropic/claude-sonnet-4.5 · Context: 14k / 200k (8.7%) · Cost: $0.0123
+Model: openai-codex/gpt-5.4 (high) · Context: 14k / 200k (8.7%) · Cost: $0.0123
 ```
+
+The `(level)` segment reflects the current reasoning setting. Cycle it
+with `<S-Tab>` in compose (same as pi's TUI), or set explicitly with
+`/thinking <level>`.
+
+When the model pauses to ask a clarifying question or propose a plan
+(via the `sherpa_clarify` tool), the question lands in the chat log as
+a `[clarify]` or `[plan]` block and the compose buffer is hijacked for
+the reply — a `[Clarify]` badge appears on the compose winbar. `<C-s>`
+sends the answer; `<Esc><Esc>` rejects. Plan proposals also show an
+Accept / Modify / Reject picker; Modify seeds compose with the
+proposal body so you can edit in place.
 
 ## Tangents
 
@@ -195,14 +218,21 @@ spot and nothing else.
 ## Clarify
 
 During `:SherpaChat` and `:SherpaPatch`, the model may pause to ask a
-clarifying question, propose a plan for approval, or confirm a
-destructive action. Sherpa opens a floating editor (questions / plan
-proposals) or a yes/no picker (confirmations). `<C-s>` submits,
-`<Esc><Esc>` cancels — the model treats cancellation as "stop."
+clarifying question, propose a plan, or confirm a destructive action
+(via the `sherpa_clarify` tool).
 
-Plan proposals surface as a read-only preview followed by an
-accept/modify/reject picker; modify opens the proposal in an editor
-prefilled for in-place changes.
+Questions and plan bodies both render inline in the chat log — no
+floating editors. The compose buffer is hijacked for the reply,
+marked with a `[Clarify]` badge on the winbar. `<C-s>` submits,
+`<Esc><Esc>` rejects — the model treats cancellation as "stop."
+
+Plan proposals pair the `[plan]` body block with an Accept / Modify /
+Reject picker. Modify seeds the compose buffer with the proposal body
+so you can edit the plan in place and submit; Reject sends
+cancellation.
+
+Confirmations (yes/no) still surface via a plain `vim.ui.select`
+picker — no keyboard-to-compose roundtrip, just a pick.
 
 One clarify per turn, enforced in the tool. If you want it to stop
 asking, rely on the budget + your global pi system prompt.

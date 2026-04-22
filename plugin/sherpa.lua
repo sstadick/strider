@@ -52,3 +52,7 @@ vim.api.nvim_create_user_command("SherpaRetry", function()
   require("sherpa").retry()
 end, { desc = "Re-dispatch the Sherpa plan turn if it stalled" })
 
+vim.api.nvim_create_user_command("SherpaStop", function()
+  require("sherpa").stop()
+end, { desc = "Abort the current in-flight Sherpa turn" })
+

@@ -10,13 +10,14 @@ Sherpa is built around five primary user flows:
 - `:SherpaQ [prompt]` — tangent that branches off the session tree
 - `:SherpaChat [prompt]`
 
-Supporting navigation:
+Supporting navigation and control:
 
 - `:SherpaNext`
 - `:SherpaPrev`
 - `:SherpaComment {text}`
 - `:SherpaComments`
 - `:SherpaReviewItems`
+- `:SherpaStop` — abort the in-flight turn (maps to pi's `abort` RPC)
 
 The main product is no longer centered on a linear `Q` loop.
 Review is the primary walkthrough surface.
@@ -204,9 +205,10 @@ Purpose:
 
 Buffer names:
 - `sherpa://prompt` — used by `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`
-- `sherpa://compose` — persistent user input buffer used by `:SherpaChat`
+- `sherpa://compose` — persistent user input buffer used by `:SherpaChat`;
+  also hijacked to reply to `sherpa_clarify` questions and to edit
+  plan-proposal bodies (the `[Clarify]` badge marks this state)
 - `sherpa://comment` — used by `:SherpaComment`
-- `sherpa://clarify` — used by the `sherpa_clarify` tool during `prompt` / `patch` turns
 
 A centered floating scratch buffer that opens when any text-input command is
 called with no arguments. Renders per-command guidance as `Comment`-highlighted
@@ -224,6 +226,16 @@ text is treated as a question about the current review item.
   - capture assistant text
   - update log
   - update review pane when the response belongs to review
+  - when `message.stopReason == "error"` or `"aborted"`, render the
+    reason as an `[error]` block (red header / red-tinted background),
+    consume the pending request, and stop the activity spinner
+- `extension_error` — runtime failure the extension can't recover from
+  (e.g. "No API key found for <provider>", provider 4xx before the
+  stream opens). The preceding `response` may be `success: true`
+  because the RPC dispatch itself succeeded — the failure is async.
+  Renders as a red `[error]` block, clears pending state, stops the
+  spinner. Without handling this, the log just hangs on "Waiting for
+  assistant response…".
 - `tool_execution_start`
   - log tool usage
   - track touched paths
@@ -233,15 +245,24 @@ text is treated as a question about the current review item.
 - `extension_ui_request`
   - `notify` / `setStatus` / `setWidget` / `setTitle` — fire-and-forget
     UI updates. `setWidget` payloads are flattened into the log
-    window's winbar. Two `setStatus` keys have plugin-side semantics:
+    window's winbar. A few `setStatus` keys have plugin-side semantics:
     `sherpa-q-anchor` routes to a pending `:SherpaQ` callback (carries
-    the captured leaf messageId), and `sherpa-q` drives the
-    `[Tangent]` badge in the compose winbar.
-  - `editor` — open a floating scratch editor with a prefill; plugin
-    replies via `extension_ui_response` with `{value}` on submit or
-    `{cancelled: true}` on cancel. Plan-proposal titles tagged with a
-    `[sherpa-plan-proposal]` sentinel route through a read-only
-    preview + accept/modify/reject picker.
+    the captured leaf messageId), `sherpa-q` drives the `[Tangent]`
+    badge, and `sherpa-clarify` drives the `[Clarify]` badge in the
+    compose winbar.
+  - `editor` — the extension uses this to ask the user something
+    mid-turn (from `sherpa_clarify`). Sherpa routes everything through
+    the chat log + compose buffer rather than floating editors:
+    - **Plain clarify** (`kind: question`): title/body rendered as a
+      `[clarify]` block in the log, pending-id stashed, compose
+      hijacked — the next `<C-s>` sends the reply via
+      `extension_ui_response{value}`, `<Esc><Esc>` sends `cancelled`.
+      `[Clarify]` badge on the compose winbar marks the state.
+    - **Plan proposal** (title prefixed `[sherpa-plan-proposal]`):
+      body rendered as a `[plan]` block, then `vim.ui.select` offers
+      Accept / Modify / Reject. Accept sends the body back as-is;
+      Modify seeds compose with the body and hijacks it same as a
+      plain clarify; Reject sends `cancelled`.
   - `confirm` — yes/no picker via `vim.ui.select`; plugin replies with
     `{confirmed: bool}` or `{cancelled: true}`.
   - `select` — fuzzy picker via telescope / fzf-lua / `vim.ui.select`
@@ -257,6 +278,10 @@ text is treated as a question about the current review item.
 - `steer` — mid-turn user redirect delivered after the current assistant
   turn's tool calls complete. Slash-commands are rejected as steers
   (pi forbids them).
+- `abort` — cancel the in-flight turn. No body (`{"type":"abort"}`).
+  Pi finishes the current model stream and emits a `message_end` with
+  `stopReason = "aborted"`, which renders as a cancel-flavored
+  `[error]` block. Driven by `:SherpaStop`.
 - `extension_ui_response` — reply to an awaiting `extension_ui_request`
   (carries the request `id` plus `value` / `confirmed` / `cancelled`)
 
@@ -280,6 +305,13 @@ Working today:
 - plain-prompt agent turns with clarify available
 - tangent branching via `:SherpaQ` (tree anchor at start, navigate-back
   on end; `[Tangent]` badge in compose winbar while active)
+- clarify and plan-proposal flows rendered inline in the chat log with
+  compose-buffer hijack for replies (`[Clarify]` badge while active)
+- `:SherpaStop` to abort in-flight turns
+- inline red `[error]` blocks for provider / model / transport errors
+  (no more silent hangs)
+- cycle thinking level via `<S-Tab>` in compose (mirrors pi's TUI);
+  active level shown as `Model: …/… (level)` on the log winbar
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests on bundled fixture projects
 

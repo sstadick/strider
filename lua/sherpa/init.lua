@@ -209,6 +209,32 @@ function M.setup(opts)
   state.setup(opts or {})
 end
 
+-- Cycle the pi thinking level (same semantics as pi's own shift-tab).
+-- Dispatched as a pure extension command — no assistant turn, no
+-- activity spinner, no change to compose buffer contents. The widget
+-- update triggered on the TS side refreshes the `(level)` suffix on
+-- the winbar's model line.
+function M.cycle_thinking()
+  if not ensure_backend() then return end
+  rpc.send_prompt("/thinking")
+end
+
+-- :SherpaStop — cancel the current in-flight turn via pi's abort RPC.
+-- The actual "[error] Turn aborted" block in the log and spinner reset
+-- happen when pi emits the final message_end (see handle_message_end's
+-- stopReason == "aborted" branch). We just fire the abort and give the
+-- user a quick notify so the interval between keypress and message_end
+-- doesn't feel like nothing happened.
+function M.stop()
+  if not state.peek_pending_request() then
+    ui.notify("Sherpa is idle — nothing to stop", vim.log.levels.INFO)
+    return
+  end
+  if rpc.abort() then
+    ui.notify("Stopping Sherpa…", vim.log.levels.INFO)
+  end
+end
+
 -- Slash-commands that pi routes to our /prompt etc. handlers which DO
 -- send a user message to the model — treat these as normal prompt turns
 -- (they produce message_end and need pending-request tracking).
@@ -248,17 +274,84 @@ end
 -- in flight, deliver as a steer (mid-turn redirect) instead of a new
 -- prompt. Either way the log gets a [user] block so the transcript
 -- reads correctly.
--- Forward declaration: dispatch_compose references dispatch_q (tangent
--- send path). dispatch_q is defined further down alongside the other
--- :SherpaQ helpers, after the main chat dispatchers. Without this
--- forward-declared local, the name in dispatch_compose binds as a
--- global and resolves to nil at call time.
+-- Forward declarations. dispatch_compose is referenced by
+-- M.open_compose_for_clarify (defined just below as the clarify-reply
+-- entrypoint) before its own definition further down. dispatch_q is
+-- referenced inside dispatch_compose and defined with the other
+-- :SherpaQ helpers much further down. Without these forward-declared
+-- locals, the names bind as globals and resolve to nil at call time.
 local dispatch_q
+local dispatch_compose
 
-local function dispatch_compose(text)
+-- Send a clarify reply back through the RPC extension_ui_response
+-- channel. Mirrors the shape rpc.lua's send_ui_response uses but lives
+-- here so we don't have to expose that helper — we just write the JSON
+-- to the same channel via the rpc module.
+local function reply_to_clarify(pending, text)
+  local session = state.get_session()
+  if not session or not session.job_id then return false end
+  local body = { type = "extension_ui_response", id = pending.id, value = text }
+  local ok, encoded = pcall(vim.json.encode, body)
+  if not ok then return false end
+  vim.fn.chansend(session.job_id, encoded .. "\n")
+  return true
+end
+
+local function cancel_clarify(pending)
+  local session = state.get_session()
+  if not session or not session.job_id then return false end
+  local body = { type = "extension_ui_response", id = pending.id, cancelled = true }
+  local ok, encoded = pcall(vim.json.encode, body)
+  if not ok then return false end
+  vim.fn.chansend(session.job_id, encoded .. "\n")
+  return true
+end
+
+-- Open the compose surfaces so the user can answer a clarify. The
+-- compose buffer's send callback is the standard dispatch_compose,
+-- which checks pending_clarify first and routes appropriately.
+function M.open_compose_for_clarify()
+  if not ensure_backend() then return end
+  ui.open_log({ preserve_focus = true })
+  ui.open_compose(function(text)
+    return dispatch_compose(text)
+  end)
+end
+
+-- Called from compose's <Esc><Esc> keymap. If a clarify is pending,
+-- cancel it. Otherwise fall through so the keymap's usual behavior
+-- (stopinsert) runs.
+function M.cancel_pending_clarify_if_any()
+  local pending = state.consume_pending_clarify()
+  if not pending then return false end
+  state.set_status("sherpa-clarify", nil)
+  ui.refresh_compose_winbar()
+  cancel_clarify(pending)
+  ui.append({ "[sherpa] clarify cancelled" })
+  return true
+end
+
+function dispatch_compose(text)
   text = trimmed(text)
   if text == "" then return false end
   if not ensure_backend() then return false end
+
+  -- A pending clarify takes precedence over everything: the model is
+  -- explicitly waiting for a reply on the extension_ui_request channel.
+  -- Whatever the user types becomes the answer. No tangent, no steer,
+  -- no new prompt turn. Clears the badge on success.
+  local pending_clarify = state.peek_pending_clarify()
+  if pending_clarify then
+    state.consume_pending_clarify()
+    state.set_status("sherpa-clarify", nil)
+    ui.refresh_compose_winbar()
+    ui.append_block("user", text)
+    if not reply_to_clarify(pending_clarify, text) then
+      ui.notify("Failed to send clarify reply", vim.log.levels.ERROR)
+      return false
+    end
+    return true
+  end
 
   -- While a tangent is active, compose sends are tangent follow-ups.
   -- The message still goes through /prompt — the tree anchor decides

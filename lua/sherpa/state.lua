@@ -178,6 +178,30 @@ function M.consume_q_anchor_callback()
   return cb
 end
 
+-- Pending clarify: when the model calls sherpa_clarify (question kind),
+-- the plugin stashes the extension_ui_request id + title here and
+-- routes the next compose send back as the clarify reply. Cleared by
+-- dispatch_compose (on answer) or by <Esc><Esc> in compose (on reject).
+function M.set_pending_clarify(id, title)
+  local session = M.get_session()
+  if session then
+    session.pending_clarify = { id = id, title = title or "" }
+  end
+end
+
+function M.peek_pending_clarify()
+  local session = M.get_session()
+  return session and session.pending_clarify
+end
+
+function M.consume_pending_clarify()
+  local session = M.get_session()
+  if not session then return nil end
+  local p = session.pending_clarify
+  session.pending_clarify = nil
+  return p
+end
+
 -- A range stashed by :SherpaQ so the next compose send goes as a
 -- tangent follow-up with the excerpt prepended. One-shot: consumed
 -- by dispatch_compose on the next send (or cleared on end_q_session).

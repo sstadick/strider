@@ -25,9 +25,11 @@ Supporting UX:
 - `<S-Tab>` in compose cycles the pi thinking level; active level
   shows in the winbar as `Model: …/… (level)`
 - rich tool rendering in the log: `[diff]` blocks on edits with
-  green/red line coloring, inlined output for bash/read/grep/ls/
-  find/write (first-5/last-5 collapsed with a muted ellipsis when
-  long), accent-colored paths in `[tool]` headers
+  green/red line coloring; syntax-highlighted fenced output for
+  read/write via treesitter + render-markdown; muted plain output
+  for bash/grep/ls/find; shows the last 10 lines with a
+  `N earlier lines…` note above; accent-colored paths in `[tool]`
+  headers
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests
 

@@ -465,20 +465,60 @@ local TOOL_OUTPUT_WHITELIST = {
   write = true,
 }
 
+-- Filename extension → markdown code-fence language tag. Used for
+-- `read` / `write` output so the log's markdown+treesitter pipeline
+-- syntax-highlights the content. Requires nvim-treesitter parsers for
+-- the languages you expect to see. Unmapped extensions fall through
+-- to plain muted styling.
+local LANG_BY_EXT = {
+  lua = "lua",
+  ts = "typescript", tsx = "tsx", mts = "typescript", cts = "typescript",
+  js = "javascript", jsx = "javascript", mjs = "javascript", cjs = "javascript",
+  py = "python", pyi = "python",
+  rs = "rust",
+  go = "go",
+  md = "markdown", markdown = "markdown",
+  json = "json",
+  yaml = "yaml", yml = "yaml",
+  toml = "toml",
+  sh = "bash", bash = "bash", zsh = "bash",
+  html = "html", htm = "html",
+  css = "css", scss = "scss",
+  c = "c", h = "c",
+  cpp = "cpp", cc = "cpp", hpp = "cpp", hh = "cpp", cxx = "cpp",
+  java = "java",
+  rb = "ruby",
+  sql = "sql",
+}
+
+local function language_for_path(path)
+  if not path then return nil end
+  local ext = path:match("%.([%w]+)$")
+  if not ext then return nil end
+  return LANG_BY_EXT[ext:lower()]
+end
+
 local function handle_tool_end(event)
   local session = state.get_session()
 
   -- Render textual output for tools where seeing the content helps the
   -- user follow along (everything except edit, which gets a diff block
   -- below, and Sherpa's internal planning tools which carry structured
-  -- payloads rather than user-facing text). Output renders as plain
-  -- muted text — syntax highlighting for fenced code blocks requires
-  -- nvim-treesitter parsers for every language you might read, which
-  -- isn't a dependency we can reasonably assume.
+  -- payloads rather than user-facing text). For read/write we pass a
+  -- language tag so the content is fenced and treesitter +
+  -- render-markdown can syntax-highlight it; other tools render as
+  -- plain muted text.
   if TOOL_OUTPUT_WHITELIST[event.toolName] then
     local text = tool_result_text(event)
     if text then
-      ui.append_tool_output(text)
+      local lang = nil
+      if event.toolName == "read" or event.toolName == "write" then
+        -- Peek the stashed path without consuming — finish_tool_path
+        -- below does the actual consume for the edit/highlight flow.
+        local stashed = event.toolCallId and session.tool_paths[event.toolCallId] or nil
+        lang = language_for_path(stashed)
+      end
+      ui.append_tool_output(text, lang)
     end
   end
 

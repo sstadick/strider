@@ -244,11 +244,19 @@ text is treated as a question about the current review item.
   - for `edit`: parse `result.details.diff` and render it as a
     `[diff]` block with per-line `+` / `-` / context coloring
     (matches the gutter-sign palette)
-  - for `bash` / `read` / `grep` / `ls` / `find` / `write`: inline
-    `result.content[*].text` directly in the log as plain muted text
-    (no block header, no language-aware syntax highlighting). When the
-    output exceeds 10 lines, collapse to the first 5 and last 5 with
-    a `… N more lines …` separator
+  - for `read` / `write`: inline `result.content[*].text` wrapped in
+    a fenced markdown code block tagged with the language derived
+    from the file's extension (lua, rust, typescript, …) so
+    treesitter + render-markdown syntax-highlight the body. For
+    `bash` / `grep` / `ls` / `find`: render as plain muted text. In
+    both cases only the last 15 lines are shown; when earlier lines
+    are hidden, a muted `N earlier lines…` note sits above the block
+    (never inside the fence, so code syntax never breaks). Pi's
+    trailing `[N more lines in file. Use offset=X to continue.]`
+    sentinel on truncated reads is stripped before fencing for the
+    same reason — our own `N earlier lines…` marker conveys the
+    "there's more you're not seeing" signal without embedding prose
+    in a code block
   - highlight read/edit/write ranges on the edited file
 - `extension_ui_request`
   - `notify` / `setStatus` / `setWidget` / `setTitle` — fire-and-forget
@@ -321,9 +329,11 @@ Working today:
 - cycle thinking level via `<S-Tab>` in compose (mirrors pi's TUI);
   active level shown as `Model: …/… (level)` on the log winbar
 - rich log rendering: `[diff]` blocks for edit tools (green/red per
-  line), inlined tool output for bash/read/grep/ls/find/write
-  (collapsed to first-5/last-5 with a muted ellipsis when long),
-  accent-colored file paths in `[tool]` headers
+  line); syntax-highlighted fenced output for read/write via
+  treesitter + render-markdown; muted plain output for bash/grep/
+  ls/find; last-10-lines only with a `N earlier lines…` note above
+  when earlier lines are hidden; accent-colored file paths in
+  `[tool]` headers
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests on bundled fixture projects
 

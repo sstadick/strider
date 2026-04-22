@@ -16,11 +16,15 @@ Everything happens in native buffers (`sherpa://log`, `sherpa://compose`,
 
 - Neovim 0.10+
 - `pi` on `$PATH` with at least one model/provider configured
+- [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter)
+  with parsers for `markdown`, `markdown_inline`, and the languages
+  you'll be reading (rust / typescript / lua / python / …). Drives
+  the syntax highlighting inside fenced tool output in the log.
+- [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim)
+  — renders the log's markdown and fenced code blocks
 - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
   or [fzf-lua](https://github.com/ibhagwan/fzf-lua) (optional; used for
   fuzzy pickers, falls back to `vim.ui.select`)
-- [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim)
-  (optional; renders markdown in Sherpa output buffers)
 
 ## Install
 
@@ -175,12 +179,14 @@ hangs, so failed turns are always visible.
 
 Tool calls show their results inline. `edit` operations append a
 `[diff]` block with green `+` / red `-` line colors matching the
-gutter signs on the edited file. `bash` / `read` / `grep` / `ls` /
-`find` / `write` inline their output as plain muted text directly
-after the `[tool]` header. Long output is collapsed to the first 5
-and last 5 lines with a `… N more lines …` separator. File paths in
-`[tool]` headers get their own accent color so targets pop when
-scanning.
+gutter signs on the edited file. `read` and `write` wrap their
+content in a fenced markdown code block tagged with the file's
+language (from the extension), so treesitter + render-markdown give
+you real syntax highlighting. `bash` / `grep` / `ls` / `find` render
+as plain muted text. In both cases only the last 15 lines are shown;
+when earlier lines are hidden, a muted `N earlier lines…` note sits
+above the block. File paths in `[tool]` headers get their own accent
+color so targets pop when scanning.
 
 The log's winbar shows live model, thinking level, context usage, and
 running cost, pushed by pi after every turn:

@@ -45,13 +45,10 @@ class TmuxLogRenderingTests(unittest.TestCase):
                     f"expected at least one +/- diff line, got log:\n{log}",
                 )
 
-    def test_read_tool_renders_output_inline(self) -> None:
-        # Same flow as above — prompt_response in fake_pi emits a `read`
-        # tool before the edit. The read result carries content text,
-        # which Sherpa renders inline (no [tool-output] header; plain
-        # lines between the [tool] header and the next block). We assert
-        # that content from the fake fixture (`src/App.tsx`) lands in
-        # the log after the [tool] read header.
+    def test_read_tool_renders_fenced_output(self) -> None:
+        # prompt_response in fake_pi emits a `read` on src/App.tsx
+        # before the edit. The content lands in the log wrapped in a
+        # tsx-tagged fence so treesitter + render-markdown highlight it.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat update the fixture app")
@@ -59,19 +56,86 @@ class TmuxLogRenderingTests(unittest.TestCase):
                     lambda: "[tool] read" in "\n".join(h.log_lines()),
                     timeout=5.0,
                 )
-                # Wait for the turn to settle so the full output is in.
                 h.wait_until(
                     lambda: "[assistant]" in "\n".join(h.log_lines()),
                     timeout=5.0,
                 )
                 log = "\n".join(h.log_lines())
-                # fake_pi's src/App.tsx fixture contains `export function App`.
-                # The inlined tool output should carry that substring.
+                # Body content is present.
                 self.assertIn("export function App", log,
-                    f"expected read content inlined in log; got:\n{log}")
-                # Confirm we did NOT revert to a [tool-output] block
-                # header — the user asked for no header.
-                self.assertNotIn("[tool-output]", log)
+                    f"expected read content in log; got:\n{log}")
+                # Fence open + close are both present.
+                self.assertIn("```tsx", log,
+                    f"expected tsx-tagged fence open; got:\n{log}")
+                # There should be at least two ``` in total (open + close).
+                self.assertGreaterEqual(log.count("```"), 2,
+                    f"expected open+close fence; got:\n{log}")
+
+    def test_earlier_lines_marker_shown_above_fence_when_truncated(self) -> None:
+        # Direct ui.append_tool_output test: feed a 20-line file so the
+        # last-15 rendering leaves 5 hidden. Marker should say `5 earlier
+        # lines…` and should appear BEFORE the fence (never inside it —
+        # that would break code syntax).
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                # Open chat so the log buffer exists.
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    timeout=3.0,
+                )
+                # Push a 20-line synthetic "file" through append_tool_output.
+                lines_literal = "\\n".join(f"line {i}" for i in range(1, 21))
+                h.lua(
+                    "(function() "
+                    "  require('sherpa.ui').append_tool_output('"
+                    + lines_literal + "', 'lua'); return true end)()"
+                )
+                log = "\n".join(h.log_lines())
+                self.assertIn("5 earlier lines…", log,
+                    f"expected '5 earlier lines…' marker; got:\n{log}")
+                self.assertIn("```lua", log,
+                    f"expected fence open; got:\n{log}")
+                # First 5 lines should NOT appear (they were truncated).
+                self.assertNotIn("line 1\n", log)
+                self.assertNotIn("line 5\n", log)
+                # Last lines SHOULD appear.
+                self.assertIn("line 20", log)
+                # Marker must land ABOVE the fence, not inside it.
+                marker_pos = log.find("5 earlier lines…")
+                fence_pos = log.find("```lua")
+                self.assertGreater(fence_pos, marker_pos,
+                    "marker should be above the fence open")
+
+    def test_pi_trailing_sentinel_is_stripped_from_fenced_output(self) -> None:
+        # Pi's read tool appends a meta line like
+        #   `[24 more lines in file. Use offset=31 to continue.]`
+        # when the file is longer than what it read. That line is prose,
+        # not code, and landing it inside the fence makes the language
+        # parser barf. We strip it before fencing.
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    timeout=3.0,
+                )
+                # Simulate pi's shape: a few lines of code + the trailing
+                # sentinel. We expect the sentinel to be dropped.
+                synthetic = (
+                    "use serde;\\nuse serde_json;\\n"
+                    "[24 more lines in file. Use offset=31 to continue.]"
+                )
+                h.lua(
+                    "(function() "
+                    "  require('sherpa.ui').append_tool_output('"
+                    + synthetic + "', 'rust'); return true end)()"
+                )
+                log = "\n".join(h.log_lines())
+                self.assertIn("```rust", log)
+                self.assertIn("use serde;", log)
+                self.assertNotIn("more lines in file", log,
+                    f"pi sentinel should be stripped; got:\n{log}")
 
     def test_tool_header_path_has_extmark(self) -> None:
         # The [tool] <name> <path> header line should carry a

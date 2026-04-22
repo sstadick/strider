@@ -777,16 +777,22 @@ function M.append_tool_line(tool_name, path, range)
   })
 end
 
--- Render tool output (stdout from bash, file contents from read, match
--- lines from grep, directory entries from ls/find) as plain muted
--- lines in the log — no block header, no syntax highlighting. When
--- output is long, collapse to the first 5 and last 5 lines with a
--- `… N more lines …` separator so it stays skimmable. Empty text is
--- skipped (not every tool produces output worth showing).
-local TOOL_OUTPUT_HEAD = 5
-local TOOL_OUTPUT_TAIL = 5
+-- Render tool output in the log. Shows only the last TAIL_LINES of the
+-- output; when earlier lines are hidden, emits a muted
+-- `N earlier lines…` marker BEFORE the block so nothing breaks the
+-- syntactic structure of the code inside.
+--
+-- When `lang` is non-nil, the shown lines are wrapped in a fenced
+-- markdown code block with that language tag. The log buffer's
+-- markdown filetype + treesitter injection + render-markdown then
+-- syntax-highlight the body. When `lang` is nil, the lines render as
+-- plain muted text (used by bash / grep / ls / find — heterogeneous
+-- output that doesn't map to one language).
+--
+-- Empty text is skipped (not every tool produces output worth showing).
+local TOOL_OUTPUT_TAIL = 15
 
-function M.append_tool_output(text)
+function M.append_tool_output(text, lang)
   if type(text) ~= "string" then return end
   local trimmed = vim.trim(text)
   if trimmed == "" then return end
@@ -803,48 +809,89 @@ function M.append_tool_output(text)
   if all_lines[#all_lines] == "" then
     all_lines[#all_lines] = nil
   end
+  -- Pi's read tool appends a trailing meta line like
+  --   `[24 more lines in file. Use offset=31 to continue.]`
+  -- when the read was truncated. It's useful prose for a transcript
+  -- but it's NOT code — if we leave it in and fence the block, the
+  -- language parser tries to parse it as code. Strip it (and any
+  -- trailing blanks it sits next to); our own `N earlier lines…`
+  -- marker conveys the same "there's more you're not seeing" signal.
+  while #all_lines > 0 do
+    local last = all_lines[#all_lines]
+    if last == "" then
+      all_lines[#all_lines] = nil
+    elseif last:match("^%[%d+ more lines in file%..-%]$") then
+      all_lines[#all_lines] = nil
+    else
+      break
+    end
+  end
   if #all_lines == 0 then return end
 
-  local truncate_at = TOOL_OUTPUT_HEAD + TOOL_OUTPUT_TAIL
-  local lines = {}
-  local ellipsis_offset = nil
-  if #all_lines <= truncate_at then
-    for _, l in ipairs(all_lines) do table.insert(lines, l) end
+  local hidden = math.max(0, #all_lines - TOOL_OUTPUT_TAIL)
+  local shown
+  if hidden > 0 then
+    shown = vim.list_slice(all_lines, #all_lines - TOOL_OUTPUT_TAIL + 1, #all_lines)
   else
-    for i = 1, TOOL_OUTPUT_HEAD do table.insert(lines, all_lines[i]) end
-    local skipped = #all_lines - TOOL_OUTPUT_HEAD - TOOL_OUTPUT_TAIL
-    table.insert(lines, string.format("… %d more %s …", skipped, skipped == 1 and "line" or "lines"))
-    ellipsis_offset = #lines - 1
-    for i = #all_lines - TOOL_OUTPUT_TAIL + 1, #all_lines do
-      table.insert(lines, all_lines[i])
-    end
+    shown = all_lines
+  end
+
+  -- Assemble lines to append. Order:
+  --   1. Optional pre-fence marker: `N earlier lines…`
+  --   2. Optional fence open (``` + lang)
+  --   3. Shown lines
+  --   4. Optional fence close (```)
+  --   5. Trailing blank for visual separation
+  local lines = {}
+  local marker_offset = nil  -- 0-based row offset of the marker within `lines`
+  if hidden > 0 then
+    table.insert(lines, string.format("%d earlier %s…", hidden, hidden == 1 and "line" or "lines"))
+    marker_offset = #lines - 1
+  end
+  local body_start_offset
+  if lang then
+    table.insert(lines, "```" .. lang)
+    body_start_offset = #lines  -- first body row is right after the fence open
+  else
+    body_start_offset = #lines  -- no fence → body starts where we are
+  end
+  for _, l in ipairs(shown) do table.insert(lines, l) end
+  local body_end_offset = #lines - 1
+  if lang then
+    table.insert(lines, "```")
   end
   table.insert(lines, "")
 
   local start_row = vim.api.nvim_buf_line_count(buf)
   M.append(lines)
 
-  -- Style the whole output region muted so it reads as secondary
-  -- information rather than competing with user / assistant blocks.
-  -- `lines` includes the trailing blank, which we don't color.
-  local content_end = start_row + #lines - 2
-  if content_end >= start_row then
-    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_row, 0, {
-      end_row = content_end + 1,
-      hl_group = log_tool_output_hl,
-      hl_eol = true,
-      priority = 4,
+  -- Style the `N earlier lines…` marker as italic muted so it reads
+  -- like a note rather than code / prose.
+  if marker_offset ~= nil then
+    local marker_row = start_row + marker_offset
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, marker_row, 0, {
+      end_row = marker_row + 1,
+      hl_group = log_tool_output_ellipsis_hl,
+      priority = 10,
     })
   end
 
-  if ellipsis_offset ~= nil then
-    -- Boost the ellipsis row to a distinct italic muted so it reads as
-    -- a separator on top of the surrounding muted content.
-    local ellipsis_row = start_row + ellipsis_offset
-    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, ellipsis_row, 0, {
-      end_row = ellipsis_row + 1,
-      hl_group = log_tool_output_ellipsis_hl,
-      priority = 10,
+  if lang then
+    -- With a fence, treesitter + render-markdown handle coloring
+    -- inside the fenced block. Nothing more to do.
+    return
+  end
+
+  -- No fence: style the shown body muted so it reads as secondary
+  -- information rather than competing with user / assistant blocks.
+  if body_end_offset >= body_start_offset then
+    local body_start = start_row + body_start_offset
+    local body_end = start_row + body_end_offset
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, body_start, 0, {
+      end_row = body_end + 1,
+      hl_group = log_tool_output_hl,
+      hl_eol = true,
+      priority = 4,
     })
   end
 end

@@ -17,6 +17,7 @@ local defaults = {
 local function new_session(cwd)
   return {
     assistant_text = nil,
+    assistant_thinking = {},
     chunk_lines = {},
     chunk_path = nil,
     comment_buffers = {},

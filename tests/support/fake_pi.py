@@ -26,6 +26,52 @@ def assistant_message(text: str) -> dict:
     }
 
 
+def emit_streaming_thinking(text: str) -> None:
+    """Emit thinking_start/thinking_delta/thinking_end events."""
+    if not text:
+        return
+    emit({
+        "type": "message_update",
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "thinking", "thinking": ""}],
+        },
+        "assistantMessageEvent": {
+            "type": "thinking_start",
+            "contentIndex": 0,
+        },
+    })
+    chunk_size = max(len(text) // 3, 1)
+    current = ""
+    for offset in range(0, len(text), chunk_size):
+        delta = text[offset : offset + chunk_size]
+        current += delta
+        emit({
+            "type": "message_update",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "thinking", "thinking": current}],
+            },
+            "assistantMessageEvent": {
+                "type": "thinking_delta",
+                "contentIndex": 0,
+                "delta": delta,
+            },
+        })
+    emit({
+        "type": "message_update",
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "thinking", "thinking": text}],
+        },
+        "assistantMessageEvent": {
+            "type": "thinking_end",
+            "contentIndex": 0,
+            "content": text,
+        },
+    })
+
+
 def emit_streaming_assistant(text: str) -> None:
     """Emit message_update text_delta events followed by message_end."""
     chunk_size = max(len(text) // 3, 1)
@@ -264,6 +310,10 @@ def plan_response(message: str) -> str:
     return "Plan ready."
 
 
+def prompt_thinking(_message: str) -> str:
+    return "Checking the relevant files first, then making the smallest useful edit before summarizing the change."
+
+
 def prompt_response(message: str) -> str:
     if project_has("src/App.tsx"):
         path = Path.cwd() / "src" / "App.tsx"
@@ -297,12 +347,15 @@ def main() -> int:
         if message.startswith("/search "):
             emit(assistant_message(search_response(message)))
         elif message.startswith("/review "):
+            emit_streaming_thinking("Tracing the active stop and checking the nearby code before explaining it.")
             emit_streaming_assistant(review_response(message))
         elif message.startswith("/plan "):
+            emit_streaming_thinking("Scanning the repo for a few useful walkthrough stops before laying out the plan.")
             emit_streaming_assistant(plan_response(message))
         elif message.startswith("/patch "):
             emit(assistant_message(patch_response(message)))
         elif message.startswith("/prompt "):
+            emit_streaming_thinking(prompt_thinking(message))
             emit(assistant_message(prompt_response(message)))
         else:
             emit(assistant_message("Fake pi response"))

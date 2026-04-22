@@ -148,10 +148,12 @@ class TmuxReviewTests(unittest.TestCase):
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
             current_index = int(h.lua("require('sherpa.state').get_session().review.current_index"))
+            open_buffers = h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})')
             self.assertIn("- source: `review`", review_text)
             self.assertIn("## Message 0", review_text)
             self.assertIn("[0] Message 0", review_text)
             self.assertNotIn("sherpa://log", review_text)
+            self.assertNotIn("sherpa://log", open_buffers)
             self.assertEqual(0, current_index)
 
     def test_planned_review_next_advances_through_fixed_plan(self) -> None:

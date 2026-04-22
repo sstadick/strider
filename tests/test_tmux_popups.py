@@ -80,6 +80,20 @@ class TmuxPopupTests(unittest.TestCase):
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("add a banner", log_text)
 
+    def test_prompt_turn_logs_reasoning_before_assistant_text(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat add a banner")
+                h.wait_until(
+                    lambda: "[thinking]" in "\n".join(h.log_lines())
+                    and "[assistant]" in "\n".join(h.log_lines()),
+                    timeout=4.0,
+                )
+
+                log_text = "\n".join(h.log_lines())
+                self.assertIn("Checking the relevant files first", log_text)
+                self.assertLess(log_text.index("[thinking]"), log_text.index("[assistant]"))
+
     def test_compose_steers_when_request_is_in_flight(self) -> None:
         # While a request is pending, compose <C-s> dispatches via
         # send_steer instead of starting a new prompt. The fake pi sees

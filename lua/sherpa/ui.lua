@@ -13,6 +13,7 @@ local annotation_hl = "SherpaAnnotation"
 local log_assistant_hl = "SherpaLogAssistant"
 local log_user_hl = "SherpaLogUser"
 local log_tool_hl = "SherpaLogTool"
+local log_thinking_hl = "SherpaLogThinking"
 local log_rule_hl = "SherpaLogRule"
 local log_assistant_bg_hl = "SherpaLogAssistantBg"
 local log_user_bg_hl = "SherpaLogUserBg"
@@ -454,6 +455,7 @@ local log_label_hl = {
   assistant = log_assistant_hl,
   user = log_user_hl,
   tool = log_tool_hl,
+  thinking = log_thinking_hl,
   sherpa = log_tool_hl,
   stderr = log_tool_hl,
   ["review-prompt"] = log_tool_hl,
@@ -486,7 +488,9 @@ function M.append_block(label, text)
   -- but we always append — so start_line is where the header lands.
   vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
 
-  -- Background highlight for entire block (user/assistant only)
+  -- Block-wide styling. User/assistant get subtle backgrounds; thinking gets
+  -- a faint foreground treatment across the whole block so it reads as
+  -- secondary/internal text rather than another full-strength answer.
   local end_line = start_line + #items - 1
   if label == "assistant" or label == "user" then
     local bg_hl = label == "user" and log_user_bg_hl or log_assistant_bg_hl
@@ -495,6 +499,13 @@ function M.append_block(label, text)
       hl_group = bg_hl,
       hl_eol = true,
       priority = 5,
+    })
+  elseif label == "thinking" then
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
+      end_row = end_line + 1,
+      hl_group = log_thinking_hl,
+      hl_eol = true,
+      priority = 4,
     })
   end
 
@@ -940,6 +951,7 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, log_assistant_hl, { default = true, fg = "#73C991", bold = true })
   vim.api.nvim_set_hl(0, log_user_hl, { default = true, fg = "#7BB5FF", bold = true })
   vim.api.nvim_set_hl(0, log_tool_hl, { default = true, link = "Normal" })
+  vim.api.nvim_set_hl(0, log_thinking_hl, { default = true, fg = "#6B7280", italic = true })
   vim.api.nvim_set_hl(0, log_rule_hl, { default = true, link = "NonText" })
   -- Subtle background for user blocks only; assistant blocks blend in.
   vim.api.nvim_set_hl(0, log_assistant_bg_hl, { default = true, link = "Normal" })

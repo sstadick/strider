@@ -93,9 +93,54 @@ local function handle_response(event)
   ui.notify(event.errorMessage or "Sherpa RPC request failed", vim.log.levels.ERROR)
 end
 
+local function ensure_stream_log(pending)
+  if not pending or pending.log_opened or pending.operation == "plan" then
+    return
+  end
+  pending.log_opened = true
+  ui.open_log({ preserve_focus = true })
+end
+
+local function flush_thinking_index(session, pending, content_index)
+  if not session then
+    return
+  end
+  session.assistant_thinking = session.assistant_thinking or {}
+  local text = session.assistant_thinking[content_index]
+  session.assistant_thinking[content_index] = nil
+  if not text then
+    return
+  end
+  text = vim.trim(text)
+  if text == "" then
+    return
+  end
+  ensure_stream_log(pending)
+  ui.append_block("thinking", text)
+end
+
+local function flush_all_thinking(session, pending)
+  if not session then
+    return
+  end
+  session.assistant_thinking = session.assistant_thinking or {}
+  local indices = {}
+  for index, text in pairs(session.assistant_thinking) do
+    if text and vim.trim(text) ~= "" then
+      table.insert(indices, index)
+    end
+  end
+  table.sort(indices, function(a, b)
+    return (tonumber(a) or 0) < (tonumber(b) or 0)
+  end)
+  for _, index in ipairs(indices) do
+    flush_thinking_index(session, pending, index)
+  end
+end
+
 local function handle_message_update(event)
   local delta = event.assistantMessageEvent
-  if not delta or delta.type ~= "text_delta" then
+  if not delta then
     return
   end
   local pending = state.peek_pending_request()
@@ -103,16 +148,40 @@ local function handle_message_update(event)
     return
   end
   local session = state.get_session()
+  session.assistant_thinking = session.assistant_thinking or {}
+
+  if delta.type == "thinking_start" then
+    session.assistant_thinking[delta.contentIndex or 0] = ""
+    return
+  end
+  if delta.type == "thinking_delta" then
+    local index = delta.contentIndex or 0
+    session.assistant_thinking[index] = (session.assistant_thinking[index] or "") .. (delta.delta or "")
+    ensure_stream_log(pending)
+    return
+  end
+  if delta.type == "thinking_end" then
+    local index = delta.contentIndex or 0
+    if (not session.assistant_thinking[index] or session.assistant_thinking[index] == "") and delta.content then
+      session.assistant_thinking[index] = delta.content
+    end
+    flush_thinking_index(session, pending, index)
+    return
+  end
+  if delta.type == "done" or delta.type == "error" then
+    flush_all_thinking(session, pending)
+    return
+  end
+  if delta.type ~= "text_delta" then
+    return
+  end
   session.assistant_text = (session.assistant_text or "") .. (delta.delta or "")
 
   -- Auto-open the log on the first streamed delta of any answer-producing
   -- operation, without stealing focus. Idempotent: open_log is a no-op
   -- when the log is already visible. One-per-pending guard avoids
   -- reopening a manually-closed log mid-stream.
-  if not pending.log_opened and pending.operation ~= "plan" then
-    pending.log_opened = true
-    ui.open_log({ preserve_focus = true })
-  end
+  ensure_stream_log(pending)
 
   if pending.operation == "review" then
     review.capture_assistant_text(session.assistant_text, { partial = true })
@@ -137,6 +206,8 @@ local function handle_message_end(event)
   local pending = state.peek_pending_request()
   local session = state.get_session()
 
+  flush_all_thinking(session, pending)
+
   -- Do not consume pending on tool-call turns or user messages.
   -- Only the final text-bearing assistant message should consume it.
   if has_tool_use(message) then
@@ -148,6 +219,7 @@ local function handle_message_end(event)
 
   pending = state.consume_pending_request()
   session.assistant_text = nil
+  session.assistant_thinking = {}
 
   -- Plan turns: success depends on whether the plan tool landed a plan,
   -- not on whether the model produced trailing prose. Handle before the

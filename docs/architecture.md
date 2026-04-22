@@ -2,11 +2,12 @@
 
 ## Current product model
 
-Sherpa is now built around four primary user flows:
+Sherpa is built around five primary user flows:
 
 - `:SherpaSearch {prompt}`
 - `:SherpaReview [scope] [prompt]`
 - `:'<,'>SherpaPatch {prompt}`
+- `:SherpaQ [prompt]` — tangent that branches off the session tree
 - `:SherpaChat [prompt]`
 
 Supporting navigation:
@@ -50,6 +51,9 @@ Owns:
 - widget/status updates for Neovim (model, context usage, running cost)
 - `/models` and `/tree` commands that drive fuzzy pickers via
   `ctx.ui.select` to switch models or jump through the session tree
+- `/q-anchor` and `/q-end` commands used by `:SherpaQ` to capture the
+  current leaf messageId and later navigate the tree back to it so a
+  tangent drops off the active path
 
 ## Core flows
 
@@ -110,6 +114,36 @@ Important UX rule:
 3. plugin sends `/patch ...` with file, line range, and excerpt context
 4. tool events update the file jump and edit highlighting
 5. edited ranges remain highlighted after the patch
+
+### Tangent
+
+`:SherpaQ` opens a tangent: a mini-conversation that reuses the main
+chat surfaces but is dropped from the active session path on end. The
+tree does the isolation; the UI stays single-pane.
+
+1. user runs `:SherpaQ [prompt]` (optionally with a visual range)
+2. plugin sends `/q-anchor` to the extension; extension responds with
+   the current leaf messageId via `setStatus("sherpa-q-anchor", ...)`
+3. plugin stores the anchor and flips `q_active = true`; the compose
+   winbar gains a `[Tangent]` badge
+4. if the user provided a prompt, plugin dispatches it as `/prompt ...`
+   (with an excerpt block when a range was given); otherwise plugin
+   opens the compose buffer so the user can type
+5. while `q_active` is true, compose sends route as tangent follow-ups
+   through `/prompt`; a one-shot stashed range is consumed on the
+   first send to include the excerpt
+6. re-invoking `:SherpaQ` with no args ends the tangent: plugin sends
+   `/q-end <anchor>`, extension calls `ctx.navigateTree(anchor)`. The
+   tangent's messages remain in pi's session graph (visible via
+   `/tree`) but are no longer on the leaf path.
+7. any other `:Sherpa*` command implicitly ends an active tangent
+   first via the `send()` guard (skipped when the caller passes
+   `is_q = true`)
+
+Tangent state lives only in the Neovim session — the extension owns no
+tangent concept beyond the two command handlers. Tree navigation is
+idempotent: ending a tangent that never produced a message is a no-op
+because `navigateTree(currentLeaf)` returns early.
 
 ### Chat
 
@@ -199,7 +233,10 @@ text is treated as a question about the current review item.
 - `extension_ui_request`
   - `notify` / `setStatus` / `setWidget` / `setTitle` — fire-and-forget
     UI updates. `setWidget` payloads are flattened into the log
-    window's winbar.
+    window's winbar. Two `setStatus` keys have plugin-side semantics:
+    `sherpa-q-anchor` routes to a pending `:SherpaQ` callback (carries
+    the captured leaf messageId), and `sherpa-q` drives the
+    `[Tangent]` badge in the compose winbar.
   - `editor` — open a floating scratch editor with a prefill; plugin
     replies via `extension_ui_response` with `{value}` on submit or
     `{cancelled: true}` on cancel. Plan-proposal titles tagged with a
@@ -241,6 +278,8 @@ Working today:
 - local review comments
 - selection-scoped patching
 - plain-prompt agent turns with clarify available
+- tangent branching via `:SherpaQ` (tree anchor at start, navigate-back
+  on end; `[Tangent]` badge in compose winbar while active)
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests on bundled fixture projects
 

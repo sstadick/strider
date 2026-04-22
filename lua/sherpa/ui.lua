@@ -16,8 +16,10 @@ local log_user_hl = "SherpaLogUser"
 local log_tool_hl = "SherpaLogTool"
 local log_thinking_hl = "SherpaLogThinking"
 local log_rule_hl = "SherpaLogRule"
+local log_error_hl = "SherpaLogError"
 local log_assistant_bg_hl = "SherpaLogAssistantBg"
 local log_user_bg_hl = "SherpaLogUserBg"
+local log_error_bg_hl = "SherpaLogErrorBg"
 local close_windows_for_buffer
 local target_window
 -- Forward declaration — defined later, referenced by append_block.
@@ -31,36 +33,82 @@ local spin_labels = {
     "Sherpa is crossing the ridge...",
     "Sherpa is setting the ropes...",
     "Sherpa is almost there...",
+    "Sherpa is gaining altitude...",
+    "Sherpa is navigating the crevasse...",
+    "Sherpa is reading the terrain...",
+    "Sherpa is securing the belay...",
+    "Sherpa is traversing the glacier...",
+    "Sherpa is finding a foothold...",
   },
   plan = {
     "Sherpa is scouting the route...",
     "Sherpa is checking the map...",
     "Sherpa is marking the next stop...",
     "Sherpa is laying out the route...",
+    "Sherpa is plotting waypoints...",
+    "Sherpa is measuring the distance...",
+    "Sherpa is charting the ascent...",
+    "Sherpa is surveying base camp...",
+    "Sherpa is calculating the grade...",
+    "Sherpa is penciling in the camps...",
+    "Sherpa is sketching the approach...",
+    "Sherpa is noting the hazards...",
   },
   patch = {
     "Sherpa is placing the pitons...",
     "Sherpa is trimming the route...",
     "Sherpa is tightening the seam...",
     "Sherpa is making a careful local move...",
+    "Sherpa is adjusting the anchor...",
+    "Sherpa is threading the rope...",
+    "Sherpa is resetting the cam...",
+    "Sherpa is fine-tuning the stance...",
+    "Sherpa is clipping the quickdraw...",
+    "Sherpa is cinching the knot...",
+    "Sherpa is repositioning the gear...",
+    "Sherpa is patching the fixed line...",
   },
   search = {
     "Sherpa is scanning the trail...",
     "Sherpa is checking the landmarks...",
     "Sherpa is tracing the path...",
     "Sherpa is spotting likely matches...",
+    "Sherpa is looking for cairns...",
+    "Sherpa is glassing the ridge...",
+    "Sherpa is following the bootpack...",
+    "Sherpa is sweeping the valley...",
+    "Sherpa is tracking the markers...",
+    "Sherpa is peering through the fog...",
+    "Sherpa is checking each switchback...",
+    "Sherpa is hunting for the blaze...",
   },
   review = {
     "Sherpa is walking the route...",
     "Sherpa is pointing out the key ledges...",
     "Sherpa is explaining the terrain...",
     "Sherpa is highlighting the tricky bit...",
+    "Sherpa is narrating the ascent...",
+    "Sherpa is describing the crux...",
+    "Sherpa is reviewing the beta...",
+    "Sherpa is recapping the sequence...",
+    "Sherpa is stepping through the moves...",
+    "Sherpa is showing the holds...",
+    "Sherpa is annotating the topo...",
+    "Sherpa is guiding you through...",
   },
   prompt = {
     "Sherpa is thinking...",
     "Sherpa is tracing the code...",
     "Sherpa is drafting a reply...",
     "Sherpa is lining up the next move...",
+    "Sherpa is pondering the approach...",
+    "Sherpa is considering options...",
+    "Sherpa is gathering thoughts...",
+    "Sherpa is working it out...",
+    "Sherpa is reading the wall...",
+    "Sherpa is planning the sequence...",
+    "Sherpa is mapping the logic...",
+    "Sherpa is studying the problem...",
   },
 }
 local activity_prefixes = {
@@ -90,12 +138,18 @@ local function stop_spin()
 end
 
 local function compose_status_line(progress)
+  local session = state.get_session()
+  local q_badge = session and session.status and session.status["sherpa-q"]
+  local q_prefix = (q_badge and q_badge ~= "") and "[Tangent] " or ""
   if not progress then
+    if q_prefix ~= "" then
+      return q_prefix .. "Sherpa tangent — :SherpaQ to end."
+    end
     return "Chat: Sherpa is ready."
   end
   local prefix = activity_prefixes[progress.operation] or "Sherpa"
   local label = progress.spin_label or activity_labels(progress.operation)[1]
-  return string.format("%s: %s", prefix, label)
+  return string.format("%s%s: %s", q_prefix, prefix, label)
 end
 
 function M.refresh_compose_winbar()
@@ -489,6 +543,7 @@ local log_label_hl = {
   thinking = log_thinking_hl,
   sherpa = log_tool_hl,
   stderr = log_tool_hl,
+  error = log_error_hl,
   ["review-prompt"] = log_tool_hl,
   ["review-comments"] = log_tool_hl,
 }
@@ -528,6 +583,13 @@ function M.append_block(label, text)
     pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
       end_row = end_line + 1,
       hl_group = bg_hl,
+      hl_eol = true,
+      priority = 5,
+    })
+  elseif label == "error" then
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
+      end_row = end_line + 1,
+      hl_group = log_error_bg_hl,
       hl_eol = true,
       priority = 5,
     })
@@ -984,9 +1046,16 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, log_tool_hl, { default = true, link = "Normal" })
   vim.api.nvim_set_hl(0, log_thinking_hl, { default = true, fg = "#6B7280", italic = true })
   vim.api.nvim_set_hl(0, log_rule_hl, { default = true, link = "NonText" })
-  -- Subtle background for user blocks only; assistant blocks blend in.
+  -- Error header stands out: bright red + bold, paired with a dim red
+  -- block background so the error block is hard to miss when scanning
+  -- the log. Colors match the removed-chunk red already in use above.
+  vim.api.nvim_set_hl(0, log_error_hl, { default = true, fg = "#F14C4C", bold = true })
+  -- Subtle background for user and error blocks; assistant blocks
+  -- blend in. Error background is a dim red in the same darkness
+  -- range as the user block's slate blue.
   vim.api.nvim_set_hl(0, log_assistant_bg_hl, { default = true, link = "Normal" })
   vim.api.nvim_set_hl(0, log_user_bg_hl, { default = true, bg = "#1a2536" })
+  vim.api.nvim_set_hl(0, log_error_bg_hl, { default = true, bg = "#361a1a" })
 end
 
 local function get_buffer(path)

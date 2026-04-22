@@ -19,11 +19,14 @@ class TmuxReviewTests(unittest.TestCase):
             timeout=5.0,
         )
 
-    def test_removed_legacy_commands_are_not_registered(self) -> None:
+    def test_expected_commands_are_registered(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
-            self.assertEqual("0", h.expr("exists(':SherpaQ')"))
+            # :SherpaTeach was removed in the pre-planned-review refactor;
+            # :SherpaQ was re-introduced as the tangent command (different
+            # semantics from the old legacy :SherpaQ).
             self.assertEqual("0", h.expr("exists(':SherpaTeach')"))
             self.assertEqual("2", h.expr("exists(':SherpaReview')"))
+            self.assertEqual("2", h.expr("exists(':SherpaQ')"))
 
     def test_selection_review_populates_current_explanation(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:

@@ -1,10 +1,16 @@
 # sherpa
 
-A Neovim plugin for guided code generation, search, review, and patch
-flows backed by [pi](https://github.com/badlogic/pi-mono).
+A Neovim plugin that wraps [pi](https://github.com/badlogic/pi-mono) in
+a set of scoped commands — review, search, patch, tangent, chat — each
+with its own guardrails so the agent stays in its lane.
 
-Sherpa keeps you in Neovim and jumps to touched files or reviewed
-ranges. Review is the primary walkthrough surface.
+Sherpa is pi-backed: your pi model, providers, extensions, skills,
+prompt templates, `AGENTS.md` / `CLAUDE.md`, session tree, and cost
+tracking all apply. Sherpa adds the Neovim surfaces and the scoped
+modes; pi does the agent work.
+
+Everything happens in native buffers (`sherpa://log`, `sherpa://compose`,
+`sherpa://review`). Review is the primary walkthrough surface.
 
 ## Requirements
 
@@ -50,12 +56,16 @@ require("sherpa").setup()
 | `:'<,'>SherpaComment {text}` | Comment on a visual sub-range |
 | `:SherpaComments` | Browse recorded review comments |
 | `:'<,'>SherpaPatch {prompt}` | Small targeted edit on a selection |
+| `:SherpaQ [prompt]` | Start a tangent that branches off the active session |
+| `:'<,'>SherpaQ [prompt]` | Tangent with a selection excerpt |
+| `:SherpaQ` (while active) | End the tangent (drops it from active history) |
 | `:SherpaChat [prompt]` | Toggle chat surfaces; with args, send directly |
 | `:SherpaRetry` | Re-dispatch a stalled plan turn |
 
 `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, and `:SherpaComment`
 with no args open a floating editor. Submit with `<C-s>`, cancel with
-`<Esc><Esc>`.
+`<Esc><Esc>`. `:SherpaQ` uses the main chat surfaces instead; see
+below.
 
 ## Slash commands in compose
 
@@ -101,6 +111,15 @@ Patch:
 
 ```vim
 :'<,'>SherpaPatch change greeting from hi to hello, only this line
+```
+
+Tangent — ask something mid-session without polluting history:
+
+```vim
+:SherpaQ what does this flag actually do?
+:SherpaQ                                     " follow up
+:SherpaQ                                     " end tangent (no args while active)
+:'<,'>SherpaQ why is this loop written this way?
 ```
 
 Chain chat → review:
@@ -150,6 +169,29 @@ pushed by pi after every turn:
 Model: anthropic/claude-sonnet-4.5 · Context: 14k / 200k (8.7%) · Cost: $0.0123
 ```
 
+## Tangents
+
+`:SherpaQ` opens a tangent: a mini-conversation that happens in the
+main chat surfaces but is dropped from the active path on end, so
+follow-up turns in the main session don't carry it as context.
+
+Tangents still live in pi's session graph (visible via `/tree`) — they
+aren't deleted, they're just off the leaf path. Starting a tangent
+records a tree anchor; ending it navigates the session back to that
+anchor.
+
+Re-invoking `:SherpaQ` with no args while a tangent is active ends it.
+Any other `:Sherpa*` command also ends it implicitly. The compose
+winbar shows `[Tangent]` while active.
+
+## Patch
+
+`:SherpaPatch` is for hyper-local edits — one function or region at a
+time. It requires a visual range (or an active review item) and
+embeds the excerpt + range in the prompt. The model is instructed to
+stay inside the selection. Use it when you want the agent to touch one
+spot and nothing else.
+
 ## Clarify
 
 During `:SherpaChat` and `:SherpaPatch`, the model may pause to ask a
@@ -171,7 +213,7 @@ asking, rely on the budget + your global pi system prompt.
   highlights.
 - `pi/sherpa-stepper.ts` — pi extension: prompt shaping, tools
   (`sherpa_plan`, `sherpa_append_stops`, `sherpa_clarify`), read-only
-  guardrails, status widget.
+  guardrails, status widget, tangent anchor/end commands.
 
 The plugin speaks pi's RPC protocol. Dialog UI (`editor`, `confirm`,
 `select`, `input`) flows from the extension through pi to the plugin,

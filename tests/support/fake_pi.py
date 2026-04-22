@@ -336,6 +336,32 @@ def prompt_response(message: str) -> str:
     return "Finished a broader work pass."
 
 
+def emit_set_status(key: str, text: str) -> None:
+    """Emit a setStatus extension UI request. The real pi extension uses
+    this channel for `ctx.ui.setStatus(key, text)` calls; the plugin
+    routes specific keys (e.g. `sherpa-q-anchor`) to pending callbacks."""
+    emit({
+        "type": "extension_ui_request",
+        "method": "setStatus",
+        "statusKey": key,
+        "statusText": text,
+    })
+
+
+# Monotonic counter so each fake tangent anchor gets a distinct id.
+_fake_leaf_counter = 0
+
+
+def handle_q_anchor() -> None:
+    """Mimic the real /q-anchor handler: echo the current leaf messageId
+    via a `sherpa-q-anchor` setStatus event. The real extension pulls
+    this from `ctx.sessionManager.getLeafId()`; the fake fabricates a
+    stable-looking id so tests can assert round-trip behavior."""
+    global _fake_leaf_counter
+    _fake_leaf_counter += 1
+    emit_set_status("sherpa-q-anchor", f"fake-leaf-{_fake_leaf_counter}")
+
+
 def main() -> int:
     for raw in sys.stdin:
         raw = raw.strip()
@@ -357,6 +383,16 @@ def main() -> int:
         elif message.startswith("/prompt "):
             emit_streaming_thinking(prompt_thinking(message))
             emit(assistant_message(prompt_response(message)))
+        elif message == "/q-anchor" or message.startswith("/q-anchor "):
+            # Pure extension command — no assistant turn. Just echo the
+            # anchor id via setStatus so rpc.lua's pending callback resolves.
+            handle_q_anchor()
+        elif message.startswith("/q-end"):
+            # Pure extension command — no assistant turn. The real handler
+            # calls ctx.navigateTree(); the fake has no tree to navigate,
+            # so acknowledgement is implicit (the `response: success`
+            # emitted above is enough).
+            pass
         else:
             emit(assistant_message("Fake pi response"))
     return 0

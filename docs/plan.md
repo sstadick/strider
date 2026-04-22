@@ -6,6 +6,8 @@ Primary flows:
 - `:SherpaSearch`
 - `:SherpaReview` (pre-planned walkthrough — see `docs/review-mode.md`)
 - `:SherpaPatch`
+- `:SherpaQ` (tangent that branches off the session tree and drops
+  from the active path on end)
 - `:SherpaChat`
 
 Supporting UX:
@@ -13,6 +15,8 @@ Supporting UX:
 - quickfix + telescope/fzf search selection
 - range highlighting for search/edit targets (suppressed during review)
 - local review comments summarized back to the agent at review end
+- `[Tangent]` badge in the compose winbar while a `:SherpaQ` branch is
+  active; any other `:Sherpa*` command implicitly ends it
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests
 
@@ -64,7 +68,7 @@ Keep local for now, but preserve space for:
 Fake pi backend + tmux+nvim harness:
 
 ```bash
-python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_plan_helpers tests.test_count_lines
+python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_plan_helpers tests.test_count_lines
 ```
 
 Goal: stay in the low-seconds range.

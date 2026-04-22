@@ -44,6 +44,10 @@ vim.api.nvim_create_user_command("SherpaSearches", function()
   require("sherpa").searches()
 end, { desc = "Open recent Sherpa searches" })
 
+vim.api.nvim_create_user_command("SherpaQ", function(opts)
+  require("sherpa").q(opts.args, opts)
+end, { nargs = "*", range = true, desc = "Ask a tangent that branches off the active session (re-invoke with no args to end)" })
+
 vim.api.nvim_create_user_command("SherpaRetry", function()
   require("sherpa").retry()
 end, { desc = "Re-dispatch the Sherpa plan turn if it stalled" })

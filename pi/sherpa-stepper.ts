@@ -55,6 +55,7 @@ function searchRules(): string[] {
 	return [
 		"You are operating in Sherpa search mode.",
 		"This mode is read-only. Do not use edit or write.",
+		"Prefer a broad `bash` ripgrep (`rg`) or `grep` as the first pass over multiple `read`s — one grep across the repo is usually faster than opening several candidate files.",
 		"Return only matching locations in this exact format:",
 		"/absolute/path/to/file.ext:line:column,count,notes",
 		"Example:",
@@ -645,10 +646,55 @@ export default function (pi: ExtensionAPI) {
 			if (!choice) return;
 			const targetId = byLabel.get(choice);
 			if (!targetId) return;
+			await navigateTo(ctx, targetId);
+			updateWidget(ctx);
+		},
+	});
+
+	// Shared helper so /tree and /q-end behave identically when navigating.
+	async function navigateTo(ctx: any, targetId: string): Promise<boolean> {
+		try {
 			const result = await ctx.navigateTree(targetId);
 			if (result?.cancelled) {
 				ctx.ui.notify("Tree navigation cancelled", "info");
+				return false;
 			}
+			return true;
+		} catch (err: any) {
+			ctx.ui.notify(`Tree navigation failed: ${err?.message ?? err}`, "error");
+			return false;
+		}
+	}
+
+	// /q-anchor — capture the current leaf messageId so Lua can later
+	// navigate back to it when ending a tangent branch. Echoed back via
+	// setStatus on a dedicated key that Lua watches for.
+	pi.registerCommand("q-anchor", {
+		description: "(internal) Capture current leaf messageId for :SherpaQ tangent",
+		handler: async (_args: any, ctx: any) => {
+			const leafId = ctx.sessionManager.getLeafId?.();
+			if (!leafId) {
+				ctx.ui.setStatus("sherpa-q-anchor", "");
+				ctx.ui.notify("No conversation yet — nothing to branch from", "warning");
+				return;
+			}
+			ctx.ui.setStatus("sherpa-q-anchor", leafId);
+		},
+	});
+
+	// /q-end <messageId> — navigate the session tree back to the given
+	// anchor so subsequent messages branch from before the tangent. The
+	// tangent's entries remain in the session graph (still visible via
+	// /tree) but are no longer on the active path.
+	pi.registerCommand("q-end", {
+		description: "(internal) End a Sherpa tangent by navigating back to an anchor",
+		handler: async (args: any, ctx: any) => {
+			const targetId = (args ?? "").trim();
+			if (!targetId) {
+				ctx.ui.notify("Usage: /q-end <messageId>", "warning");
+				return;
+			}
+			await navigateTo(ctx, targetId);
 			updateWidget(ctx);
 		},
 	});

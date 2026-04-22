@@ -89,8 +89,15 @@ local function handle_response(event)
   if event.success then
     return
   end
-  ui.finish_activity(event.errorMessage or "Sherpa RPC request failed", "error")
-  ui.notify(event.errorMessage or "Sherpa RPC request failed", vim.log.levels.ERROR)
+  -- RPC transport-level error (pi rejected the request shape, backend
+  -- isn't running, etc.). Less common than model-level errors — those
+  -- arrive on message_end with stopReason="error" (see
+  -- handle_message_end). Both paths log into the buffer so the user
+  -- always has a record beyond the fleeting notify.
+  local reason = event.errorMessage or "Sherpa RPC request failed"
+  ui.append_block("error", reason)
+  ui.finish_activity(reason, "error")
+  ui.notify(reason, vim.log.levels.ERROR)
 end
 
 local function ensure_stream_log(pending)
@@ -220,6 +227,24 @@ local function handle_message_end(event)
   pending = state.consume_pending_request()
   session.assistant_text = nil
   session.assistant_thinking = {}
+
+  -- Model/provider errors land here: pi emits a final message_end whose
+  -- message.stopReason is "error" (or "aborted" for user-canceled
+  -- turns), with the human-readable reason in message.errorMessage.
+  -- Surface it into the log so the user sees why the turn failed
+  -- instead of wondering why nothing streamed back. Short-circuit the
+  -- normal plan/search/assistant branches — there's no usable text.
+  local stop_reason = message.stopReason
+  if stop_reason == "error" or stop_reason == "aborted" then
+    local reason = message.errorMessage or (stop_reason == "aborted" and "Turn aborted" or "Model request failed")
+    ui.append_block("error", reason)
+    local level = stop_reason == "aborted" and "cancel" or "error"
+    ui.finish_activity(reason, level)
+    if stop_reason == "error" then
+      ui.notify(reason, vim.log.levels.ERROR)
+    end
+    return
+  end
 
   -- Plan turns: success depends on whether the plan tool landed a plan,
   -- not on whether the model produced trailing prose. Handle before the
@@ -474,6 +499,20 @@ local function handle_extension_ui(event)
     local session = state.get_session()
     local previous = session.status[event.statusKey]
     state.set_status(event.statusKey, event.statusText)
+    -- /q-anchor echoes the leaf messageId back via this key. Hand it to
+    -- whoever called send_q_anchor and return — no other UI side-effects.
+    if event.statusKey == "sherpa-q-anchor" then
+      local cb = state.consume_q_anchor_callback()
+      if cb then
+        local id = event.statusText
+        if id == nil or id == "" then
+          cb(nil)
+        else
+          cb(id)
+        end
+      end
+      return
+    end
     if event.statusKey == "sherpa" and event.statusText ~= previous then
       if event.statusText == "complete" then
         ui.append({ "[sherpa] Workflow complete", "" })
@@ -740,6 +779,30 @@ end
 -- the steer message mid-stream; the model sees it and adjusts without
 -- a new turn being started. No new pending_request is created — the
 -- existing one continues to resolve on the next message_end.
+-- Ask the backend for the current session leaf messageId. The response
+-- arrives as a `setStatus` event with key `sherpa-q-anchor` and is
+-- routed to `cb(id_or_nil)`. Fire-and-forget send; the callback resolves
+-- when the event lands (or with nil if no conversation exists).
+function M.send_q_anchor(cb)
+  local session = state.get_session()
+  if not session or not session.job_id then
+    ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
+    if cb then cb(nil) end
+    return false
+  end
+  state.set_q_anchor_callback(cb)
+  return M.send_prompt("/q-anchor")
+end
+
+-- Navigate the session tree back to `message_id` so the Q branch drops
+-- off the active path. Fire-and-forget; pi handles navigation.
+function M.send_q_end(message_id)
+  if not message_id or message_id == "" then
+    return false
+  end
+  return M.send_prompt("/q-end " .. message_id)
+end
+
 function M.send_steer(message)
   local session = state.get_session()
   if not session or not session.job_id then

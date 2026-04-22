@@ -42,6 +42,19 @@ local function send(command, user_text, opts)
   if not ensure_backend() then
     return false
   end
+  -- Implicit end-of-Q on any main-chat send. Q sends themselves set
+  -- opts.is_q so they pass through without ending the branch. This
+  -- catches :SherpaReview / :SherpaPatch / :SherpaSearch etc. as well
+  -- as plain :SherpaChat messages — any explicit "do something else"
+  -- exits the tangent first.
+  if state.q_is_active() and not (opts and opts.is_q) then
+    local anchor = state.q_end()
+    state.set_status("sherpa-q", nil)
+    ui.refresh_compose_winbar()
+    if anchor then
+      rpc.send_q_end(anchor)
+    end
+  end
   if opts and opts.open_log then
     -- Don't steal focus from whatever the user is currently doing (e.g.
     -- composing in sherpa://compose). If the log isn't visible yet,
@@ -235,10 +248,35 @@ end
 -- in flight, deliver as a steer (mid-turn redirect) instead of a new
 -- prompt. Either way the log gets a [user] block so the transcript
 -- reads correctly.
+-- Forward declaration: dispatch_compose references dispatch_q (tangent
+-- send path). dispatch_q is defined further down alongside the other
+-- :SherpaQ helpers, after the main chat dispatchers. Without this
+-- forward-declared local, the name in dispatch_compose binds as a
+-- global and resolves to nil at call time.
+local dispatch_q
+
 local function dispatch_compose(text)
   text = trimmed(text)
   if text == "" then return false end
   if not ensure_backend() then return false end
+
+  -- While a tangent is active, compose sends are tangent follow-ups.
+  -- The message still goes through /prompt — the tree anchor decides
+  -- what gets discarded on end, not a special send path. A stashed
+  -- range (set by :SherpaQ when invoked with a visual selection but no
+  -- inline prompt) is consumed here so the first send carries the
+  -- excerpt; subsequent sends are plain follow-ups.
+  if state.q_is_active() and not state.peek_pending_request() then
+    if text:sub(1, 1) == "/" then
+      -- Slash-commands end the tangent implicitly (see send() guard)
+      -- and run normally. Fall through to the regular dispatch below.
+      state.consume_pending_q_range()
+    else
+      local pending_range = state.consume_pending_q_range()
+      dispatch_q(text, pending_range)
+      return true
+    end
+  end
 
   local pending = state.peek_pending_request()
   if pending then
@@ -423,6 +461,134 @@ local function dispatch_patch(prompt, range)
     "User request: " .. prompt,
   }
   send("/patch " .. table.concat(lines, "\n"), prompt, { operation = "patch" })
+end
+
+-- :SherpaQ — ask a tangent whose Q&A lives in the session graph but
+-- drops off the active path when ended, so subsequent main-chat
+-- messages don't carry it as context. Tree branching is the isolation
+-- mechanism; the UI reuses the main chat surfaces (no popup editor).
+--
+-- Decision table (see also `M.q`):
+--   Tangent inactive, no args     → start tangent, open compose
+--   Tangent inactive, args/range  → start tangent, send immediately (excerpt if range)
+--   Tangent active,   no args     → end tangent (navigate back, clear badge)
+--   Tangent active,   args/range  → follow-up in the active tangent
+local function set_q_badge(active)
+  state.set_status("sherpa-q", active and "tangent" or nil)
+  ui.refresh_compose_winbar()
+end
+
+local function end_q_session(notify)
+  local anchor = state.q_end()
+  state.consume_pending_q_range()
+  set_q_badge(false)
+  if anchor then
+    rpc.send_q_end(anchor)
+  end
+  if notify then
+    ui.notify("Tangent ended", vim.log.levels.INFO)
+  end
+end
+
+function dispatch_q(prompt, range)
+  local message
+  if range then
+    local lines = {
+      string.format("Context file: %s", range.path),
+      string.format("Context lines: %d-%d", range.startLine, range.endLine),
+      "<Q_EXCERPT>",
+      read_excerpt(range.path, range.startLine, range.endLine),
+      "</Q_EXCERPT>",
+      "Question: " .. prompt,
+    }
+    message = table.concat(lines, "\n")
+  else
+    message = prompt
+  end
+  -- Route through /prompt so Pi handles it as a normal turn. The tree
+  -- mechanics (not the slash-command) provide the "tangent" semantics;
+  -- no dedicated /q command is needed. is_q=true keeps send() from
+  -- treating this as an implicit "leave tangent".
+  send("/prompt " .. message, prompt, { operation = "prompt", open_log = true, is_q = true })
+end
+
+local function start_q_then_send(prompt, range)
+  rpc.send_q_anchor(function(anchor_id)
+    if not anchor_id then
+      ui.notify("Cannot start tangent: no conversation to branch from", vim.log.levels.WARN)
+      return
+    end
+    state.q_begin(anchor_id)
+    set_q_badge(true)
+    if prompt and prompt ~= "" then
+      dispatch_q(prompt, range)
+    else
+      -- No prompt yet: open compose so the user can type the question.
+      -- The badge is already visible; whatever they send next flows
+      -- through dispatch_compose (which will not re-end Q because
+      -- q_active is true — see dispatch_compose guard).
+      if not ensure_backend() then return end
+      ui.open_log({ preserve_focus = true })
+      ui.open_compose(function(text)
+        return dispatch_compose(text)
+      end)
+    end
+  end)
+end
+
+function M.q(prompt, opts)
+  prompt = trimmed(prompt)
+  local range = range_from_opts(opts)
+  local has_input = prompt ~= "" or range ~= nil
+
+  if not ensure_backend() then return end
+
+  if state.q_is_active() then
+    if not has_input then
+      end_q_session(true)
+      return
+    end
+    -- Follow-up: tangent is already active, dispatch directly. Branch
+    -- is already anchored; no re-anchoring needed.
+    if prompt == "" and range then
+      -- Range without inline prompt: stash the range, open compose,
+      -- and let dispatch_compose consume it on the next send.
+      state.set_pending_q_range(range)
+      ui.open_log({ preserve_focus = true })
+      ui.open_compose(function(text)
+        return dispatch_compose(text)
+      end)
+      ui.notify(string.format("Tangent: next message will include %s:%d-%d",
+        range.path, range.startLine, range.endLine), vim.log.levels.INFO)
+      return
+    end
+    dispatch_q(prompt, range)
+    return
+  end
+
+  -- Tangent inactive: anchor first, then send (or open compose if no input).
+  if prompt == "" and range then
+    -- Anchor, stash the range, open compose. The first compose send
+    -- will pick up the range and dispatch with the excerpt.
+    local captured = range
+    rpc.send_q_anchor(function(anchor_id)
+      if not anchor_id then
+        ui.notify("Cannot start tangent: no conversation to branch from", vim.log.levels.WARN)
+        return
+      end
+      state.q_begin(anchor_id)
+      state.set_pending_q_range(captured)
+      set_q_badge(true)
+      ui.open_log({ preserve_focus = true })
+      ui.open_compose(function(text)
+        return dispatch_compose(text)
+      end)
+      ui.notify(string.format("Tangent: next message will include %s:%d-%d",
+        captured.path, captured.startLine, captured.endLine), vim.log.levels.INFO)
+    end)
+    return
+  end
+  start_q_then_send(prompt, range)
 end
 
 function M.patch(prompt, opts)

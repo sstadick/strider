@@ -17,6 +17,11 @@ local log_tool_hl = "SherpaLogTool"
 local log_thinking_hl = "SherpaLogThinking"
 local log_rule_hl = "SherpaLogRule"
 local log_error_hl = "SherpaLogError"
+local log_diff_added_hl = "SherpaLogDiffAdded"
+local log_diff_removed_hl = "SherpaLogDiffRemoved"
+local log_diff_context_hl = "SherpaLogDiffContext"
+local log_path_hl = "SherpaLogPath"
+local log_muted_hl = "SherpaLogMuted"
 local log_assistant_bg_hl = "SherpaLogAssistantBg"
 local log_user_bg_hl = "SherpaLogUserBg"
 local log_error_bg_hl = "SherpaLogErrorBg"
@@ -574,6 +579,8 @@ local log_label_hl = {
   error = log_error_hl,
   plan = log_tool_hl,
   clarify = log_tool_hl,
+  diff = log_tool_hl,
+  ["tool-output"] = log_tool_hl,
   ["review-prompt"] = log_tool_hl,
   ["review-comments"] = log_tool_hl,
 }
@@ -630,6 +637,27 @@ function M.append_block(label, text)
       hl_eol = true,
       priority = 4,
     })
+  elseif label == "diff" then
+    -- Per-line highlights based on unified-diff prefix:
+    --   "+"  added   — green
+    --   "-"  removed — red
+    --   " "  context — dim
+    -- Lines that don't match any of those (e.g. the " N ..." ellipsis
+    -- rows pi emits) are treated as context.
+    for row = start_line + 1, end_line - 1 do
+      local line = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or ""
+      local prefix = line:sub(1, 1)
+      local hl
+      if prefix == "+" then hl = log_diff_added_hl
+      elseif prefix == "-" then hl = log_diff_removed_hl
+      else hl = log_diff_context_hl end
+      pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+        end_row = row + 1,
+        hl_group = hl,
+        hl_eol = true,
+        priority = 5,
+      })
+    end
   end
 
   -- Header foreground (higher priority than background)
@@ -651,6 +679,95 @@ function M.append_block(label, text)
   })
 
   scroll_log_windows(buf)
+end
+
+-- Append a one-line `[tool] <name> <path>[<range>]` log entry with the
+-- path + range range substring highlighted distinctly. `range` is an
+-- already-formatted suffix like ":1-40" or nil. The tool name keeps
+-- the default tool color; only the path/range pops visually.
+function M.append_tool_line(tool_name, path, range)
+  local session = state.get_session()
+  local buf = session and session.log_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    -- Fall back to plain append so we don't silently lose the line;
+    -- the log buffer may not exist yet during very early dispatches.
+    local line = string.format("[tool] %s %s%s", tool_name, path or "",
+      range or "")
+    M.append({ line })
+    return
+  end
+
+  local prefix = string.format("[tool] %s ", tool_name)
+  local path_text = path or ""
+  local range_text = range or ""
+  local full_line = prefix .. path_text .. range_text
+
+  local start_row = vim.api.nvim_buf_line_count(buf)
+  M.append({ full_line })
+
+  -- The line we just appended sits one above the trailing blank that
+  -- `M.append` keeps at end-of-buffer; its row is start_row.
+  local path_start_col = #prefix
+  local path_end_col = path_start_col + #path_text + #range_text
+  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_row, path_start_col, {
+    end_row = start_row,
+    end_col = path_end_col,
+    hl_group = log_path_hl,
+    priority = 10,
+  })
+end
+
+-- Render tool output (stdout from bash, file contents from read, match
+-- lines from grep, directory entries from ls/find) as a [tool-output]
+-- block following the [tool] header. Caps the body at `max_lines`
+-- lines, appending `(+N more lines)` in muted if truncated. Empty or
+-- whitespace-only text is skipped (not every tool produces output).
+local TOOL_OUTPUT_MAX_LINES = 20
+
+function M.append_tool_output(text)
+  if type(text) ~= "string" then return end
+  local trimmed = vim.trim(text)
+  if trimmed == "" then return end
+
+  local all_lines = vim.split(text, "\n", { plain = true })
+  -- Strip a single trailing empty line that most text tools emit, but
+  -- preserve genuine blank lines inside the output.
+  if all_lines[#all_lines] == "" then
+    all_lines[#all_lines] = nil
+  end
+
+  local truncated = false
+  local remaining = 0
+  if #all_lines > TOOL_OUTPUT_MAX_LINES then
+    remaining = #all_lines - TOOL_OUTPUT_MAX_LINES
+    truncated = true
+    all_lines = vim.list_slice(all_lines, 1, TOOL_OUTPUT_MAX_LINES)
+  end
+
+  local body = table.concat(all_lines, "\n")
+  if truncated then
+    body = body .. string.format("\n(+%d more %s)", remaining, remaining == 1 and "line" or "lines")
+  end
+
+  M.append_block("tool-output", body)
+
+  -- If we appended a truncation tail, color that last body line muted.
+  if truncated then
+    local session = state.get_session()
+    local buf = session and session.log_buf
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      -- last non-blank line is the truncation tail; work backwards past
+      -- the trailing blank line append_block always adds.
+      local last = vim.api.nvim_buf_line_count(buf) - 2
+      if last >= 0 then
+        pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, last, 0, {
+          end_row = last + 1,
+          hl_group = log_muted_hl,
+          priority = 10,
+        })
+      end
+    end
+  end
 end
 
 local function configure_review_window(win)
@@ -1042,6 +1159,17 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, log_assistant_bg_hl, { default = true, link = "Normal" })
   vim.api.nvim_set_hl(0, log_user_bg_hl, { default = true, bg = "#1a2536" })
   vim.api.nvim_set_hl(0, log_error_bg_hl, { default = true, bg = "#361a1a" })
+  -- Diff lines in tool-output [diff] blocks. Mirror the gutter-sign
+  -- palette so the two surfaces agree: green for added, red for
+  -- removed, dim for context.
+  vim.api.nvim_set_hl(0, log_diff_added_hl, { default = true, fg = "#73C991" })
+  vim.api.nvim_set_hl(0, log_diff_removed_hl, { default = true, fg = "#F14C4C" })
+  vim.api.nvim_set_hl(0, log_diff_context_hl, { default = true, link = "NonText" })
+  -- Paths in tool headers (e.g. after `[tool] read`) stand out so the
+  -- eye finds the target quickly when scanning the transcript.
+  vim.api.nvim_set_hl(0, log_path_hl, { default = true, fg = "#7BB5FF" })
+  -- Muted annotations like `(+N more lines)` / `Took 0.8s`.
+  vim.api.nvim_set_hl(0, log_muted_hl, { default = true, link = "NonText" })
 end
 
 local function get_buffer(path)

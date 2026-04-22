@@ -27,11 +27,13 @@ local function append_tool(tool_name, args)
     if tool_name == "read" then
       local start_line = tonumber(args.offset) or 1
       local limit = tonumber(args.limit)
-      local suffix = limit and string.format(":%d-%d", start_line, start_line + limit - 1) or string.format(":%d", start_line)
-      ui.append({ string.format("[tool] %s %s%s", tool_name, path, suffix) })
+      local range = limit
+        and string.format(":%d-%d", start_line, start_line + limit - 1)
+        or string.format(":%d", start_line)
+      ui.append_tool_line(tool_name, path, range)
       return
     end
-    ui.append({ string.format("[tool] %s %s", tool_name, path) })
+    ui.append_tool_line(tool_name, path, nil)
     return
   end
 
@@ -433,8 +435,49 @@ local function consume_tool_args(session, event)
   return cached
 end
 
+-- Pull the printable text out of a tool_execution_end result. Pi emits
+-- result.content as a list of `{type: "text", text: "..."}` parts; we
+-- concatenate their text. Non-text parts (images, structured data) are
+-- skipped — we just want what the user should read in the transcript.
+local function tool_result_text(event)
+  local result = event.result
+  if not result or not result.content then return nil end
+  local parts = {}
+  for _, item in ipairs(result.content) do
+    if item.type == "text" and type(item.text) == "string" then
+      table.insert(parts, item.text)
+    end
+  end
+  if #parts == 0 then return nil end
+  return table.concat(parts, "\n")
+end
+
+-- Tools whose textual result is worth showing in the log (vs dropped
+-- as noise). edit is deliberately excluded — its `[diff]` block below
+-- already captures the change, and the raw text result for edit tends
+-- to be a redundant "OK" string.
+local TOOL_OUTPUT_WHITELIST = {
+  bash = true,
+  read = true,
+  grep = true,
+  ls = true,
+  find = true,
+  write = true,
+}
+
 local function handle_tool_end(event)
   local session = state.get_session()
+
+  -- Render textual output for tools where seeing the content helps the
+  -- user follow along (everything except edit, which gets a diff block
+  -- below, and Sherpa's internal planning tools which carry structured
+  -- payloads rather than user-facing text).
+  if TOOL_OUTPUT_WHITELIST[event.toolName] then
+    local text = tool_result_text(event)
+    if text then
+      ui.append_tool_output(text)
+    end
+  end
 
   -- Sherpa planning tools carry their payload in args captured at start time.
   if event.toolName == "sherpa_plan" then
@@ -483,6 +526,14 @@ local function handle_tool_end(event)
     -- not move the user's window to follow model tool use.
     local lines = changed_lines(event)
     ui.highlight_lines(path, lines)
+    -- Also show the diff in the log as a [diff] block. Pi emits a
+    -- unified diff at event.result.details.diff already formatted with
+    -- `+NUM / -NUM /  NUM` line prefixes; append_block's diff branch
+    -- colors each line by prefix.
+    local diff_text = event.result and event.result.details and event.result.details.diff
+    if diff_text and diff_text ~= "" then
+      ui.append_block("diff", diff_text)
+    end
     return
   end
   if event.toolName == "write" then

@@ -181,6 +181,12 @@ local function excerpt_fence(path)
   if not language or language == "" then
     return "```"
   end
+  -- Review pane itself is markdown. Rendering markdown excerpts as
+  -- ```markdown makes README-style content look like sidebar structure
+  -- instead of literal source, so force plain text for markdown files.
+  if language == "markdown" then
+    return "```text"
+  end
   return "```" .. language
 end
 

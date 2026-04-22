@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -63,6 +64,22 @@ class TmuxReviewTests(unittest.TestCase):
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
             self.assertIn("```python", review_text)
+
+    def test_review_excerpt_uses_text_fence_for_markdown(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sherpa-md-") as tmp:
+            project = Path(tmp)
+            (project / "README.md").write_text(
+                "# Sherpa\n\n- first item\n- second item\n\n## Details\nText here.\n",
+                encoding="utf-8",
+            )
+            with TmuxNvimHarness(self.repo_root, project) as h:
+                h.ex("edit README.md")
+                h.ex("1,4SherpaReview explain this doc")
+                h.wait_until(lambda: "## Excerpt" in "\n".join(h.buffer_lines("sherpa://review")))
+
+                review_text = "\n".join(h.buffer_lines("sherpa://review"))
+                self.assertIn("```text", review_text)
+                self.assertNotIn("```markdown", review_text)
 
     def test_multiline_comment_editor_records_comment(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:

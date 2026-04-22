@@ -316,7 +316,7 @@ local function panel_lines(review)
   local on_msg0 = has_msg0 and review.current_index == 0
 
   if on_msg0 then
-    table.insert(lines, "**Message 0**")
+    table.insert(lines, "**Synopsis**")
     table.insert(lines, "")
   elseif item then
     table.insert(lines, string.format("**%s**", item.title or "Review item"))
@@ -345,7 +345,7 @@ local function panel_lines(review)
     explanation_title = "Review summary"
     explanation = review.summary
   elseif on_msg0 then
-    explanation_title = "Message 0"
+    explanation_title = "Synopsis"
     explanation = review.plan_message
   elseif review.planning then
     explanation = "Sherpa is planning the review..."
@@ -388,7 +388,7 @@ local function panel_lines(review)
     local toc = {}
     if has_msg0 then
       local marker = review.current_index == 0 and "→" or " "
-      table.insert(toc, string.format("%s [0] Message 0", marker))
+      table.insert(toc, string.format("%s [0] Synopsis", marker))
     end
     for index, stop in ipairs(review.items) do
       local marker = (index == review.current_index) and "→" or " "
@@ -1226,7 +1226,7 @@ function M.item_picker()
   local has_msg0 = review.plan_message and review.plan_message ~= ""
   if has_msg0 then
     table.insert(items, {
-      label = "[0] Message 0",
+      label = "[0] Synopsis",
       value = { index = 0, item = nil },
     })
   end

@@ -2,11 +2,18 @@
 with no arguments. Exercises search/review/prompt/patch popups end-to-end
 through a real Neovim session with the fake pi backend.
 """
+import base64
+import json
 import unittest
 from pathlib import Path
 
 from tests.support.project_copy import FixtureProject
 from tests.support.tmux_nvim import TmuxNvimHarness
+
+
+TEST_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/6xkAAAAASUVORK5CYII="
+)
 
 
 def _popup_open(h, name: str = "sherpa://prompt") -> bool:
@@ -79,6 +86,39 @@ class TmuxPopupTests(unittest.TestCase):
                 # Message reached the fake backend.
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("add a banner", log_text)
+
+    def test_compose_ctrl_v_inserts_image_marker(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            clipboard_png = project_root / "clipboard-test.png"
+            clipboard_png.write_bytes(TEST_PNG)
+
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.lua(
+                    "(function() require('sherpa.state').setup({ clipboard_image_test_file = "
+                    + json.dumps(str(clipboard_png))
+                    + " }); return true end)()"
+                )
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.current_state()["buf"] == "sherpa://compose",
+                    timeout=3.0,
+                )
+
+                h.send("C-v", pause=0.3)
+                h.wait_until(
+                    lambda: any(
+                        line.startswith("@image ")
+                        for line in h.buffer_lines("sherpa://compose")
+                    ),
+                    timeout=3.0,
+                )
+
+                marker = next(
+                    line for line in h.buffer_lines("sherpa://compose") if line.startswith("@image ")
+                )
+                pasted_path = Path(marker.removeprefix("@image "))
+                self.assertTrue(pasted_path.exists(), pasted_path)
+                self.assertNotEqual(clipboard_png, pasted_path)
 
     def test_prompt_turn_logs_reasoning_before_assistant_text(self) -> None:
         with FixtureProject(self.project_root) as project_root:
@@ -208,7 +248,7 @@ class TmuxPopupTests(unittest.TestCase):
                 first = _winbar_for_buffer(h, "sherpa://compose")
                 h.wait_until(
                     lambda: _winbar_for_buffer(h, "sherpa://compose") != first,
-                    timeout=2.5,
+                    timeout=4.5,
                     interval=0.2,
                 )
                 h.lua(

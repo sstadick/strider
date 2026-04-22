@@ -1,3 +1,4 @@
+local clipboard = require("sherpa.clipboard")
 local state = require("sherpa.state")
 
 local M = {}
@@ -130,7 +131,7 @@ local function start_spin(progress)
   end
   M.refresh_compose_winbar()
   spin_timer = vim.uv.new_timer()
-  spin_timer:start(1000, 1000, vim.schedule_wrap(function()
+  spin_timer:start(2000, 2000, vim.schedule_wrap(function()
     spin_tick()
   end))
 end
@@ -299,7 +300,7 @@ function M.ensure_compose_buffer(on_send)
     local is_empty = (#lines == 0) or (#lines == 1 and lines[1] == "")
     if is_empty then
       pcall(vim.api.nvim_buf_set_extmark, buf, compose_ns, 0, 0, {
-        virt_text = { { "Type a message · <C-s> to send", "Comment" } },
+        virt_text = { { "Type a message · <C-v> screenshot · <C-s> to send", "Comment" } },
         virt_text_pos = "overlay",
       })
     end
@@ -311,6 +312,45 @@ function M.ensure_compose_buffer(on_send)
     callback = render_hint,
   })
 
+  local function resume_compose()
+    local compose_win = vim.fn.win_findbuf(buf)[1]
+    if not compose_win or not vim.api.nvim_win_is_valid(compose_win) then
+      return
+    end
+    vim.schedule(function()
+      if vim.api.nvim_win_is_valid(compose_win) then
+        vim.api.nvim_set_current_win(compose_win)
+        local last = math.max(vim.api.nvim_buf_line_count(buf), 1)
+        pcall(vim.api.nvim_win_set_cursor, compose_win, { last, 0 })
+        vim.cmd("startinsert")
+      end
+    end)
+  end
+
+  local function append_compose_marker(marker)
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local is_empty = (#lines == 0) or (#lines == 1 and lines[1] == "")
+    if is_empty then
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { marker, "" })
+    elseif lines[#lines] == "" then
+      vim.api.nvim_buf_set_lines(buf, #lines - 1, #lines, false, { marker, "" })
+    else
+      vim.api.nvim_buf_set_lines(buf, -1, -1, false, { marker, "" })
+    end
+    render_hint()
+  end
+
+  local function paste_image()
+    local path, err = clipboard.save_image()
+    if not path then
+      notify(err or "Clipboard image paste failed", vim.log.levels.WARN)
+      resume_compose()
+      return
+    end
+    append_compose_marker("@image " .. path)
+    resume_compose()
+  end
+
   local function send_compose()
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local text = vim.trim(table.concat(lines, "\n"))
@@ -318,11 +358,6 @@ function M.ensure_compose_buffer(on_send)
       notify("Nothing to send — type a message first", vim.log.levels.WARN)
       return
     end
-    -- Remember where focus was before dispatch. send() may open the
-    -- log as a side effect; we want to return to compose afterward so
-    -- the user can keep typing the next message.
-    local compose_wins = vim.fn.win_findbuf(buf)
-    local compose_win = compose_wins[1]
 
     -- Dispatch first; only clear the buffer if the send actually
     -- succeeded. Undo history is reset so `u` doesn't resurrect the
@@ -339,14 +374,7 @@ function M.ensure_compose_buffer(on_send)
     -- Keep the user in the compose window + insert mode for the next
     -- message. Scheduled so it lands after any activity echo / scroll
     -- effects from the dispatch.
-    if compose_win and vim.api.nvim_win_is_valid(compose_win) then
-      vim.schedule(function()
-        if vim.api.nvim_win_is_valid(compose_win) then
-          vim.api.nvim_set_current_win(compose_win)
-          vim.cmd("startinsert")
-        end
-      end)
-    end
+    resume_compose()
   end
 
   local function leave_insert()
@@ -355,6 +383,9 @@ function M.ensure_compose_buffer(on_send)
 
   vim.keymap.set({ "n", "i" }, "<C-s>", send_compose, {
     buffer = buf, nowait = true, silent = true, desc = "Send Sherpa compose"
+  })
+  vim.keymap.set({ "n", "i" }, "<C-v>", paste_image, {
+    buffer = buf, nowait = true, silent = true, desc = "Paste clipboard image into Sherpa compose"
   })
   vim.keymap.set("i", "<Esc><Esc>", leave_insert, {
     buffer = buf, nowait = true, silent = true, desc = "Leave insert without sending"

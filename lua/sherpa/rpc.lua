@@ -155,6 +155,7 @@ local function handle_message_end(event)
   -- first /review.
   if pending and pending.operation == "plan" then
     if text and text ~= "" then
+      review.capture_plan_message(text)
       ui.append_block("assistant", text)
     end
     if review.has_active_review() and review.is_planning() then
@@ -296,12 +297,9 @@ local function handle_tool_start(event)
     return
   end
   state.record_file(path)
-  -- Do not auto-jump the user's buffer on read during a review. The review
-  -- planner drives which file is focused; model-driven reads shouldn't yank
-  -- the user away from the active review stop.
-  if event.toolName == "read" and not review.has_active_review() then
-    ui.jump_to_file(path, event.args and event.args.offset)
-  end
+  -- Do not auto-jump for model tool reads. Sherpa review navigation is the
+  -- only flow that should move the user's code window mechanically; prompt /
+  -- chat tool use should leave the coding pane where it is.
 end
 
 local function consume_tool_args(session, event)
@@ -319,6 +317,17 @@ local function handle_tool_end(event)
   -- Sherpa planning tools carry their payload in args captured at start time.
   if event.toolName == "sherpa_plan" then
     local args = consume_tool_args(session, event) or {}
+    -- Capture any streamed prose as the plan message BEFORE ingest_plan so
+    -- ingest_plan can route to message 0.  handle_message_end skips the
+    -- capture when the message contains tool_use (which it always does here),
+    -- so this is the only place the plan message is reliably captured.
+    local raw_text = session.assistant_text
+    if raw_text and raw_text ~= "" then
+      local text = strip_sherpa_footer(vim.trim(raw_text))
+      if text ~= "" then
+        review.capture_plan_message(text)
+      end
+    end
     local item = review.ingest_plan(args)
     if item then
       ui.append({ string.format("[sherpa] plan: %d stop(s), scope=%s",
@@ -348,21 +357,16 @@ local function handle_tool_end(event)
   end
   if event.toolName == "edit" then
     state.record_file(path)
-    -- Only follow edits outside of review mode; during review the user stays
-    -- on the planned stop.
-    if not review.has_active_review() then
-      local lines = changed_lines(event)
-      ui.jump_to_file(path, first_changed_line(event))
-      ui.highlight_lines(path, lines)
-    end
+    -- Keep local highlights if the edited buffer is already around, but do
+    -- not move the user's window to follow model tool use.
+    local lines = changed_lines(event)
+    ui.highlight_lines(path, lines)
     return
   end
   if event.toolName == "write" then
     state.record_file(path)
-    if not review.has_active_review() then
-      ui.jump_to_file(path, 1)
-      ui.highlight_range(path, 1)
-    end
+    -- Same rule as edits: annotate opportunistically, never steal focus.
+    ui.highlight_range(path, 1)
   end
 end
 

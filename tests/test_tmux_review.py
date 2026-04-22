@@ -9,6 +9,15 @@ class TmuxReviewTests(unittest.TestCase):
         self.repo_root = Path(__file__).resolve().parents[1]
         self.project_root = self.repo_root / "tests" / "fixtures" / "app"
 
+    def _advance_to_first_stop(self, h: TmuxNvimHarness) -> None:
+        h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+        h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
+        h.ex("SherpaNext")
+        h.wait_until(
+            lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 1,
+            timeout=5.0,
+        )
+
     def test_removed_legacy_commands_are_not_registered(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             self.assertEqual("0", h.expr("exists(':SherpaQ')"))
@@ -28,7 +37,7 @@ class TmuxReviewTests(unittest.TestCase):
     def test_file_review_populates_current_explanation(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("SherpaReview explain src/main.tsx")
-            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            self._advance_to_first_stop(h)
             h.wait_until(lambda: "## Explanation" in "\n".join(h.buffer_lines("sherpa://review")) and "Waiting" not in "\n".join(h.buffer_lines("sherpa://review")))
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
@@ -39,6 +48,7 @@ class TmuxReviewTests(unittest.TestCase):
     def test_review_excerpt_uses_tsx_fence(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("SherpaReview explain src/main.tsx")
+            self._advance_to_first_stop(h)
             h.wait_until(lambda: "## Excerpt" in "\n".join(h.buffer_lines("sherpa://review")))
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
@@ -48,6 +58,7 @@ class TmuxReviewTests(unittest.TestCase):
         python_project = self.repo_root / "tests" / "fixtures" / "python_app"
         with TmuxNvimHarness(self.repo_root, python_project) as h:
             h.ex("SherpaReview explain app.py")
+            self._advance_to_first_stop(h)
             h.wait_until(lambda: "## Excerpt" in "\n".join(h.buffer_lines("sherpa://review")))
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
@@ -56,7 +67,7 @@ class TmuxReviewTests(unittest.TestCase):
     def test_multiline_comment_editor_records_comment(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("SherpaReview explain src/main.tsx")
-            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            self._advance_to_first_stop(h)
 
             h.ex("1,2SherpaComment")
             h.wait_until(lambda: h.expr("bufexists('sherpa://comment')") == "1")
@@ -71,11 +82,9 @@ class TmuxReviewTests(unittest.TestCase):
         python_project = self.repo_root / "tests" / "fixtures" / "python_app"
         with TmuxNvimHarness(self.repo_root, python_project) as h:
             h.ex("SherpaReview explain app.py")
+            self._advance_to_first_stop(h)
 
-            h.wait_until(
-                lambda: h.lua_bool("require('sherpa.review').has_active_review()")
-                and "## Explanation" in "\n".join(h.buffer_lines("sherpa://review"))
-            )
+            h.wait_until(lambda: "## Explanation" in "\n".join(h.buffer_lines("sherpa://review")))
             self.assertTrue(h.lua_bool("require('sherpa.review').has_active_review()"))
 
             h.ex("1,2SherpaComment why does this helper matter?")
@@ -111,8 +120,12 @@ class TmuxReviewTests(unittest.TestCase):
             self.assertGreaterEqual(item_count, 2)
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
+            current_index = int(h.lua("require('sherpa.state').get_session().review.current_index"))
             self.assertIn("- source: `review`", review_text)
+            self.assertIn("## Message 0", review_text)
+            self.assertIn("[0] Message 0", review_text)
             self.assertNotIn("sherpa://log", review_text)
+            self.assertEqual(0, current_index)
 
     def test_planned_review_next_advances_through_fixed_plan(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
@@ -124,10 +137,13 @@ class TmuxReviewTests(unittest.TestCase):
             first_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
             first_index = int(h.lua("require('sherpa.state').get_session().review.current_index"))
             self.assertGreaterEqual(first_count, 2)
-            self.assertEqual(1, first_index)
+            self.assertEqual(0, first_index)
 
             h.ex("SherpaNext")
-            h.wait_until(lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) >= 2, timeout=5.0)
+            h.wait_until(lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 1, timeout=5.0)
+
+            h.ex("SherpaPrev")
+            h.wait_until(lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 0, timeout=5.0)
 
             # plan length is fixed — advancing doesn't grow the list
             second_count = int(h.lua("#require('sherpa.state').get_session().review.items"))

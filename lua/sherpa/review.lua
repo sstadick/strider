@@ -186,7 +186,7 @@ end
 
 local function item_label(item, index, total)
   return string.format(
-    "%d/%d %s:%d-%d %s",
+    "[%d/%d] %s:%d-%d %s",
     index,
     total,
     vim.fn.fnamemodify(item.path, ":."),
@@ -286,10 +286,14 @@ local function panel_lines(review)
     review.goal and ("- goal: `" .. review.goal .. "`") or nil,
   }
 
+  local has_msg0 = review.plan_message and review.plan_message ~= ""
   if review.planning then
     table.insert(lines, "- stop: `planning...`")
+  elseif has_msg0 and review.current_index == 0 then
+    table.insert(lines, string.format("- stop: `0/%d`", #review.items))
   else
-    table.insert(lines, string.format("- stop: `%d/%d`", review.current_index or 1, #review.items))
+    local display_index = has_msg0 and review.current_index or (review.current_index or 1)
+    table.insert(lines, string.format("- stop: `%d/%d`", display_index, #review.items))
   end
   if review.scope then
     table.insert(lines, string.format("- scope: `%s`", review.scope))
@@ -303,7 +307,12 @@ local function panel_lines(review)
     return line ~= nil and line ~= ""
   end, lines)
 
-  if item then
+  local on_msg0 = has_msg0 and review.current_index == 0
+
+  if on_msg0 then
+    table.insert(lines, "**Message 0**")
+    table.insert(lines, "")
+  elseif item then
     table.insert(lines, string.format("**%s**", item.title or "Review item"))
     table.insert(lines, string.format("`%s:%d-%d`", relative_path(item.path), item.startLine, item.endLine))
     if item.summary and item.summary ~= "" then
@@ -329,6 +338,9 @@ local function panel_lines(review)
   elseif review.summary and review.summary ~= "" then
     explanation_title = "Review summary"
     explanation = review.summary
+  elseif on_msg0 then
+    explanation_title = "Message 0"
+    explanation = review.plan_message
   elseif review.planning then
     explanation = "Sherpa is planning the review..."
   elseif not explanation or explanation == "" then
@@ -352,22 +364,29 @@ local function panel_lines(review)
     })
   end
 
-  local item_comments = comments_for_item(review, item)
-  if #item_comments == 0 then
-    append_section(lines, "Comments on this item", "No comments on this item yet.")
-  else
-    local comment_lines = {}
-    for index, comment in ipairs(item_comments) do
-      table.insert(comment_lines, string.format("%d. lines %d-%d — %s", index, comment.startLine, comment.endLine, comment.text))
+  -- Comments and TOC are not shown on message 0.
+  if not on_msg0 then
+    local item_comments = comments_for_item(review, item)
+    if #item_comments == 0 then
+      append_section(lines, "Comments on this item", "No comments on this item yet.")
+    else
+      local comment_lines = {}
+      for index, comment in ipairs(item_comments) do
+        table.insert(comment_lines, string.format("%d. lines %d-%d — %s", index, comment.startLine, comment.endLine, comment.text))
+      end
+      append_section(lines, "Comments on this item", comment_lines)
     end
-    append_section(lines, "Comments on this item", comment_lines)
   end
 
-  if #review.items > 1 then
+  if #review.items > 1 or has_msg0 then
     local toc = {}
+    if has_msg0 then
+      local marker = review.current_index == 0 and "→" or " "
+      table.insert(toc, string.format("%s [0] Message 0", marker))
+    end
     for index, stop in ipairs(review.items) do
       local marker = (index == review.current_index) and "→" or " "
-      table.insert(toc, string.format("%s %d. `%s:%d-%d` %s",
+      table.insert(toc, string.format("%s [%d] `%s:%d-%d` %s",
         marker, index, relative_path(stop.path), stop.startLine, stop.endLine, stop.title or ""))
     end
     append_section(lines, "Review plan", toc)
@@ -828,6 +847,7 @@ function M.start_planning(focus, opts)
     goal = focus,
     items = {},
     planned = true,
+    plan_message = nil,
     planning = true,
     scope = nil,
     source = opts.source or "review",
@@ -877,12 +897,20 @@ function M.ingest_plan(args)
   review.scope = args.scope or "free"
   review.base = args.base
   review.items = stops
-  review.current_index = 1
   review.planning = false
   review.coverage_ok = true  -- §5 coverage validation lands in a later step
-  M.focus_item(stops[1])
-  M.render()
-  return stops[1]
+
+  local has_msg0 = review.plan_message and review.plan_message ~= ""
+  if has_msg0 then
+    review.current_index = 0
+    ui.clear_stop_annotations()
+    M.render()
+  else
+    review.current_index = 1
+    M.focus_item(stops[1])
+    M.render()
+  end
+  return has_msg0 and nil or stops[1]
 end
 
 -- Append more stops to an active free-scope review. No-op for
@@ -967,6 +995,7 @@ function M.start_planned(scope, opts)
     goal = opts.focus,
     items = plan.stops,
     planned = true,
+    plan_message = nil,
     scope = plan.scope,
     source = source,
     summary = nil,
@@ -1005,15 +1034,40 @@ function M.build_prompt(focus)
   end, lines), "\n")
 end
 
+function M.capture_plan_message(text)
+  local review = active_review()
+  if not review then
+    return false
+  end
+  review.plan_message = text
+  -- If ingest_plan already ran and landed on stop 1, navigate back to
+  -- message 0 so the user sees the plan prose first.
+  if not review.planning and (review.current_index or 0) > 0 then
+    review.current_index = 0
+    ui.clear_stop_annotations()
+  end
+  M.render()
+  return true
+end
+
+function M.has_plan_message()
+  local review = active_review()
+  return review ~= nil and review.plan_message ~= nil and review.plan_message ~= ""
+end
+
 function M.advance(direction)
   local review = active_review()
   if not review then
-    return nil, false
+    return nil, false, false
   end
 
+  local min_index = M.has_plan_message() and 0 or 1
   local next_index = (review.current_index or 0) + direction
-  if next_index < 1 or next_index > #review.items then
-    return nil, next_index > #review.items
+  if next_index < min_index then
+    return nil, false, false   -- before start; did not move
+  end
+  if next_index > #review.items then
+    return nil, true, false    -- past end; did not move
   end
 
   local previous = current_item(review)
@@ -1021,9 +1075,18 @@ function M.advance(direction)
     previous.status = "reviewed"
   end
   review.current_index = next_index
+
+  -- Index 0 is message 0 (no file/range). Clear annotations and re-render
+  -- instead of calling focus_item.
+  if next_index == 0 then
+    ui.clear_stop_annotations()
+    M.render()
+    return nil, false, true    -- moved to message 0
+  end
+
   local item = current_item(review)
   M.focus_item(item)
-  return item, false
+  return item, false, true     -- moved to a regular stop
 end
 
 function M.finish()
@@ -1150,6 +1213,13 @@ function M.item_picker()
   end
 
   local items = {}
+  local has_msg0 = review.plan_message and review.plan_message ~= ""
+  if has_msg0 then
+    table.insert(items, {
+      label = "[0] Message 0",
+      value = { index = 0, item = nil },
+    })
+  end
   for index, item in ipairs(review.items) do
     table.insert(items, {
       label = item_label(item, index, #review.items),
@@ -1159,7 +1229,12 @@ function M.item_picker()
 
   return picker.select("Sherpa Review Items", items, function(entry)
     review.current_index = entry.value.index
-    M.focus_item(entry.value.item)
+    if entry.value.index == 0 then
+      ui.clear_stop_annotations()
+      M.render()
+    else
+      M.focus_item(entry.value.item)
+    end
   end)
 end
 

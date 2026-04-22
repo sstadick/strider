@@ -161,9 +161,10 @@ function M.dispatch_first_review()
   if review.is_planning() then
     return false
   end
-  -- `ingest_plan` already called focus_item for stop 1 and rendered the
-  -- sidebar. Nothing else to do here — this hook exists so rpc.lua can
-  -- still signal "plan turn complete" without hard-coding navigation.
+  -- `ingest_plan` already navigated to the first visible item (message 0
+  -- or stop 1) and rendered the sidebar. Nothing else to do here — this
+  -- hook exists so rpc.lua can still signal "plan turn complete" without
+  -- hard-coding navigation.
   return true
 end
 
@@ -493,10 +494,9 @@ function M.prev_step()
     ui.notify("No active Sherpa review session", vim.log.levels.WARN)
     return
   end
-  local item = review.advance(-1)
-  if not item then
+  local _item, past_end, moved = review.advance(-1)
+  if not moved and not past_end then
     ui.notify("Already at the first review item", vim.log.levels.WARN)
-    return
   end
 end
 

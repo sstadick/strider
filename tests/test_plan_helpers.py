@@ -28,6 +28,15 @@ class PlanHelperTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[1]
 
+    def _advance_to_first_stop(self, h: TmuxNvimHarness) -> None:
+        h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+        h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
+        h.ex("SherpaNext")
+        h.wait_until(
+            lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 1,
+            timeout=5.0,
+        )
+
     def _lua_json(self, h: TmuxNvimHarness, expression: str):
         raw = h.expr(f"json_encode(luaeval({json.dumps(expression)}))")
         return json.loads(raw)
@@ -386,6 +395,7 @@ class PlanHelperTests(unittest.TestCase):
                 lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
                 timeout=8.0,
             )
+            self._advance_to_first_stop(h)
             # Open the active stop's buffer so we can mark a sub-range.
             current_path_expr = "require('sherpa.state').get_session().review.items[1].path"
             path = h.lua(current_path_expr)
@@ -442,8 +452,9 @@ class PlanHelperTests(unittest.TestCase):
                 lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2,
                 timeout=8.0,
             )
+            self._advance_to_first_stop(h)
 
-            # Stop 1 is in src/main.tsx — focused automatically after plan.
+            # Stop 1 is in src/main.tsx after leaving message 0.
             # Count annotation extmarks in that buffer.
             count_expr = (
                 "(function() "
@@ -518,7 +529,7 @@ class PlanHelperTests(unittest.TestCase):
         self.assertEqual("free", scope)
         self.assertEqual(2, item_count)
         self.assertTrue(first_why)
-        self.assertEqual(1, current_index)
+        self.assertEqual(0, current_index)
 
     def test_ranges_cover_detects_gap(self) -> None:
         with tempfile.TemporaryDirectory(prefix="sherpa-plan-") as tmp:

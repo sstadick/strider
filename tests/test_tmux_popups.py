@@ -108,6 +108,26 @@ class TmuxPopupTests(unittest.TestCase):
                 h.ex("SherpaChat")
                 h.wait_until(lambda: not h.lua_bool(visible_expr), timeout=3.0)
 
+    def test_chat_with_args_does_not_follow_tool_edits(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("edit src/main.tsx")
+                h.ex("normal! 2G")
+
+                h.ex("SherpaChat update the fixture app")
+                h.wait_until(
+                    lambda: "Loading fixture app" in (project_root / "src" / "App.tsx").read_text(),
+                    timeout=3.0,
+                )
+                h.wait_until(
+                    lambda: "Finished a broader work pass" in "\n".join(h.log_lines()),
+                    timeout=3.0,
+                )
+
+                state = h.current_state()
+                self.assertTrue(state["buf"].endswith("src/main.tsx"), state)
+                self.assertEqual(2, state["line"], state)
+
     def test_compose_buffer_identity_is_stable(self) -> None:
         # The compose buffer is created once and reused. After a send +
         # toggle-cycle, its bufnr stays the same — we're not leaking a
@@ -157,6 +177,12 @@ class TmuxPopupTests(unittest.TestCase):
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("SherpaReview explain src/main.tsx")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
+            h.ex("SherpaNext")
+            h.wait_until(
+                lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 1,
+                timeout=5.0,
+            )
 
             h.ex("SherpaReview")
             h.wait_until(lambda: _popup_open(h))

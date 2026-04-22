@@ -13,6 +13,19 @@ def _popup_open(h, name: str = "sherpa://prompt") -> bool:
     return h.expr(f"bufexists('{name}')") == "1"
 
 
+def _winbar_for_buffer(h, name: str) -> str:
+    return h.lua(
+        "(function() "
+        f"  local buf = vim.fn.bufnr('{name}'); "
+        "  if buf <= 0 then return '' end; "
+        "  for _, win in ipairs(vim.fn.win_findbuf(buf)) do "
+        "    if vim.api.nvim_win_is_valid(win) then return vim.wo[win].winbar or '' end "
+        "  end; "
+        "  return '' "
+        "end)()"
+    )
+
+
 class TmuxPopupTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[1]
@@ -146,6 +159,51 @@ class TmuxPopupTests(unittest.TestCase):
                 h.ex("SherpaChat")
                 second_id = h.expr("bufnr('sherpa://compose')")
                 self.assertEqual(first_id, second_id)
+
+    def test_compose_winbar_is_idle_when_chat_opens(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    timeout=3.0,
+                )
+                h.wait_until(
+                    lambda: _winbar_for_buffer(h, "sherpa://compose") == "Chat: Sherpa is ready.",
+                    timeout=3.0,
+                )
+
+    def test_compose_winbar_tracks_and_rotates_activity(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    timeout=3.0,
+                )
+                h.lua(
+                    "(function() "
+                    "  require('sherpa.ui').start_activity('Sherpa review running...', 'review', 'review'); "
+                    "  return true "
+                    "end)()"
+                )
+                h.wait_until(
+                    lambda: _winbar_for_buffer(h, "sherpa://compose").startswith("Review: Sherpa is "),
+                    timeout=3.0,
+                )
+                first = _winbar_for_buffer(h, "sherpa://compose")
+                h.wait_until(
+                    lambda: _winbar_for_buffer(h, "sherpa://compose") != first,
+                    timeout=2.5,
+                    interval=0.2,
+                )
+                h.lua(
+                    "(function() require('sherpa.ui').finish_activity('done', 'success'); return true end)()"
+                )
+                h.wait_until(
+                    lambda: _winbar_for_buffer(h, "sherpa://compose") == "Chat: Sherpa is ready.",
+                    timeout=3.0,
+                )
 
     def test_empty_review_without_active_session_opens_context_editor(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:

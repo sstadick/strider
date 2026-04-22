@@ -30,6 +30,12 @@ local spin_labels = {
     "Sherpa is setting the ropes...",
     "Sherpa is almost there...",
   },
+  plan = {
+    "Sherpa is scouting the route...",
+    "Sherpa is checking the map...",
+    "Sherpa is marking the next stop...",
+    "Sherpa is laying out the route...",
+  },
   patch = {
     "Sherpa is placing the pitons...",
     "Sherpa is trimming the route...",
@@ -49,17 +55,28 @@ local spin_labels = {
     "Sherpa is highlighting the tricky bit...",
   },
   prompt = {
-    "Sherpa is climbing...",
-    "Sherpa is hauling the gear...",
-    "Sherpa is finding the next hold...",
-    "Sherpa is making steady progress...",
+    "Sherpa is thinking...",
+    "Sherpa is tracing the code...",
+    "Sherpa is drafting a reply...",
+    "Sherpa is lining up the next move...",
   },
+}
+local activity_prefixes = {
+  plan = "Plan",
+  patch = "Patch",
+  prompt = "Chat",
+  review = "Review",
+  search = "Search",
 }
 local spin_index = 0
 local spin_timer = nil
 
 local function activity_echo(message)
   return pcall(vim.api.nvim_echo, { { "sherpa: " .. message } }, false, {})
+end
+
+local function activity_labels(operation)
+  return spin_labels[operation] or spin_labels.default
 end
 
 local function stop_spin()
@@ -70,31 +87,49 @@ local function stop_spin()
   end
 end
 
+local function compose_status_line(progress)
+  if not progress then
+    return "Chat: Sherpa is ready."
+  end
+  local prefix = activity_prefixes[progress.operation] or "Sherpa"
+  local label = progress.spin_label or activity_labels(progress.operation)[1]
+  return string.format("%s: %s", prefix, label)
+end
+
+function M.refresh_compose_winbar()
+  local session = state.get_session()
+  local buf = session and session.compose_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  local value = compose_status_line(session and session.progress):gsub("%%", "%%%%")
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(function() vim.wo[win].winbar = value end)
+    end
+  end
+end
+
 local function spin_tick()
   local session = state.get_session()
   local progress = session and session.progress
   if not progress then
     return
   end
-  local labels = spin_labels[progress.operation] or spin_labels.default
+  local labels = activity_labels(progress.operation)
   spin_index = (spin_index % #labels) + 1
-  local label = labels[spin_index]
-  local message = string.format("%s · %s", progress.title, label)
-  local ok = activity_echo(message)
-  if ok then
-    return
-  end
-  M.append({ "[sherpa] " .. label })
+  progress.spin_label = labels[spin_index]
+  M.refresh_compose_winbar()
 end
 
-local function start_spin()
+local function start_spin(progress)
   stop_spin()
-  spin_index = 0
+  local labels = activity_labels(progress and progress.operation)
+  spin_index = 1
+  if progress then
+    progress.spin_label = labels[spin_index]
+  end
+  M.refresh_compose_winbar()
   spin_timer = vim.uv.new_timer()
-  -- First tick fires immediately so the status line updates as soon as
-  -- the activity starts — not 250ms later (which can lose to nvim redraws
-  -- after closing a floating prompt window).
-  spin_timer:start(0, 3000, vim.schedule_wrap(function()
+  spin_timer:start(1000, 1000, vim.schedule_wrap(function()
     spin_tick()
   end))
 end
@@ -337,6 +372,7 @@ function M.open_compose(on_send)
   -- Already visible somewhere? Just focus.
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
+      M.refresh_compose_winbar()
       vim.api.nvim_set_current_win(win)
       vim.schedule(function()
         if vim.api.nvim_win_is_valid(win) then vim.cmd("startinsert") end
@@ -366,6 +402,7 @@ function M.open_compose(on_send)
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = "no"
   vim.wo[win].winfixheight = true
+  M.refresh_compose_winbar()
   vim.schedule(function()
     if vim.api.nvim_win_is_valid(win) then vim.cmd("startinsert") end
   end)
@@ -561,14 +598,12 @@ function M.start_activity(title, target, operation)
   for _, buf in ipairs(progress_buffers(session.progress.target)) do
     set_buffer_busy(buf, true)
   end
-  -- Defer briefly so the echo lands *after* any nvim redraw caused by a
-  -- just-closed floating prompt window. Without the defer, the echo can
-  -- get wiped by the post-close redraw and only reappear on the next
-  -- spin tick.
+  -- Keep the one-shot activity echo, but move the rotating status out of the
+  -- command area and into the compose header.
   vim.defer_fn(function()
     activity_echo(title)
   end, 10)
-  start_spin()
+  start_spin(session.progress)
 end
 
 function M.finish_activity(message, status)
@@ -583,6 +618,7 @@ function M.finish_activity(message, status)
   activity_echo(message or progress.title)
   session.progress = nil
   stop_spin()
+  M.refresh_compose_winbar()
 end
 
 local editor_ns = vim.api.nvim_create_namespace("sherpa-editor-hint")

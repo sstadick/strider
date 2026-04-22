@@ -22,6 +22,8 @@ local log_diff_removed_hl = "SherpaLogDiffRemoved"
 local log_diff_context_hl = "SherpaLogDiffContext"
 local log_path_hl = "SherpaLogPath"
 local log_muted_hl = "SherpaLogMuted"
+local log_tool_output_hl = "SherpaLogToolOutput"
+local log_tool_output_ellipsis_hl = "SherpaLogToolOutputEllipsis"
 local log_assistant_bg_hl = "SherpaLogAssistantBg"
 local log_user_bg_hl = "SherpaLogUserBg"
 local log_error_bg_hl = "SherpaLogErrorBg"
@@ -142,6 +144,29 @@ local function stop_spin()
   end
 end
 
+-- Format a hrtime-based nanosecond duration as a short human string
+-- that fits in the winbar. Under 60s: `3.4s`. Under an hour: `1m24s`.
+-- Otherwise: `1h12m`. Small durations get a decimal so the timer looks
+-- alive even before a full second ticks over.
+local function format_elapsed(start_ns)
+  if not start_ns then return nil end
+  local now = vim.uv.hrtime()
+  local elapsed_s = (now - start_ns) / 1e9
+  if elapsed_s < 10 then
+    return string.format("%.1fs", elapsed_s)
+  elseif elapsed_s < 60 then
+    return string.format("%ds", math.floor(elapsed_s))
+  elseif elapsed_s < 3600 then
+    local minutes = math.floor(elapsed_s / 60)
+    local seconds = math.floor(elapsed_s % 60)
+    return string.format("%dm%02ds", minutes, seconds)
+  else
+    local hours = math.floor(elapsed_s / 3600)
+    local minutes = math.floor((elapsed_s % 3600) / 60)
+    return string.format("%dh%02dm", hours, minutes)
+  end
+end
+
 local function compose_status_line(progress)
   local session = state.get_session()
   local statuses = session and session.status or {}
@@ -165,6 +190,10 @@ local function compose_status_line(progress)
   end
   local op_prefix = activity_prefixes[progress.operation] or "Sherpa"
   local label = progress.spin_label or activity_labels(progress.operation)[1]
+  local elapsed = format_elapsed(progress.started_at)
+  if elapsed then
+    return string.format("%s%s: %s · %s", prefix, op_prefix, label, elapsed)
+  end
   return string.format("%s%s: %s", prefix, op_prefix, label)
 end
 
@@ -180,10 +209,24 @@ function M.refresh_compose_winbar()
   end
 end
 
+-- Ticks run every SPIN_INTERVAL_MS; every Nth tick rotates the spin
+-- label to the next one. Between rotations, the winbar still refreshes
+-- (so the elapsed-time suffix updates smoothly) but the label stays
+-- put. That keeps the label readable while the timer feels alive.
+local SPIN_INTERVAL_MS = 500
+local SPIN_ROTATE_EVERY = 4   -- 4 * 500ms = 2s per label
+local tick_count = 0
+
 local function spin_tick()
   local session = state.get_session()
   local progress = session and session.progress
   if not progress then
+    return
+  end
+  tick_count = tick_count + 1
+  if tick_count % SPIN_ROTATE_EVERY ~= 0 then
+    -- Label unchanged; just refresh the winbar so the elapsed updates.
+    M.refresh_compose_winbar()
     return
   end
   local labels = activity_labels(progress.operation)
@@ -200,8 +243,9 @@ local function start_spin(progress)
     progress.spin_label = labels[spin_index]
   end
   M.refresh_compose_winbar()
+  tick_count = 0
   spin_timer = vim.uv.new_timer()
-  spin_timer:start(2000, 2000, vim.schedule_wrap(function()
+  spin_timer:start(SPIN_INTERVAL_MS, SPIN_INTERVAL_MS, vim.schedule_wrap(function()
     spin_tick()
   end))
 end
@@ -245,6 +289,16 @@ function M.ensure_log_buffer()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, log_name())
   configure_scratch_buffer(buf, "markdown")
+  -- Setting `filetype = "markdown"` on a scratch nofile buffer doesn't
+  -- always fire the FileType autocmd pipeline that plugins like
+  -- render-markdown and nvim-treesitter rely on to initialize per
+  -- buffer. Force it to fire so fenced code blocks actually render.
+  pcall(vim.api.nvim_exec_autocmds, "FileType", { buffer = buf, modeline = false })
+  -- Also start treesitter explicitly as a belt-and-braces measure: if
+  -- the FileType autocmd didn't start it (or treesitter.highlighter
+  -- isn't wired to that autocmd in the user's config), this kicks it
+  -- off. No-op / silent if the markdown parser isn't installed.
+  pcall(vim.treesitter.start, buf, "markdown")
   session.log_buf = buf
   return buf
 end
@@ -327,6 +381,13 @@ function M.open_log(opts)
   vim.cmd("botright vsplit")
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
+  -- conceallevel is window-local. render-markdown.nvim and markdown's
+  -- built-in syntax rely on it to hide fence markers / inline markers.
+  -- Set it on the log window so fenced tool output renders cleanly.
+  pcall(function()
+    vim.wo[win].conceallevel = 2
+    vim.wo[win].concealcursor = "nc"
+  end)
   scroll_log_windows(buf)
   M.refresh_log_winbar()
   if previous and vim.api.nvim_win_is_valid(previous) then
@@ -580,7 +641,6 @@ local log_label_hl = {
   plan = log_tool_hl,
   clarify = log_tool_hl,
   diff = log_tool_hl,
-  ["tool-output"] = log_tool_hl,
   ["review-prompt"] = log_tool_hl,
   ["review-comments"] = log_tool_hl,
 }
@@ -718,16 +778,24 @@ function M.append_tool_line(tool_name, path, range)
 end
 
 -- Render tool output (stdout from bash, file contents from read, match
--- lines from grep, directory entries from ls/find) as a [tool-output]
--- block following the [tool] header. Caps the body at `max_lines`
--- lines, appending `(+N more lines)` in muted if truncated. Empty or
--- whitespace-only text is skipped (not every tool produces output).
-local TOOL_OUTPUT_MAX_LINES = 20
+-- lines from grep, directory entries from ls/find) as plain muted
+-- lines in the log — no block header, no syntax highlighting. When
+-- output is long, collapse to the first 5 and last 5 lines with a
+-- `… N more lines …` separator so it stays skimmable. Empty text is
+-- skipped (not every tool produces output worth showing).
+local TOOL_OUTPUT_HEAD = 5
+local TOOL_OUTPUT_TAIL = 5
 
 function M.append_tool_output(text)
   if type(text) ~= "string" then return end
   local trimmed = vim.trim(text)
   if trimmed == "" then return end
+
+  local session = state.get_session()
+  local buf = session and session.log_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
 
   local all_lines = vim.split(text, "\n", { plain = true })
   -- Strip a single trailing empty line that most text tools emit, but
@@ -735,38 +803,49 @@ function M.append_tool_output(text)
   if all_lines[#all_lines] == "" then
     all_lines[#all_lines] = nil
   end
+  if #all_lines == 0 then return end
 
-  local truncated = false
-  local remaining = 0
-  if #all_lines > TOOL_OUTPUT_MAX_LINES then
-    remaining = #all_lines - TOOL_OUTPUT_MAX_LINES
-    truncated = true
-    all_lines = vim.list_slice(all_lines, 1, TOOL_OUTPUT_MAX_LINES)
-  end
-
-  local body = table.concat(all_lines, "\n")
-  if truncated then
-    body = body .. string.format("\n(+%d more %s)", remaining, remaining == 1 and "line" or "lines")
-  end
-
-  M.append_block("tool-output", body)
-
-  -- If we appended a truncation tail, color that last body line muted.
-  if truncated then
-    local session = state.get_session()
-    local buf = session and session.log_buf
-    if buf and vim.api.nvim_buf_is_valid(buf) then
-      -- last non-blank line is the truncation tail; work backwards past
-      -- the trailing blank line append_block always adds.
-      local last = vim.api.nvim_buf_line_count(buf) - 2
-      if last >= 0 then
-        pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, last, 0, {
-          end_row = last + 1,
-          hl_group = log_muted_hl,
-          priority = 10,
-        })
-      end
+  local truncate_at = TOOL_OUTPUT_HEAD + TOOL_OUTPUT_TAIL
+  local lines = {}
+  local ellipsis_offset = nil
+  if #all_lines <= truncate_at then
+    for _, l in ipairs(all_lines) do table.insert(lines, l) end
+  else
+    for i = 1, TOOL_OUTPUT_HEAD do table.insert(lines, all_lines[i]) end
+    local skipped = #all_lines - TOOL_OUTPUT_HEAD - TOOL_OUTPUT_TAIL
+    table.insert(lines, string.format("… %d more %s …", skipped, skipped == 1 and "line" or "lines"))
+    ellipsis_offset = #lines - 1
+    for i = #all_lines - TOOL_OUTPUT_TAIL + 1, #all_lines do
+      table.insert(lines, all_lines[i])
     end
+  end
+  table.insert(lines, "")
+
+  local start_row = vim.api.nvim_buf_line_count(buf)
+  M.append(lines)
+
+  -- Style the whole output region muted so it reads as secondary
+  -- information rather than competing with user / assistant blocks.
+  -- `lines` includes the trailing blank, which we don't color.
+  local content_end = start_row + #lines - 2
+  if content_end >= start_row then
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_row, 0, {
+      end_row = content_end + 1,
+      hl_group = log_tool_output_hl,
+      hl_eol = true,
+      priority = 4,
+    })
+  end
+
+  if ellipsis_offset ~= nil then
+    -- Boost the ellipsis row to a distinct italic muted so it reads as
+    -- a separator on top of the surrounding muted content.
+    local ellipsis_row = start_row + ellipsis_offset
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, ellipsis_row, 0, {
+      end_row = ellipsis_row + 1,
+      hl_group = log_tool_output_ellipsis_hl,
+      priority = 10,
+    })
   end
 end
 
@@ -845,6 +924,10 @@ function M.start_activity(title, target, operation)
     title = title,
     target = target or "log",
     operation = operation,
+    -- hrtime is nanoseconds, monotonic. Drives the elapsed-time suffix
+    -- in the compose winbar so the user can see the turn is moving
+    -- even while the spin label is between rotations.
+    started_at = vim.uv.hrtime(),
   }
   for _, buf in ipairs(progress_buffers(session.progress.target)) do
     set_buffer_busy(buf, true)
@@ -1170,6 +1253,15 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, log_path_hl, { default = true, fg = "#7BB5FF" })
   -- Muted annotations like `(+N more lines)` / `Took 0.8s`.
   vim.api.nvim_set_hl(0, log_muted_hl, { default = true, link = "NonText" })
+  -- Inlined tool output (stdout from bash, read contents, grep matches,
+  -- etc.) reads as secondary text — quieter than the thinking/rule
+  -- tones but still legible. Italicize the `… N more lines …` separator
+  -- so it stands out from the surrounding content at the same muted
+  -- intensity.
+  vim.api.nvim_set_hl(0, log_tool_output_hl, { default = true, fg = "#9CA3AF" })
+  vim.api.nvim_set_hl(0, log_tool_output_ellipsis_hl, {
+    default = true, fg = "#6B7280", italic = true,
+  })
 end
 
 local function get_buffer(path)

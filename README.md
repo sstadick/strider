@@ -173,6 +173,15 @@ Errors from pi (no API key, model rejected by the provider, etc.)
 render inline as red `[error]` blocks in the log rather than silent
 hangs, so failed turns are always visible.
 
+Tool calls show their results inline. `edit` operations append a
+`[diff]` block with green `+` / red `-` line colors matching the
+gutter signs on the edited file. `bash` / `read` / `grep` / `ls` /
+`find` / `write` inline their output as plain muted text directly
+after the `[tool]` header. Long output is collapsed to the first 5
+and last 5 lines with a `… N more lines …` separator. File paths in
+`[tool]` headers get their own accent color so targets pop when
+scanning.
+
 The log's winbar shows live model, thinking level, context usage, and
 running cost, pushed by pi after every turn:
 

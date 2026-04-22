@@ -237,11 +237,19 @@ text is treated as a question about the current review item.
   spinner. Without handling this, the log just hangs on "Waiting for
   assistant response…".
 - `tool_execution_start`
-  - log tool usage
+  - log tool usage as a `[tool] <name> <path>` header line (paths
+    highlighted in the `SherpaLogPath` accent color)
   - track touched paths
 - `tool_execution_end`
-  - jump to files
-  - highlight read/edit/write ranges
+  - for `edit`: parse `result.details.diff` and render it as a
+    `[diff]` block with per-line `+` / `-` / context coloring
+    (matches the gutter-sign palette)
+  - for `bash` / `read` / `grep` / `ls` / `find` / `write`: inline
+    `result.content[*].text` directly in the log as plain muted text
+    (no block header, no language-aware syntax highlighting). When the
+    output exceeds 10 lines, collapse to the first 5 and last 5 with
+    a `… N more lines …` separator
+  - highlight read/edit/write ranges on the edited file
 - `extension_ui_request`
   - `notify` / `setStatus` / `setWidget` / `setTitle` — fire-and-forget
     UI updates. `setWidget` payloads are flattened into the log
@@ -312,6 +320,10 @@ Working today:
   (no more silent hangs)
 - cycle thinking level via `<S-Tab>` in compose (mirrors pi's TUI);
   active level shown as `Model: …/… (level)` on the log winbar
+- rich log rendering: `[diff]` blocks for edit tools (green/red per
+  line), inlined tool output for bash/read/grep/ls/find/write
+  (collapsed to first-5/last-5 with a muted ellipsis when long),
+  accent-colored file paths in `[tool]` headers
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests on bundled fixture projects
 

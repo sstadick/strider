@@ -471,7 +471,10 @@ local function handle_tool_end(event)
   -- Render textual output for tools where seeing the content helps the
   -- user follow along (everything except edit, which gets a diff block
   -- below, and Sherpa's internal planning tools which carry structured
-  -- payloads rather than user-facing text).
+  -- payloads rather than user-facing text). Output renders as plain
+  -- muted text — syntax highlighting for fenced code blocks requires
+  -- nvim-treesitter parsers for every language you might read, which
+  -- isn't a dependency we can reasonably assume.
   if TOOL_OUTPUT_WHITELIST[event.toolName] then
     local text = tool_result_text(event)
     if text then

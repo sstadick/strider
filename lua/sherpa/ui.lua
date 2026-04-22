@@ -1063,9 +1063,12 @@ function M.set_stop_annotations(item)
   local stop_start = math.min(math.max(tonumber(item.startLine) or 1, 1), max_line)
   local stop_end = math.min(math.max(tonumber(item.endLine) or stop_start, stop_start), max_line)
 
-  -- Default block: the stop's `explanation`, pinned above the stop's
-  -- first line. virt_lines_above renders on the line *of* the anchor.
-  local function render_block_above(anchor_line, text)
+  -- Default block: the stop's `explanation`, usually pinned above the
+  -- stop's first line. For line-1 anchors, render below instead: an
+  -- above-the-first-line block exists in extmark data but does not become
+  -- visible in the window, so the first stop in a file appears to have no
+  -- inline help.
+  local function render_block(anchor_line, text)
     if not text or text == "" then
       return
     end
@@ -1077,7 +1080,7 @@ function M.set_stop_annotations(item)
     table.insert(virt_lines, { { "└──────────────────────────────", annotation_hl } })
     pcall(vim.api.nvim_buf_set_extmark, buf, annotation_namespace, anchor_line - 1, 0, {
       virt_lines = virt_lines,
-      virt_lines_above = true,
+      virt_lines_above = anchor_line > 1,
       priority = 40,
     })
   end
@@ -1095,7 +1098,7 @@ function M.set_stop_annotations(item)
   end
 
   if item.explanation and item.explanation ~= "" then
-    render_block_above(stop_start, item.explanation)
+    render_block(stop_start, item.explanation)
   end
 
   for _, ann in ipairs(item.annotations or {}) do
@@ -1103,7 +1106,7 @@ function M.set_stop_annotations(item)
       local s = tonumber(ann.startLine)
       if s then
         local anchor = math.min(math.max(s, stop_start), stop_end)
-        render_block_above(anchor, ann.text)
+        render_block(anchor, ann.text)
       end
     elseif ann.kind == "line" then
       render_line_annotation(ann.line, ann.text)

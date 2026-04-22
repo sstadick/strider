@@ -507,6 +507,31 @@ class PlanHelperTests(unittest.TestCase):
         # containing "bootstrap" in stop 1's explanation.
         self.assertIn("bootstrap", explanation.lower())
 
+    def test_first_line_stops_render_visible_inline_help(self) -> None:
+        # A stop anchored at line 1 cannot render its explanation above the
+        # first line and still be visible in-window. Sherpa should place the
+        # block where the user can actually see it for the first stop in each
+        # file.
+        project = self.repo_root / "tests" / "fixtures" / "app"
+        with TmuxNvimHarness(self.repo_root, project) as h:
+            h.ex("SherpaReview explain the app")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            h.wait_until(
+                lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
+                timeout=8.0,
+            )
+            self._advance_to_first_stop(h)
+
+            h.wait_until(lambda: "┌─ sherpa" in h.capture_pane(), timeout=3.0)
+
+            h.ex("SherpaNext")
+            h.wait_until(
+                lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 2,
+                timeout=5.0,
+            )
+            h.wait_until(lambda: "src/App.tsx" in h.current_state()["buf"], timeout=3.0)
+            h.wait_until(lambda: "┌─ sherpa" in h.capture_pane(), timeout=3.0)
+
     def test_free_scope_review_ingests_plan_tool_output(self) -> None:
         # fixture app has src/main.tsx + src/App.tsx; fake_pi.plan_response
         # emits a 2-stop sherpa_plan tool call for this project.

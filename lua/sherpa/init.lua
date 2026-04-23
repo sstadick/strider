@@ -324,11 +324,47 @@ end
 -- message types, not extension commands routed through prompt.
 local rpc_commands = {
   new     = { type = "new_session" },
-  fork    = { type = "fork", args_key = "entryId" },
   compact = { type = "compact", args_key = "customInstructions" },
   export  = { type = "export_html", args_key = "outputPath" },
   resume  = { type = "switch_session", args_key = "sessionPath" },
 }
+
+-- Aliases: common short-hands that map to the canonical command name
+-- used by the extension or RPC layer. Checked early in dispatch_prompt
+-- so `/model` works the same as `/models`.
+local command_aliases = {
+  model = "models",
+}
+
+-- /fork needs a multi-step flow: fetch forkable messages, present a
+-- picker, then issue the actual fork command with the chosen entryId.
+local function fork_flow()
+  rpc.send_command("get_fork_messages", {}, nil, function(event)
+    if not event.success then
+      ui.notify(event.errorMessage or event.error or "Failed to get fork messages", vim.log.levels.ERROR)
+      return
+    end
+    local messages = event.data and event.data.messages or {}
+    if #messages == 0 then
+      ui.notify("No messages available to fork from", vim.log.levels.WARN)
+      return
+    end
+    local labels = {}
+    local by_label = {}
+    for i, msg in ipairs(messages) do
+      local preview = (msg.text or "(empty)"):sub(1, 120):gsub("%s+", " ")
+      local label = string.format("%3d: %s", i, preview)
+      table.insert(labels, label)
+      by_label[label] = msg.entryId
+    end
+    vim.ui.select(labels, { prompt = "Fork from message" }, function(choice)
+      if not choice then return end
+      local entry_id = by_label[choice]
+      if not entry_id then return end
+      rpc.send_command("fork", { entryId = entry_id })
+    end)
+  end)
+end
 
 local function dispatch_prompt(text)
   -- If the user typed a slash-command (e.g. /models, /tree, /compact),
@@ -337,6 +373,17 @@ local function dispatch_prompt(text)
   -- slash-command to the LLM as prose and never fire the handler).
   if text:sub(1, 1) == "/" then
     local name, rest = text:match("^/([%w%-_]+)%s*(.*)$")
+    local original_name = name
+    name = name and (command_aliases[name] or name)
+    -- Rebuild the command text if we resolved an alias so pi sees the
+    -- canonical name (e.g. /model → /models).
+    if name and name ~= original_name then
+      text = "/" .. name .. (rest ~= "" and (" " .. rest) or "")
+    end
+    if name == "fork" then
+      fork_flow()
+      return
+    end
     local rpc_def = name and rpc_commands[name]
     if rpc_def then
       local extra = {}

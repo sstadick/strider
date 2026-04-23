@@ -108,7 +108,20 @@ local function absolute_path(session, path)
   return vim.fs.joinpath(session.cwd, path)
 end
 
+-- Per-request response callbacks keyed by request id. When
+-- send_command is given a callback, the id is stashed here;
+-- handle_response fires and removes it before the default path.
+local response_callbacks = {}
+
 local function handle_response(event, lane)
+  -- Fire per-request callback if one was registered.
+  local cb = event.id and response_callbacks[event.id]
+  if cb then
+    response_callbacks[event.id] = nil
+    cb(event, lane)
+    return
+  end
+
   if event.success then
     -- Pure commands (operation = "command") don't trigger LLM turns,
     -- so no message_end will follow. Consume the pending request now
@@ -125,7 +138,20 @@ local function handle_response(event, lane)
   -- arrive on message_end with stopReason="error" (see
   -- handle_message_end). Both paths log into the buffer so the user
   -- always has a record beyond the fleeting notify.
-  local reason = event.errorMessage or "Sherpa RPC request failed"
+  local cmd = event.command or "unknown"
+  local detail = event.errorMessage or event.error
+  local reason
+  if detail and detail ~= "" then
+    reason = string.format("/%s failed: %s", cmd, detail)
+  else
+    reason = string.format("/%s failed (pi rejected the request)", cmd)
+  end
+  -- Consume the pending request so the activity spinner actually stops
+  -- and the next send isn't blocked.
+  local pending = state.peek_pending_request(lane)
+  if pending then
+    state.consume_pending_request(lane)
+  end
   ui.append_block("error", reason, lane)
   ui.finish_activity(reason, "error", lane)
   ui.notify(reason, vim.log.levels.ERROR)
@@ -1089,17 +1115,21 @@ end
 -- Send a raw RPC command (not a prompt). Used for session-management
 -- commands like new_session, fork, compact that are dedicated RPC
 -- message types rather than slash-commands routed through prompt.
-function M.send_command(cmd_type, extra, lane)
+function M.send_command(cmd_type, extra, lane, callback)
   lane = normalize_lane(lane)
   local session = state.get_session(lane)
   if not session or not session.job_id then
     ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
     return false
   end
+  local req_id = state.next_request_id(lane)
   local payload = vim.tbl_extend("force", extra or {}, {
-    id = state.next_request_id(lane),
+    id = req_id,
     type = cmd_type,
   })
+  if callback then
+    response_callbacks[req_id] = callback
+  end
   vim.fn.chansend(session.job_id, vim.json.encode(payload) .. "\n")
   return true
 end

@@ -338,29 +338,137 @@ def prompt_response(message: str) -> str:
 
 
 
+# Simulated user messages available for forking.
+_fork_messages = []
+_fork_seq = 0
+
+
+def record_user_message(message: str) -> str:
+    global _fork_seq
+    _fork_seq += 1
+    entry_id = f"entry-{_fork_seq}"
+    _fork_messages.append({"entryId": entry_id, "text": message})
+    return entry_id
+
+
+def response_with_data(req_id, data: dict, command: str = None) -> dict:
+    r: dict = {"id": req_id, "type": "response", "success": True, "data": data}
+    if command:
+        r["command"] = command
+    return r
+
+
+def response_ok(req_id, command: str = None) -> dict:
+    r: dict = {"id": req_id, "type": "response", "success": True}
+    if command:
+        r["command"] = command
+    return r
+
+
+def response_error(req_id, message: str, command: str = None) -> dict:
+    r: dict = {"id": req_id, "type": "response", "success": False, "error": message}
+    if command:
+        r["command"] = command
+    return r
+
+
+def handle_command(payload: dict) -> None:
+    cmd_type = payload["type"]
+    req_id = payload.get("id")
+
+    if cmd_type == "get_fork_messages":
+        emit(response_with_data(req_id, {"messages": list(_fork_messages)}, cmd_type))
+        return
+
+    if cmd_type == "fork":
+        entry_id = payload.get("entryId")
+        if not entry_id:
+            emit(response_error(req_id, "fork requires entryId", cmd_type))
+            return
+        text = ""
+        for msg in _fork_messages:
+            if msg["entryId"] == entry_id:
+                text = msg["text"]
+                break
+        emit(response_with_data(req_id, {"text": text, "cancelled": False}, cmd_type))
+        emit({"type": "session_start", "reason": "fork"})
+        return
+
+    if cmd_type == "new_session":
+        emit(response_with_data(req_id, {"cancelled": False}, cmd_type))
+        emit({"type": "session_start", "reason": "new"})
+        return
+
+    if cmd_type == "compact":
+        emit(response_with_data(req_id, {
+            "summary": "Compacted.",
+            "firstKeptEntryId": None,
+            "tokensBefore": 5000,
+            "details": {},
+        }, cmd_type))
+        return
+
+    if cmd_type == "export_html":
+        emit(response_with_data(req_id, {"path": "/tmp/sherpa-export.html"}, cmd_type))
+        return
+
+    if cmd_type == "switch_session":
+        emit(response_with_data(req_id, {"cancelled": False}, cmd_type))
+        return
+
+    if cmd_type == "get_state":
+        emit(response_with_data(req_id, {
+            "model": {"id": "fake-model", "name": "Fake Model", "provider": "fake"},
+            "isStreaming": False,
+            "isCompacting": False,
+        }, cmd_type))
+        return
+
+    if cmd_type == "abort":
+        emit(response_ok(req_id, cmd_type))
+        return
+
+    # Unknown command — still succeed so we don't break the protocol.
+    emit(response_ok(req_id, cmd_type))
+
+
+def handle_prompt(payload: dict) -> None:
+    req_id = payload.get("id")
+    message = payload.get("message", "")
+    record_user_message(message)
+    emit(response_ok(req_id, "prompt"))
+    if message.startswith("/search "):
+        emit(assistant_message(search_response(message)))
+    elif message.startswith("/review "):
+        emit_streaming_thinking("Tracing the active stop and checking the nearby code before explaining it.")
+        emit_streaming_assistant(review_response(message))
+    elif message.startswith("/plan "):
+        emit_streaming_thinking("Scanning the repo for a few useful walkthrough stops before laying out the plan.")
+        emit_streaming_assistant(plan_response(message))
+    elif message.startswith("/patch "):
+        emit(assistant_message(patch_response(message)))
+    elif message.startswith("/prompt "):
+        emit_streaming_thinking(prompt_thinking(message))
+        emit(assistant_message(prompt_response(message)))
+    else:
+        emit(assistant_message("Fake pi response"))
+
+
 def main() -> int:
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:
             continue
         payload = json.loads(raw)
-        message = payload.get("message", "")
-        emit({"type": "response", "success": True})
-        if message.startswith("/search "):
-            emit(assistant_message(search_response(message)))
-        elif message.startswith("/review "):
-            emit_streaming_thinking("Tracing the active stop and checking the nearby code before explaining it.")
-            emit_streaming_assistant(review_response(message))
-        elif message.startswith("/plan "):
-            emit_streaming_thinking("Scanning the repo for a few useful walkthrough stops before laying out the plan.")
-            emit_streaming_assistant(plan_response(message))
-        elif message.startswith("/patch "):
-            emit(assistant_message(patch_response(message)))
-        elif message.startswith("/prompt "):
-            emit_streaming_thinking(prompt_thinking(message))
-            emit(assistant_message(prompt_response(message)))
-        else:
+        cmd_type = payload.get("type", "")
+        if cmd_type == "prompt":
+            handle_prompt(payload)
+        elif cmd_type in ("steer", "follow_up"):
+            # Steering / follow-up: ack and echo.
+            emit(response_ok(payload.get("id"), cmd_type))
             emit(assistant_message("Fake pi response"))
+        else:
+            handle_command(payload)
     return 0
 
 

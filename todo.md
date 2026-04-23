@@ -4,19 +4,19 @@
     - just codeblock fece them.
     - I think every tool call needs a codeblock fence actually, otherwise the markdown tries to render all kinds of weird stuff
     - there is also something sus happening with multi-tool call turns, like the ordering is getting messsed up
-    - there's something annoying happening "thinking" where some code-looking elements are getting highlighting
+    - (don't act on this yet, needs more invstigatin) there's something annoying happening "thinking" where some code-looking elements are getting highlighting
     - diffs are getting rendered really weird. I think they need code block fencing, it's weird that they have the `tool edit` and then a ---[diff] marker
         - also it's the background that should be green / red, not the text
-- Running /compact does nothing - are we stripping commands or something?
 - Add a way to hard reset the agent
 - something is wrong with the log header bar, it is showing the lat assistant message or something, but then I can't see amount of context used, which is very important
 - take a pass at simplifying / speeding up each turn, I think we have quite a bit of tooling between each request, and the model, and each reply and the user
 - for the SherpaLogFlow, need some indicator that it's working. Probably need to refactor and unify the SherpaCompose header to not be ont eh compose buffer or something.
-- How do I expose notifications / "SherpaQ running" even when in insert mode and such?
-    - Looks like it shows up after leaving insert mode, cool
+    - kind of does this when in normal mode
+
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on
+- Buffer per question? seems like it could be useful to get multiple streams going at once... but we do already have two
 
 # Done
 - Make use of vim.notify for when Patch and Q are done so the user can open the chat
@@ -40,3 +40,4 @@
 - Don't markdown render the compose buffer
 - Don't do .5s second ticks
     - move the timer to the right side of the bar so it isn't jumping around
+- Running /compact does nothing - are we stripping commands or something?

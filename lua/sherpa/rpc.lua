@@ -110,6 +110,14 @@ end
 
 local function handle_response(event, lane)
   if event.success then
+    -- Pure commands (operation = "command") don't trigger LLM turns,
+    -- so no message_end will follow. Consume the pending request now
+    -- to clear the activity spinner and unblock the next send.
+    local pending = state.peek_pending_request(lane)
+    if pending and pending.operation == "command" then
+      state.consume_pending_request(lane)
+      ui.finish_activity("", "ok", lane)
+    end
     return
   end
   -- RPC transport-level error (pi rejected the request shape, backend

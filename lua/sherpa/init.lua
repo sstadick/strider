@@ -329,9 +329,10 @@ local function dispatch_prompt(text)
     if is_prompt_slash(text) then
       send(text, text, { operation = "prompt", open_log = true })
     else
-      -- Pure command — no LLM turn, no pending request. Just open the
-      -- log so the user sees the command echo + any UI the handler opens.
-      send(text, text, { open_log = true })
+      -- Pi built-in or extension command (e.g. /compact, /models).
+      -- Still needs a pending request so streamed response events
+      -- aren't silently dropped by the message_update handler.
+      send(text, text, { operation = "command", open_log = true })
     end
     return
   end

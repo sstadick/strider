@@ -207,51 +207,6 @@ function M.consume_pending_request(lane)
   return pending
 end
 
--- :SherpaQ tangent state. When a tangent is active, q_anchor_id holds
--- the leaf messageId captured at tangent start; on end we navigate
--- back to it so the branch is discarded from the active path.
-function M.q_begin(anchor_id, lane)
-  local session = M.get_session(lane)
-  if not session then
-    return
-  end
-  session.q_active = true
-  session.q_anchor_id = anchor_id
-end
-
-function M.q_end(lane)
-  local session = M.get_session(lane)
-  local id = session and session.q_anchor_id
-  if session then
-    session.q_active = false
-    session.q_anchor_id = nil
-  end
-  return id
-end
-
-function M.q_is_active(lane)
-  local session = M.get_session(lane)
-  return session and session.q_active == true
-end
-
--- Pending callback awaiting the next /q-anchor response. rpc.lua routes
--- the `sherpa-q-anchor` setStatus event here so init.lua can continue
--- the Q-start flow once Pi echoes the leaf id.
-function M.set_q_anchor_callback(cb, lane)
-  local session = M.get_session(lane)
-  if session then
-    session.q_anchor_callback = cb
-  end
-end
-
-function M.consume_q_anchor_callback(lane)
-  local session = M.get_session(lane)
-  if not session then return nil end
-  local cb = session.q_anchor_callback
-  session.q_anchor_callback = nil
-  return cb
-end
-
 -- Pending clarify: when the model calls sherpa_clarify (question kind),
 -- the plugin stashes the extension_ui_request id + title here and
 -- routes the next compose send back as the clarify reply. Cleared by
@@ -274,24 +229,6 @@ function M.consume_pending_clarify(lane)
   local p = session.pending_clarify
   session.pending_clarify = nil
   return p
-end
-
--- A range stashed by :SherpaQ so the next compose send goes as a
--- tangent follow-up with the excerpt prepended. One-shot: consumed
--- by dispatch_compose on the next send (or cleared on end_q_session).
-function M.set_pending_q_range(range, lane)
-  local session = M.get_session(lane)
-  if session then
-    session.pending_q_range = range
-  end
-end
-
-function M.consume_pending_q_range(lane)
-  local session = M.get_session(lane)
-  if not session then return nil end
-  local r = session.pending_q_range
-  session.pending_q_range = nil
-  return r
 end
 
 return M

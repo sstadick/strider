@@ -131,19 +131,6 @@ end
 -- failure happens later in the extension's async promise chain.
 -- Without a handler here, these silently evaporate and the log just
 -- hangs on "Waiting for assistant response...".
-local function q_anchor_id(pending)
-  local metadata = pending and pending.metadata or nil
-  local anchor = metadata and metadata.q_anchor_id or nil
-  return anchor ~= "" and anchor or nil
-end
-
-local function finish_q_turn(pending, lane)
-  local anchor = q_anchor_id(pending)
-  if anchor then
-    M.send_q_end(anchor, lane)
-  end
-end
-
 local function handle_extension_error(event, lane)
   local reason = event.error or "Sherpa extension error"
   -- Collapse multi-line reasons to the first non-empty line for the
@@ -158,8 +145,7 @@ local function handle_extension_error(event, lane)
   ui.notify(first_line, vim.log.levels.ERROR)
   -- Clear the pending request so the activity spinner actually stops
   -- and the next send doesn't think a turn is still in flight.
-  local pending = state.consume_pending_request(lane)
-  finish_q_turn(pending, lane)
+  state.consume_pending_request(lane)
 end
 
 local function ensure_stream_log(pending, lane)
@@ -305,7 +291,6 @@ local function handle_message_end(event, lane)
     ui.append_block("error", reason, lane)
     local level = stop_reason == "aborted" and "cancel" or "error"
     ui.finish_activity(reason, level, lane)
-    finish_q_turn(pending, lane)
     if stop_reason == "error" then
       ui.notify(reason, vim.log.levels.ERROR)
     end
@@ -338,7 +323,6 @@ local function handle_message_end(event, lane)
 
   if not text then
     ui.finish_activity("Sherpa request complete (no text)", "success", lane)
-    finish_q_turn(pending, lane)
     return
   end
 
@@ -348,6 +332,7 @@ local function handle_message_end(event, lane)
     state.set_summary(summary, lane)
     ui.append_block("assistant", summary, lane)
     ui.finish_activity(summary, "success", lane)
+    ui.notify("SherpaSearch ready", vim.log.levels.INFO) 
     return
   end
 
@@ -359,7 +344,11 @@ local function handle_message_end(event, lane)
   if pending and pending.operation == "review" then
     review.capture_assistant_text(text)
   end
+
   ui.finish_activity("Sherpa request complete", "success", lane)
+  if pending and pending.operation == "q" then
+    ui.notify("SherpaQ answer ready", vim.log.levels.INFO) 
+  end
   if completing_review_summary then
     vim.schedule(function()
       local ok, mod = pcall(require, "sherpa")
@@ -368,7 +357,6 @@ local function handle_message_end(event, lane)
       end
     end)
   end
-  finish_q_turn(pending, lane)
 end
 
 local function track_tool_path(session, event)
@@ -670,20 +658,6 @@ local function handle_extension_ui(event, lane)
     local session = state.get_session(lane)
     local previous = session.status[event.statusKey]
     state.set_status(event.statusKey, event.statusText, lane)
-    -- /q-anchor echoes the leaf messageId back via this key. Hand it to
-    -- whoever called send_q_anchor and return — no other UI side-effects.
-    if event.statusKey == "sherpa-q-anchor" then
-      local cb = state.consume_q_anchor_callback(lane)
-      if cb then
-        local id = event.statusText
-        if id == nil or id == "" then
-          cb(nil)
-        else
-          cb(id)
-        end
-      end
-      return
-    end
     if event.statusKey == "sherpa" and event.statusText ~= previous then
       if event.statusText == "complete" then
         ui.append({ "[sherpa] Workflow complete", "" }, lane)
@@ -1040,32 +1014,6 @@ end
 -- the steer message mid-stream; the model sees it and adjusts without
 -- a new turn being started. No new pending_request is created — the
 -- existing one continues to resolve on the next message_end.
--- Ask the backend for the current session leaf messageId. The response
--- arrives as a `setStatus` event with key `sherpa-q-anchor` and is
--- routed to `cb(id_or_nil)`. Fire-and-forget send; the callback resolves
--- when the event lands (or with nil if no conversation exists).
-function M.send_q_anchor(arg1, arg2)
-  local lane, cb = resolve_lane_and_payload(arg1, arg2)
-  local session = state.get_session(lane)
-  if not session or not session.job_id then
-    ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
-    if cb then cb(nil) end
-    return false
-  end
-  state.set_q_anchor_callback(cb, lane)
-  return M.send_prompt(lane, "/q-anchor")
-end
-
--- Navigate the session tree back to `message_id` so the Q branch drops
--- off the active path. Fire-and-forget; pi handles navigation.
-function M.send_q_end(arg1, arg2)
-  local lane, message_id = resolve_lane_and_payload(arg1, arg2)
-  if not message_id or message_id == "" then
-    return false
-  end
-  return M.send_prompt(lane, "/q-end " .. message_id)
-end
-
 function M.send_steer(arg1, arg2)
   local lane, message = resolve_lane_and_payload(arg1, arg2)
   local session = state.get_session(lane)

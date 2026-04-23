@@ -256,21 +256,4 @@ function M.history_picker(lane)
   end)
 end
 
-function M.to_review_items(result_set)
-  local items = {}
-  for index, result in ipairs((result_set and result_set.results) or {}) do
-    local note = result.text ~= "" and result.text or "Search result"
-    table.insert(items, {
-      id = string.format("search-item-%d", index),
-      path = result.filename,
-      startLine = result.lnum,
-      endLine = result.end_lnum,
-      kind = "search-result",
-      title = note,
-      summary = note,
-    })
-  end
-  return items
-end
-
 return M

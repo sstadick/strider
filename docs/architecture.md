@@ -52,9 +52,7 @@ Owns:
 - widget/status updates for Neovim (model, context usage, running cost)
 - `/models` and `/tree` commands that drive fuzzy pickers via
   `ctx.ui.select` to switch models or jump through the session tree
-- `/q-anchor` and `/q-end` commands used by `:SherpaQ` to capture the
-  current leaf messageId and later navigate the tree back to it so a
-  tangent drops off the active path
+- `/thinking` command to cycle or set reasoning level
 
 ## Core flows
 
@@ -119,22 +117,19 @@ Important UX rule:
 
 ### Tangent
 
-`:SherpaQ` opens a floating editor for a one-shot tangent. The tangent
-still branches off the current pi leaf, but Sherpa no longer reuses the
-chat surfaces for input.
+`:SherpaQ` opens a floating editor for a one-shot side question that
+runs on Sherpa's dedicated flow lane — a separate pi process from the
+main chat. This keeps the main session clean and lets the user ask
+quick questions without interrupting a running chat turn.
 
 1. user runs `:SherpaQ [prompt]` (optionally with a visual range)
 2. plugin opens the floating editor, prefilled when inline args were given
-3. on submit, plugin sends `/q-anchor`; the extension responds with the
-   current leaf messageId via `setStatus("sherpa-q-anchor", ...)`
-4. plugin dispatches the question as `/prompt ...` (with an excerpt block
-   when a range was given), tagging the pending request with the anchor id
-5. the question runs in the background: log state is updated, but chat is
-   not auto-opened
-6. when the answer finishes (success or error), plugin sends
-   `/q-end <anchor>` so the tangent drops off the active session path.
-   The tangent's messages remain in pi's session graph (visible via
-   `/tree`) but are no longer on the active leaf path.
+3. on submit, plugin dispatches the question as `/prompt ...` on the
+   flow lane (with an excerpt block when a range was given)
+4. the question runs in the background: answers land in `:SherpaLogFlow`,
+   chat is not auto-opened
+5. no tree anchoring needed — the flow lane has its own independent
+   session
 
 ### Chat
 
@@ -252,11 +247,8 @@ about the current review item.
 - `extension_ui_request`
   - `notify` / `setStatus` / `setWidget` / `setTitle` — fire-and-forget
     UI updates. `setWidget` payloads are flattened into the log
-    window's winbar. A few `setStatus` keys have plugin-side semantics:
-    `sherpa-q-anchor` routes to a pending `:SherpaQ` callback (carries
-    the captured leaf messageId), `sherpa-q` drives the `[Tangent]`
-    badge, and `sherpa-clarify` drives the `[Clarify]` badge in the
-    compose winbar.
+    window's winbar. The `sherpa-clarify` `setStatus` key drives the
+    `[Clarify]` badge in the compose winbar.
   - `editor` — the extension uses this to ask the user something
     mid-turn (from `sherpa_clarify`). Sherpa routes everything through
     the chat log + compose buffer rather than floating editors:
@@ -310,8 +302,8 @@ Working today:
 - local review comments
 - selection-scoped patching
 - plain-prompt agent turns with clarify available
-- tangent branching via `:SherpaQ` (tree anchor at start, navigate-back
-  on end; `[Tangent]` badge in compose winbar while active)
+- side questions via `:SherpaQ` on a dedicated flow lane (answers land
+  in `:SherpaLogFlow`)
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
 - `:SherpaStop` to abort in-flight turns

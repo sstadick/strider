@@ -27,7 +27,7 @@ Supporting UX:
 - rich tool rendering in the log: `[diff]` blocks on edits with
   green/red line coloring; syntax-highlighted fenced output for
   read/write via treesitter + render-markdown; muted plain output
-  for bash/grep/ls/find; shows the last 10 lines with a
+  for bash/grep/ls/find; shows the last 15 lines with a
   `N earlier lines…` note above; accent-colored paths in `[tool]`
   headers
 - fast fake-backend tmux e2e tests

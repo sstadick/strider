@@ -194,7 +194,6 @@ local function compose_status_line(progress, lane)
   local session = state.get_session(lane)
   local statuses = session and session.status or {}
   local clarify_badge = statuses["sherpa-clarify"]
-  local q_badge = statuses["sherpa-q"]
   -- Clarify takes visual precedence — the model is actively waiting on
   -- an answer, which blocks everything else. Tangent badge still shows
   -- when no clarify is pending.
@@ -203,9 +202,6 @@ local function compose_status_line(progress, lane)
   if clarify_badge and clarify_badge ~= "" then
     prefix = "[Clarify] "
     idle_msg = "Sherpa is asking — type your answer (<Esc><Esc> to reject)."
-  elseif q_badge and q_badge ~= "" then
-    prefix = "[Tangent] "
-    idle_msg = "Sherpa tangent — :SherpaQ to end."
   end
   if not progress then
     if idle_msg then return prefix .. idle_msg end
@@ -1307,19 +1303,6 @@ function M.open_prompt_editor(label, on_submit, opts)
   }, on_submit)
 end
 
-function M.open_prompt_editor_allow_empty(label, on_submit, opts)
-  opts = normalize_prompt_editor_opts(opts)
-  opts.allow_empty = true
-  open_scratch_editor({
-    name = "sherpa://prompt",
-    title = label,
-    hint_lines = opts.hint_lines,
-    prefill = opts.prefill,
-    on_cancel = opts.on_cancel,
-    allow_empty = true,
-  }, on_submit)
-end
-
 local function is_normal_window(win)
   if not vim.api.nvim_win_is_valid(win) then
     return false
@@ -1674,64 +1657,6 @@ function M.set_quickfix(title, items, open)
   if open ~= false then
     vim.cmd("copen")
   end
-end
-
-function M.open_quickfix(title, items)
-  M.set_quickfix(title, items, true)
-end
-
-function M.jump_to_chunk_change(direction)
-  local session = state.get_session()
-  if not session then
-    notify("No active Sherpa session", vim.log.levels.WARN)
-    return
-  end
-  local path = session.chunk_path
-  local lines = session.chunk_lines or {}
-  if not path or #lines == 0 then
-    notify("No active chunk changes", vim.log.levels.WARN)
-    return
-  end
-
-  local current_path = vim.api.nvim_buf_get_name(0)
-  if current_path ~= path then
-    local target = direction < 0 and lines[#lines] or lines[1]
-    M.jump_to_file(path, target)
-    return
-  end
-
-  local current_line = vim.api.nvim_win_get_cursor(0)[1]
-  if direction < 0 then
-    for index = #lines, 1, -1 do
-      if lines[index] < current_line then
-        M.jump_to_file(path, lines[index])
-        return
-      end
-    end
-    M.jump_to_file(path, lines[#lines])
-    return
-  end
-
-  for _, line in ipairs(lines) do
-    if line > current_line then
-      M.jump_to_file(path, line)
-      return
-    end
-  end
-  M.jump_to_file(path, lines[1])
-end
-
-function M.show_status()
-  local session = state.get_session()
-  local lines = { "Sherpa status" }
-  vim.list_extend(lines, session.widget)
-  if session.last_touched_file then
-    table.insert(lines, "File: " .. session.last_touched_file)
-  end
-  if session.last_summary then
-    table.insert(lines, "Summary: " .. session.last_summary)
-  end
-  notify(table.concat(lines, " | "))
 end
 
 function M.notify(message, level)

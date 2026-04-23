@@ -1,4 +1,8 @@
-# Review planning refactor (scratch)
+# Review planning refactor (historical design doc)
+
+> **Status:** This design has been fully implemented. See
+> `docs/review-mode.md` for the current review lifecycle and state shape.
+> This document is preserved as design history.
 
 Design notes for shifting Sherpa review from model-discovered stops to
 pre-planned stops. Not user-facing docs — just the shape of the change

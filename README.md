@@ -267,7 +267,7 @@ asking, rely on the budget + your global pi system prompt.
   highlights.
 - `pi/sherpa-stepper.ts` — pi extension: prompt shaping, tools
   (`sherpa_plan`, `sherpa_append_stops`, `sherpa_clarify`), read-only
-  guardrails, status widget, tangent anchor/end commands.
+  guardrails, status widget, model/tree/thinking commands.
 
 The plugin speaks pi's RPC protocol. Dialog UI (`editor`, `confirm`,
 `select`, `input`) flows from the extension through pi to the plugin,

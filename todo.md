@@ -6,6 +6,7 @@
     - (don't act on this yet, needs more invstigatin) there's something annoying happening "thinking" where some code-looking elements are getting highlighting
     - diffs are getting rendered really weird. I think they need code block fencing, it's weird that they have the `tool edit` and then a ---[diff] marker
         - also it's the background that should be green / red, not the text
+- The "sherpa_clarify" blocks so I can't see the plan that I'm asked to provide a response on
 - Add a way to hard reset the agent
 - something is wrong with the log header bar, it is showing the lat assistant message or something, but then I can't see amount of context used, which is very important
 - take a pass at simplifying / speeding up each turn, I think we have quite a bit of tooling between each request, and the model, and each reply and the user

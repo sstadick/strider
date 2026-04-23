@@ -59,7 +59,7 @@ local function append_tool(tool_name, args, lane)
   end
 
   if tool_name == "bash" and args and args.command then
-    ui.append_block("tool", string.format("bash\n%s", args.command), lane)
+    ui.append_block("tool", string.format("```bash\n%s\n```", args.command), lane)
     return
   end
 
@@ -652,7 +652,7 @@ local function handle_tool_end(event, lane)
     -- colors each line by prefix.
     local diff_text = event.result and event.result.details and event.result.details.diff
     if diff_text and diff_text ~= "" then
-      ui.append_block("diff", diff_text, lane)
+      ui.append_block("diff", string.format("```\n%s\n```", diff_text), lane)
     end
     return
   end

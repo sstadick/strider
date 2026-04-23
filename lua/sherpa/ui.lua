@@ -899,18 +899,9 @@ function M.append_tool_output(text, lang, lane)
     table.insert(lines, string.format("%d earlier %s…", hidden, hidden == 1 and "line" or "lines"))
     marker_offset = #lines - 1
   end
-  local body_start_offset
-  if lang then
-    table.insert(lines, "```" .. lang)
-    body_start_offset = #lines  -- first body row is right after the fence open
-  else
-    body_start_offset = #lines  -- no fence → body starts where we are
-  end
+  table.insert(lines, lang and ("```" .. lang) or "```")
   for _, l in ipairs(shown) do table.insert(lines, l) end
-  local body_end_offset = #lines - 1
-  if lang then
-    table.insert(lines, "```")
-  end
+  table.insert(lines, "```")
   table.insert(lines, "")
 
   local start_row = vim.api.nvim_buf_line_count(buf)
@@ -924,25 +915,6 @@ function M.append_tool_output(text, lang, lane)
       end_row = marker_row + 1,
       hl_group = log_tool_output_ellipsis_hl,
       priority = 10,
-    })
-  end
-
-  if lang then
-    -- With a fence, treesitter + render-markdown handle coloring
-    -- inside the fenced block. Nothing more to do.
-    return
-  end
-
-  -- No fence: style the shown body muted so it reads as secondary
-  -- information rather than competing with user / assistant blocks.
-  if body_end_offset >= body_start_offset then
-    local body_start = start_row + body_start_offset
-    local body_end = start_row + body_end_offset
-    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, body_start, 0, {
-      end_row = body_end + 1,
-      hl_group = log_tool_output_hl,
-      hl_eol = true,
-      priority = 4,
     })
   end
 end

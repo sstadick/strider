@@ -248,7 +248,8 @@ about the current review item.
     a fenced markdown code block tagged with the language derived
     from the file's extension (lua, rust, typescript, …) so
     treesitter + render-markdown syntax-highlight the body. For
-    `bash` / `grep` / `ls` / `find`: render as plain muted text. In
+    `bash` / `grep` / `ls` / `find`: render in a plain (untagged)
+    code fence. In
     both cases only the last 15 lines are shown; when earlier lines
     are hidden, a muted `N earlier lines…` note sits above the block
     (never inside the fence, so code syntax never breaks). Pi's
@@ -330,8 +331,8 @@ Working today:
   blocks when the stream completes
 - rich log rendering: `[diff]` blocks for edit tools (green/red per
   line); syntax-highlighted fenced output for read/write via
-  treesitter + render-markdown; muted plain output for bash/grep/
-  ls/find; last-10-lines only with a `N earlier lines…` note above
+  treesitter + render-markdown; fenced plain output for bash/grep/
+  ls/find; last-15-lines only with a `N earlier lines…` note above
   when earlier lines are hidden; accent-colored file paths in
   `[tool]` headers
 - fast fake-backend tmux e2e tests

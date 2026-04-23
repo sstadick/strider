@@ -6,8 +6,6 @@ type OperationKind = "search" | "review" | "patch" | "prompt" | "plan";
 type SherpaState = {
 	activeOperation?: OperationKind;
 	lastTouchedFile?: string;
-	recentFiles: string[];
-	lastAssistantSummary?: string;
 	// Budget: at most one sherpa_clarify call per user request. Reset in
 	// startOperation so the next /prompt or /patch starts fresh.
 	clarifyCount: number;
@@ -19,7 +17,6 @@ type SherpaState = {
 
 function emptyState(): SherpaState {
 	return {
-		recentFiles: [],
 		clarifyCount: 0,
 		sessionCost: 0,
 	};
@@ -29,14 +26,6 @@ function collapseWhitespace(text?: string): string | undefined {
 	if (!text) return undefined;
 	const collapsed = text.replace(/\s+/g, " ").trim();
 	return collapsed.length > 0 ? collapsed : undefined;
-}
-
-function assistantText(message: any): string | undefined {
-	if (!message || message.role !== "assistant") return undefined;
-	const parts = (message.content ?? [])
-		.filter((item: any) => item.type === "text" && item.text)
-		.map((item: any) => item.text);
-	return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
 function explicitReviewRules(): string[] {
@@ -176,7 +165,6 @@ export default function (pi: ExtensionAPI) {
 
 	function trackPath(path: string) {
 		state.lastTouchedFile = path;
-		state.recentFiles = [path, ...state.recentFiles.filter((item) => item !== path)].slice(0, 5);
 	}
 
 	function modelLabel(model: any): string | undefined {
@@ -232,8 +220,6 @@ export default function (pi: ExtensionAPI) {
 		const suffix = statusSuffix(ctx);
 		if (!state.activeOperation) {
 			const lines = ["Sherpa: idle", "Use /review, /search, /prompt, /patch, /models, or /tree."];
-			if (state.lastTouchedFile) lines.push(`Last file: ${state.lastTouchedFile}`);
-			if (state.lastAssistantSummary) lines.push(`Last response: ${state.lastAssistantSummary}`);
 			return [...lines, ...suffix];
 		}
 
@@ -365,10 +351,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_end", async (event: any, ctx: any) => {
-		const text = assistantText(event.message);
-		if (text) {
-			state.lastAssistantSummary = collapseWhitespace(text);
-		}
 		// Accumulate per-turn cost from assistant message usage. Absent on
 		// non-assistant messages and on free-tier / subscription paths.
 		const cost = event.message?.usage?.cost?.total;

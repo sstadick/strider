@@ -365,7 +365,7 @@ local function format_log_winbar(lane)
   local parts = {}
   for _, line in ipairs(widget) do
     local trimmed = vim.trim(line or "")
-    if trimmed ~= "" and not trimmed:match("^Sherpa operation:") and not trimmed:match("^Sherpa: idle$") and not trimmed:match("^Use ") and not trimmed:match("^Waiting for ") and not trimmed:match("^Mode:") then
+    if trimmed ~= "" and not trimmed:match("^Sherpa operation:") and not trimmed:match("^Sherpa: idle$") and not trimmed:match("^Use ") and not trimmed:match("^Waiting for ") and not trimmed:match("^Mode:") and not trimmed:match("^Last ") then
       table.insert(parts, trimmed)
     end
   end

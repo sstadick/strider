@@ -486,6 +486,11 @@ local function handle_tool_start(event, lane)
   local session = state.get_session(lane)
   append_tool(event.toolName, event.args, lane)
 
+  -- Mark the header row so handle_tool_end can insert the result right
+  -- after it (instead of appending at the end of the log, which
+  -- disconnects headers from results when tools run in parallel).
+  ui.mark_tool_header(event.toolCallId, lane)
+
   -- Cache args for Sherpa planning tools — tool_execution_end events do not
   -- carry args, so we have to capture them here while they're available.
   if (event.toolName == "sherpa_plan" or event.toolName == "sherpa_append_stops")
@@ -578,6 +583,11 @@ end
 local function handle_tool_end(event, lane)
   local session = state.get_session(lane)
 
+  -- Resolve where to place output: right after this tool's header when
+  -- the extmark is still valid, otherwise fall back to normal append.
+  local insert_row = ui.pop_tool_insert_row(event.toolCallId, lane)
+  local insert_opts = insert_row and { insert_at = insert_row } or {}
+
   -- Render textual output for tools where seeing the content helps the
   -- user follow along (everything except edit, which gets a diff block
   -- below, and Sherpa's internal planning tools which carry structured
@@ -595,7 +605,7 @@ local function handle_tool_end(event, lane)
         local stashed = event.toolCallId and session.tool_paths[event.toolCallId] or nil
         lang = language_for_path(stashed)
       end
-      ui.append_tool_output(text, lang, lane)
+      ui.append_tool_output(text, lang, lane, insert_opts)
     end
   end
 
@@ -652,7 +662,7 @@ local function handle_tool_end(event, lane)
     -- colors each line by prefix.
     local diff_text = event.result and event.result.details and event.result.details.diff
     if diff_text and diff_text ~= "" then
-      ui.append_block("diff", string.format("```\n%s\n```", diff_text), lane)
+      ui.append_block("diff", string.format("```diff\n%s\n```", diff_text), lane, insert_opts)
     end
     return
   end

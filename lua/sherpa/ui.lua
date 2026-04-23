@@ -17,9 +17,6 @@ local log_tool_hl = "SherpaLogTool"
 local log_thinking_hl = "SherpaLogThinking"
 local log_rule_hl = "SherpaLogRule"
 local log_error_hl = "SherpaLogError"
-local log_diff_added_hl = "SherpaLogDiffAdded"
-local log_diff_removed_hl = "SherpaLogDiffRemoved"
-local log_diff_context_hl = "SherpaLogDiffContext"
 local log_path_hl = "SherpaLogPath"
 local log_muted_hl = "SherpaLogMuted"
 local log_tool_output_hl = "SherpaLogToolOutput"
@@ -696,7 +693,8 @@ local log_label_hl = {
   ["review-comments"] = log_tool_hl,
 }
 
-function M.append_block(label, text, lane)
+function M.append_block(label, text, lane, opts)
+  opts = opts or {}
   ensure_chunk_style()
   local buf = M.ensure_log_buffer(lane)
 
@@ -717,10 +715,16 @@ function M.append_block(label, text, lane)
     return
   end
 
-  local start_line = vim.api.nvim_buf_line_count(buf)
-  -- ensure_log_buffer keeps the buffer non-empty with a trailing blank,
-  -- but we always append — so start_line is where the header lands.
-  vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+  local start_line
+  if opts.insert_at then
+    start_line = opts.insert_at
+    vim.api.nvim_buf_set_lines(buf, start_line, start_line, false, items)
+  else
+    start_line = vim.api.nvim_buf_line_count(buf)
+    -- ensure_log_buffer keeps the buffer non-empty with a trailing blank,
+    -- but we always append — so start_line is where the header lands.
+    vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+  end
 
   -- Block-wide styling. User/assistant get subtle backgrounds; thinking gets
   -- a faint foreground treatment across the whole block so it reads as
@@ -748,27 +752,6 @@ function M.append_block(label, text, lane)
       hl_eol = true,
       priority = 4,
     })
-  elseif label == "diff" then
-    -- Per-line highlights based on unified-diff prefix:
-    --   "+"  added   — green
-    --   "-"  removed — red
-    --   " "  context — dim
-    -- Lines that don't match any of those (e.g. the " N ..." ellipsis
-    -- rows pi emits) are treated as context.
-    for row = start_line + 1, end_line - 1 do
-      local line = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or ""
-      local prefix = line:sub(1, 1)
-      local hl
-      if prefix == "+" then hl = log_diff_added_hl
-      elseif prefix == "-" then hl = log_diff_removed_hl
-      else hl = log_diff_context_hl end
-      pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
-        end_row = row + 1,
-        hl_group = hl,
-        hl_eol = true,
-        priority = 5,
-      })
-    end
   end
 
   -- Header foreground (higher priority than background)
@@ -828,6 +811,45 @@ function M.append_tool_line(tool_name, path, range, lane)
   })
 end
 
+-- Mark the tail of the log so that the matching tool_execution_end can
+-- insert its result right after the header instead of at the very end
+-- of the buffer. Uses an extmark so row tracking is automatic when
+-- other insertions shift lines around.
+function M.mark_tool_header(tool_call_id, lane)
+  if not tool_call_id then return end
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  local buf = session and session.log_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  -- The header was just appended; the last non-blank row is line_count-2
+  -- (append() always keeps a trailing blank).
+  local row = math.max(vim.api.nvim_buf_line_count(buf) - 2, 0)
+  session.tool_marks[tool_call_id] = vim.api.nvim_buf_set_extmark(
+    buf, log_namespace, row, 0, {})
+end
+
+-- Consume the extmark for a tool header and return the row where output
+-- should be inserted (one past the header). Returns nil when the mark
+-- is missing or invalid — callers fall back to normal append.
+function M.pop_tool_insert_row(tool_call_id, lane)
+  if not tool_call_id then return nil end
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  local buf = session and session.log_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return nil end
+  local marks = session.tool_marks
+  local mark_id = marks and marks[tool_call_id]
+  if not mark_id then return nil end
+  marks[tool_call_id] = nil
+  local ok, pos = pcall(vim.api.nvim_buf_get_extmark_by_id,
+    buf, log_namespace, mark_id, {})
+  pcall(vim.api.nvim_buf_del_extmark, buf, log_namespace, mark_id)
+  if ok and pos and pos[1] then
+    return pos[1] + 1  -- row after the header
+  end
+  return nil
+end
+
 -- Render tool output in the log. Shows only the last TAIL_LINES of the
 -- output; when earlier lines are hidden, emits a muted
 -- `N earlier lines…` marker BEFORE the block so nothing breaks the
@@ -843,7 +865,8 @@ end
 -- Empty text is skipped (not every tool produces output worth showing).
 local TOOL_OUTPUT_TAIL = 15
 
-function M.append_tool_output(text, lang, lane)
+function M.append_tool_output(text, lang, lane, opts)
+  opts = opts or {}
   if type(text) ~= "string" then return end
   local trimmed = vim.trim(text)
   if trimmed == "" then return end
@@ -904,8 +927,18 @@ function M.append_tool_output(text, lang, lane)
   table.insert(lines, "```")
   table.insert(lines, "")
 
-  local start_row = vim.api.nvim_buf_line_count(buf)
-  M.append(lines, lane)
+  local items = log_lines(lines)
+  if #items == 0 then return end
+
+  local start_row
+  if opts.insert_at then
+    start_row = opts.insert_at
+    vim.api.nvim_buf_set_lines(buf, start_row, start_row, false, items)
+  else
+    start_row = vim.api.nvim_buf_line_count(buf)
+    vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+  end
+  scroll_log_windows(buf)
 
   -- Style the `N earlier lines…` marker as italic muted so it reads
   -- like a note rather than code / prose.
@@ -1433,9 +1466,6 @@ ensure_chunk_style = function()
   -- Diff lines in tool-output [diff] blocks. Mirror the gutter-sign
   -- palette so the two surfaces agree: green for added, red for
   -- removed, dim for context.
-  vim.api.nvim_set_hl(0, log_diff_added_hl, { default = true, fg = "#73C991" })
-  vim.api.nvim_set_hl(0, log_diff_removed_hl, { default = true, fg = "#F14C4C" })
-  vim.api.nvim_set_hl(0, log_diff_context_hl, { default = true, link = "NonText" })
   -- Paths in tool headers (e.g. after `[tool] read`) stand out so the
   -- eye finds the target quickly when scanning the transcript.
   vim.api.nvim_set_hl(0, log_path_hl, { default = true, fg = "#7BB5FF" })

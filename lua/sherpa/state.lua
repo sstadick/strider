@@ -70,6 +70,7 @@ local function new_session(cwd, lane)
     stderr_tail = "",
     stdout_tail = "",
     tool_args = {},
+    tool_marks = {},
     tool_paths = {},
     widget = {},
   }

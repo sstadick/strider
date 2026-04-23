@@ -24,6 +24,7 @@ local function activity_title(operation)
   local titles = {
     patch = "Sherpa patch running...",
     plan = "Sherpa planning review...",
+    q = "Sherpa Q running...",
     review = "Sherpa review running...",
     search = "Sherpa search running...",
     prompt = "Sherpa prompt running...",
@@ -41,19 +42,6 @@ end
 local function send(command, user_text, opts)
   if not ensure_backend() then
     return false
-  end
-  -- Implicit end-of-Q on any main-chat send. Q sends themselves set
-  -- opts.is_q so they pass through without ending the branch. This
-  -- catches :SherpaReview / :SherpaPatch / :SherpaSearch etc. as well
-  -- as plain :SherpaChat messages — any explicit "do something else"
-  -- exits the tangent first.
-  if state.q_is_active() and not (opts and opts.is_q) then
-    local anchor = state.q_end()
-    state.set_status("sherpa-q", nil)
-    ui.refresh_compose_winbar()
-    if anchor then
-      rpc.send_q_end(anchor)
-    end
   end
   if opts and opts.open_log then
     -- Don't steal focus from whatever the user is currently doing (e.g.
@@ -103,6 +91,34 @@ local function range_from_opts(opts)
     startLine = tonumber(opts.line1) or 1,
     endLine = tonumber(opts.line2) or tonumber(opts.line1) or 1,
   }
+end
+
+local function display_path(path)
+  local cwd = current_cwd()
+  if path and cwd and vim.startswith(path, cwd .. "/") then
+    return path:sub(#cwd + 2)
+  end
+  return path
+end
+
+local function range_pointer(range)
+  if not range then
+    return nil
+  end
+  return string.format("%s:%d-%d", display_path(range.path), range.startLine, range.endLine)
+end
+
+local function chat_prefill(prompt, range)
+  local parts = {}
+  local pointer = range_pointer(range)
+  local text = trimmed(prompt)
+  if pointer then
+    table.insert(parts, pointer)
+  end
+  if text ~= "" then
+    table.insert(parts, text)
+  end
+  return table.concat(parts, "\n\n")
 end
 
 local function read_excerpt(path, start_line, end_line)
@@ -273,14 +289,10 @@ end
 -- Send a user message from the compose buffer. If a request is already
 -- in flight, deliver as a steer (mid-turn redirect) instead of a new
 -- prompt. Either way the log gets a [user] block so the transcript
--- reads correctly.
--- Forward declarations. dispatch_compose is referenced by
+-- reads correctly. dispatch_compose is referenced by
 -- M.open_compose_for_clarify (defined just below as the clarify-reply
--- entrypoint) before its own definition further down. dispatch_q is
--- referenced inside dispatch_compose and defined with the other
--- :SherpaQ helpers much further down. Without these forward-declared
--- locals, the names bind as globals and resolve to nil at call time.
-local dispatch_q
+-- entrypoint) before its own definition further down, so it is
+-- forward-declared here.
 local dispatch_compose
 
 -- Send a clarify reply back through the RPC extension_ui_response
@@ -353,24 +365,6 @@ function dispatch_compose(text)
     return true
   end
 
-  -- While a tangent is active, compose sends are tangent follow-ups.
-  -- The message still goes through /prompt — the tree anchor decides
-  -- what gets discarded on end, not a special send path. A stashed
-  -- range (set by :SherpaQ when invoked with a visual selection but no
-  -- inline prompt) is consumed here so the first send carries the
-  -- excerpt; subsequent sends are plain follow-ups.
-  if state.q_is_active() and not state.peek_pending_request() then
-    if text:sub(1, 1) == "/" then
-      -- Slash-commands end the tangent implicitly (see send() guard)
-      -- and run normally. Fall through to the regular dispatch below.
-      state.consume_pending_q_range()
-    else
-      local pending_range = state.consume_pending_q_range()
-      dispatch_q(text, pending_range)
-      return true
-    end
-  end
-
   local pending = state.peek_pending_request()
   if pending then
     -- Extension commands (/models, /tree, etc.) are not allowed as steer
@@ -396,41 +390,34 @@ function dispatch_compose(text)
   return true
 end
 
-function M.chat(prompt)
+function M.chat(prompt, opts)
   prompt = trimmed(prompt)
+  local range = range_from_opts(opts)
+  local prefill = chat_prefill(prompt, range)
 
-  -- No args: toggle the chat surfaces. If either surface is visible,
-  -- hide both. Otherwise open both and focus compose.
-  if prompt == "" then
+  -- No args + no range keeps the old toggle behavior. Any explicit
+  -- prompt or range means "open chat with this draft/context".
+  if prefill == "" then
     if ui.chat_is_visible() then
       ui.hide_chat()
       return
     end
-    if not ensure_backend() then
-      return
-    end
-    ui.open_log({ preserve_focus = true })
-    ui.open_compose(function(text)
-      return dispatch_compose(text)
-    end)
-    return
   end
 
-  -- With args: send the message. Open surfaces if they're not already
-  -- visible, but don't steal focus — the user is dispatching from
-  -- wherever they currently are. Route via dispatch_compose so steering
-  -- works the same way as a compose-<C-s> send.
   if not ensure_backend() then
     return
   end
-  if not ui.chat_is_visible() then
-    ui.open_log({ preserve_focus = true })
-    -- open_compose focuses + startinsert; we don't want that here.
-    -- ensure_compose_buffer creates the buffer and wires its keymaps
-    -- without opening a window; that's enough for later toggling.
-    ui.ensure_compose_buffer(function(text) return dispatch_compose(text) end)
+
+  ui.open_log({ preserve_focus = true })
+  ui.ensure_compose_buffer(function(text)
+    return dispatch_compose(text)
+  end)
+  if prefill ~= "" then
+    ui.prefill_compose(prefill)
   end
-  dispatch_compose(prompt)
+  ui.open_compose(function(text)
+    return dispatch_compose(text)
+  end)
 end
 
 function M.search(prompt)
@@ -452,51 +439,20 @@ function M.search(prompt)
 end
 
 
-function M.review(args, opts)
-  local range = range_from_opts(opts)
-  local text = trimmed(args)
-  local empty_args = text == ""
+local function submit_review_request(text, range)
+  text = trimmed(text)
+  if text == "" then
+    return
+  end
 
-  -- Ranged question inside an active review: scope the question to the
-  -- sub-range and stash the range so the streaming answer can render as
-  -- an inline block annotation over that range rather than cluttering
-  -- the sidebar.
   if review.has_active_review() and range then
-    if empty_args then
-      local captured = range
-      ui.open_prompt_editor("Ask about this selected range", function(input)
-        local question = trimmed(input)
-        if question == "" then return end
-        review.begin_ranged_question(captured, question)
-        local prompt = review.build_prompt(question)
-        if prompt then send_review_prompt(prompt, question) end
-      end, {
-        "Ask a question about the selected range inside the active review.",
-      })
-      return
-    end
     review.begin_ranged_question(range, text)
     local prompt = review.build_prompt(text)
     if prompt then send_review_prompt(prompt, text) end
     return
   end
 
-  if review.has_active_review() and not range then
-    if empty_args then
-      ui.open_prompt_editor("Ask about this review item", function(input)
-        local question = trimmed(input)
-        local prompt = review.build_prompt(question)
-        if not prompt then
-          ui.notify("No active Sherpa review item", vim.log.levels.WARN)
-          return
-        end
-        send_review_prompt(prompt, question)
-      end, {
-        "Ask a question about the current review item.",
-      })
-      return
-    end
-
+  if review.has_active_review() then
     local prompt = review.build_prompt(text)
     if not prompt then
       ui.notify("No active Sherpa review item", vim.log.levels.WARN)
@@ -507,21 +463,6 @@ function M.review(args, opts)
   end
 
   if range then
-    if empty_args then
-      ui.open_prompt_editor("Sherpa review context", function(input)
-        local focus_text = trimmed(input)
-        start_selection_review({
-          endLine = range.endLine,
-          focus = focus_text,
-          path = range.path,
-          startLine = range.startLine,
-        })
-      end, {
-        "Describe what you want reviewed in this selected range.",
-      })
-      return
-    end
-
     start_selection_review({
       endLine = range.endLine,
       focus = text,
@@ -531,16 +472,43 @@ function M.review(args, opts)
     return
   end
 
-  if empty_args then
-    ui.open_prompt_editor("Sherpa review context", function(input)
-      start_free_review(trimmed(input))
-    end, {
+  start_free_review(text)
+end
+
+function M.review(args, opts)
+  local range = range_from_opts(opts)
+  local text = trimmed(args)
+  local title = "Sherpa review context"
+  local hint_lines
+
+  if review.has_active_review() and range then
+    title = "Ask about this selected range"
+    hint_lines = {
+      "Ask a question about the selected range inside the active review.",
+      string.format("Range: %s", range_pointer(range)),
+    }
+  elseif review.has_active_review() then
+    title = "Ask about this review item"
+    hint_lines = {
+      "Ask a question about the current review item.",
+    }
+  elseif range then
+    hint_lines = {
+      "Describe what you want reviewed in this selected range.",
+      string.format("Range: %s", range_pointer(range)),
+    }
+  else
+    hint_lines = {
       "Describe what you want reviewed.",
-    })
-    return
+    }
   end
 
-  start_free_review(text)
+  ui.open_prompt_editor(title, function(input)
+    submit_review_request(input, range)
+  end, {
+    hint_lines = hint_lines,
+    prefill = text ~= "" and text or nil,
+  })
 end
 
 local function dispatch_patch(prompt, range)
@@ -556,34 +524,20 @@ local function dispatch_patch(prompt, range)
   send("/patch " .. table.concat(lines, "\n"), prompt, { operation = "patch" })
 end
 
--- :SherpaQ — ask a tangent whose Q&A lives in the session graph but
--- drops off the active path when ended, so subsequent main-chat
--- messages don't carry it as context. Tree branching is the isolation
--- mechanism; the UI reuses the main chat surfaces (no popup editor).
---
--- Decision table (see also `M.q`):
---   Tangent inactive, no args     → start tangent, open compose
---   Tangent inactive, args/range  → start tangent, send immediately (excerpt if range)
---   Tangent active,   no args     → end tangent (navigate back, clear badge)
---   Tangent active,   args/range  → follow-up in the active tangent
-local function set_q_badge(active)
-  state.set_status("sherpa-q", active and "tangent" or nil)
-  ui.refresh_compose_winbar()
+local function resolve_patch_range(opts)
+  local range = range_from_opts(opts)
+  local item = review.current_item()
+  if not range and item then
+    return {
+      path = item.path,
+      startLine = item.startLine,
+      endLine = item.endLine,
+    }
+  end
+  return range
 end
 
-local function end_q_session(notify)
-  local anchor = state.q_end()
-  state.consume_pending_q_range()
-  set_q_badge(false)
-  if anchor then
-    rpc.send_q_end(anchor)
-  end
-  if notify then
-    ui.notify("Tangent ended", vim.log.levels.INFO)
-  end
-end
-
-function dispatch_q(prompt, range)
+local function dispatch_q(prompt, range, anchor_id)
   local message
   if range then
     local lines = {
@@ -598,126 +552,71 @@ function dispatch_q(prompt, range)
   else
     message = prompt
   end
-  -- Route through /prompt so Pi handles it as a normal turn. The tree
-  -- mechanics (not the slash-command) provide the "tangent" semantics;
-  -- no dedicated /q command is needed. is_q=true keeps send() from
-  -- treating this as an implicit "leave tangent".
-  send("/prompt " .. message, prompt, { operation = "prompt", open_log = true, is_q = true })
+  send("/prompt " .. message, prompt, {
+    metadata = { q_anchor_id = anchor_id },
+    operation = "q",
+  })
 end
 
-local function start_q_then_send(prompt, range)
+local function submit_q_request(prompt, range)
+  prompt = trimmed(prompt)
+  if prompt == "" then
+    return
+  end
+  if not ensure_backend() then
+    return
+  end
   rpc.send_q_anchor(function(anchor_id)
     if not anchor_id then
       ui.notify("Cannot start tangent: no conversation to branch from", vim.log.levels.WARN)
       return
     end
-    state.q_begin(anchor_id)
-    set_q_badge(true)
-    if prompt and prompt ~= "" then
-      dispatch_q(prompt, range)
-    else
-      -- No prompt yet: open compose so the user can type the question.
-      -- The badge is already visible; whatever they send next flows
-      -- through dispatch_compose (which will not re-end Q because
-      -- q_active is true — see dispatch_compose guard).
-      if not ensure_backend() then return end
-      ui.open_log({ preserve_focus = true })
-      ui.open_compose(function(text)
-        return dispatch_compose(text)
-      end)
-    end
+    dispatch_q(prompt, range, anchor_id)
   end)
 end
 
 function M.q(prompt, opts)
   prompt = trimmed(prompt)
   local range = range_from_opts(opts)
-  local has_input = prompt ~= "" or range ~= nil
-
-  if not ensure_backend() then return end
-
-  if state.q_is_active() then
-    if not has_input then
-      end_q_session(true)
-      return
-    end
-    -- Follow-up: tangent is already active, dispatch directly. Branch
-    -- is already anchored; no re-anchoring needed.
-    if prompt == "" and range then
-      -- Range without inline prompt: stash the range, open compose,
-      -- and let dispatch_compose consume it on the next send.
-      state.set_pending_q_range(range)
-      ui.open_log({ preserve_focus = true })
-      ui.open_compose(function(text)
-        return dispatch_compose(text)
-      end)
-      ui.notify(string.format("Tangent: next message will include %s:%d-%d",
-        range.path, range.startLine, range.endLine), vim.log.levels.INFO)
-      return
-    end
-    dispatch_q(prompt, range)
-    return
+  local hint_lines = {
+    "Ask a tangent question without opening chat.",
+    "Answers stay in the background for now.",
+  }
+  local pointer = range_pointer(range)
+  if pointer then
+    table.insert(hint_lines, string.format("Range: %s", pointer))
   end
 
-  -- Tangent inactive: anchor first, then send (or open compose if no input).
-  if prompt == "" and range then
-    -- Anchor, stash the range, open compose. The first compose send
-    -- will pick up the range and dispatch with the excerpt.
-    local captured = range
-    rpc.send_q_anchor(function(anchor_id)
-      if not anchor_id then
-        ui.notify("Cannot start tangent: no conversation to branch from", vim.log.levels.WARN)
-        return
-      end
-      state.q_begin(anchor_id)
-      state.set_pending_q_range(captured)
-      set_q_badge(true)
-      ui.open_log({ preserve_focus = true })
-      ui.open_compose(function(text)
-        return dispatch_compose(text)
-      end)
-      ui.notify(string.format("Tangent: next message will include %s:%d-%d",
-        captured.path, captured.startLine, captured.endLine), vim.log.levels.INFO)
-    end)
-    return
-  end
-  start_q_then_send(prompt, range)
+  ui.open_prompt_editor("Sherpa Q", function(text)
+    submit_q_request(text, range)
+  end, {
+    hint_lines = hint_lines,
+    prefill = prompt ~= "" and prompt or nil,
+  })
 end
 
 function M.patch(prompt, opts)
   prompt = trimmed(prompt)
 
-  local range = range_from_opts(opts)
-  local item = review.current_item()
-  if not range and item then
-    range = {
-      path = item.path,
-      startLine = item.startLine,
-      endLine = item.endLine,
-    }
-  end
+  local range = resolve_patch_range(opts)
   if not range then
     ui.notify("SherpaPatch needs a visual range or an active review item", vim.log.levels.WARN)
     return
   end
 
-  if prompt == "" then
-    local captured_range = range
-    ui.open_prompt_editor("Sherpa patch request", function(text)
-      local inner = trimmed(text)
-      if inner == "" then
-        ui.notify("Usage: :SherpaPatch <request>", vim.log.levels.WARN)
-        return
-      end
-      dispatch_patch(inner, captured_range)
-    end, {
-      string.format("Patch target: %s:%d-%d", range.path, range.startLine, range.endLine),
+  ui.open_prompt_editor("Sherpa patch request", function(text)
+    text = trimmed(text)
+    if text == "" then
+      return
+    end
+    dispatch_patch(text, range)
+  end, {
+    hint_lines = {
+      string.format("Patch target: %s", range_pointer(range)),
       "Keep changes local to this range.",
-    })
-    return
-  end
-
-  dispatch_patch(prompt, range)
+    },
+    prefill = prompt ~= "" and prompt or nil,
+  })
 end
 
 function M.next_step()

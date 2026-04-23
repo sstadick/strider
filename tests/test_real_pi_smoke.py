@@ -20,6 +20,7 @@ class RealPiSmokeTests(unittest.TestCase):
             with TmuxNvimHarness(self.repo_root, project_root, real_pi=True) as h:
                 initial_log_count = len(h.log_lines())
                 h.ex("SherpaReview explain app.py")
+                h.submit_popup()
 
                 h.wait_until(
                     lambda: h.lua_bool("require('sherpa.review').has_active_review()")
@@ -44,6 +45,7 @@ class RealPiSmokeTests(unittest.TestCase):
             with TmuxNvimHarness(self.repo_root, project_root, real_pi=True) as h:
                 h.ex("edit app.py")
                 h.ex("5SherpaPatch change the greeting literal from hi to hello and only touch this line")
+                h.submit_popup()
 
                 target = project_root / "app.py"
                 h.wait_until(

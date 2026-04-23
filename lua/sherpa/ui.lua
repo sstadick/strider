@@ -117,11 +117,20 @@ local spin_labels = {
     "Sherpa is mapping the logic...",
     "Sherpa is studying the problem...",
   },
+  q = {
+    "Sherpa is tracing the tangent...",
+    "Sherpa is checking the side trail...",
+    "Sherpa is working through the tangent...",
+    "Sherpa is following the detour...",
+    "Sherpa is inspecting the side path...",
+    "Sherpa is mapping the tangent...",
+  },
 }
 local activity_prefixes = {
   plan = "Plan",
   patch = "Patch",
   prompt = "Chat",
+  q = "Q",
   review = "Review",
   search = "Search",
 }
@@ -289,15 +298,17 @@ function M.ensure_log_buffer()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, log_name())
   configure_scratch_buffer(buf, "markdown")
-  -- Setting `filetype = "markdown"` on a scratch nofile buffer doesn't
-  -- always fire the FileType autocmd pipeline that plugins like
-  -- render-markdown and nvim-treesitter rely on to initialize per
-  -- buffer. Force it to fire so fenced code blocks actually render.
-  pcall(vim.api.nvim_exec_autocmds, "FileType", { buffer = buf, modeline = false })
-  -- Also start treesitter explicitly as a belt-and-braces measure: if
-  -- the FileType autocmd didn't start it (or treesitter.highlighter
-  -- isn't wired to that autocmd in the user's config), this kicks it
-  -- off. No-op / silent if the markdown parser isn't installed.
+  -- Setting `filetype = "markdown"` on a hidden scratch buffer doesn't
+  -- always run the full FileType pipeline. Replay it manually, but do so
+  -- with this buffer temporarily current: some ftplugins (including
+  -- Neovim's built-in markdown ftplugin) call buffer-local APIs like
+  -- `vim.treesitter.start()` without an explicit buffer argument.
+  pcall(vim.api.nvim_buf_call, buf, function()
+    vim.api.nvim_exec_autocmds("FileType", { buffer = buf, modeline = false })
+  end)
+  -- Belt-and-braces: if the FileType pipeline didn't start treesitter,
+  -- do it explicitly for the log buffer. No-op / silent if the markdown
+  -- parser isn't installed.
   pcall(vim.treesitter.start, buf, "markdown")
   session.log_buf = buf
   return buf
@@ -584,7 +595,11 @@ function M.open_compose(on_send)
   vim.wo[win].winfixheight = true
   M.refresh_compose_winbar()
   vim.schedule(function()
-    if vim.api.nvim_win_is_valid(win) then vim.cmd("startinsert") end
+    if not vim.api.nvim_win_is_valid(win) then return end
+    local last_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
+    local last_text = vim.api.nvim_buf_get_lines(buf, last_line - 1, last_line, false)[1] or ""
+    pcall(vim.api.nvim_win_set_cursor, win, { last_line, #last_text })
+    vim.cmd("startinsert")
   end)
   return win
 end
@@ -1117,10 +1132,14 @@ local function open_scratch_editor(opts, on_submit)
   end, { buffer = buf, nowait = true, silent = true })
 
   vim.schedule(function()
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_set_current_win(win)
-      vim.cmd("startinsert")
+    if not vim.api.nvim_win_is_valid(win) then
+      return
     end
+    vim.api.nvim_set_current_win(win)
+    local last_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
+    local last_text = vim.api.nvim_buf_get_lines(buf, last_line - 1, last_line, false)[1] or ""
+    pcall(vim.api.nvim_win_set_cursor, win, { last_line, #last_text })
+    vim.cmd("startinsert")
   end)
 end
 
@@ -1161,6 +1180,20 @@ function M.clarify_plan_proposal_picker(cb)
   end)
 end
 
+local function reset_buffer_undo(buf)
+  vim.bo[buf].undolevels = -1
+  vim.bo[buf].undolevels = vim.o.undolevels
+end
+
+local function compose_has_text(buf)
+  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if vim.trim(line) ~= "" then
+      return true
+    end
+  end
+  return false
+end
+
 -- Seed the compose buffer with text. Used by the plan-proposal Modify
 -- flow: the user wants to edit the proposed plan in-place, so we drop
 -- it into compose and they adjust it before sending. Refuses to
@@ -1170,12 +1203,7 @@ function M.seed_compose(text)
   local session = state.get_session()
   local buf = session and session.compose_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return false end
-  local existing = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local nonempty = false
-  for _, line in ipairs(existing) do
-    if vim.trim(line) ~= "" then nonempty = true; break end
-  end
-  if nonempty then
+  if compose_has_text(buf) then
     notify("Compose has draft text — send or clear it before modifying the proposal.",
       vim.log.levels.WARN)
     return false
@@ -1185,24 +1213,70 @@ function M.seed_compose(text)
   -- Reset undo so `u` from the seeded state doesn't unwind the whole
   -- buffer back to empty — consistent with the compose-cleared-on-send
   -- treatment.
-  vim.bo[buf].undolevels = -1
-  vim.bo[buf].undolevels = vim.o.undolevels
+  reset_buffer_undo(buf)
   return true
 end
 
-function M.open_prompt_editor(label, on_submit, hint_lines)
+-- Prefill compose for :SherpaChat. Empty compose is replaced outright;
+-- non-empty compose keeps the user's draft and appends the new context
+-- after a blank line so command-line context doesn't stomp on typing.
+function M.prefill_compose(text)
+  text = text or ""
+  if text == "" then return false end
+  local session = state.get_session()
+  local buf = session and session.compose_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return false end
+
+  local lines = vim.split(text, "\n", { plain = true })
+  if not compose_has_text(buf) then
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    reset_buffer_undo(buf)
+    return true
+  end
+
+  local existing = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  while #existing > 0 and existing[#existing] == "" do
+    table.remove(existing)
+  end
+  if #existing > 0 then
+    table.insert(existing, "")
+  end
+  vim.list_extend(existing, lines)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, existing)
+  reset_buffer_undo(buf)
+  return true
+end
+
+local function normalize_prompt_editor_opts(opts)
+  if opts == nil then
+    return {}
+  end
+  if opts.hint_lines ~= nil or opts.prefill ~= nil or opts.allow_empty ~= nil or opts.on_cancel ~= nil then
+    return vim.deepcopy(opts)
+  end
+  return { hint_lines = opts }
+end
+
+function M.open_prompt_editor(label, on_submit, opts)
+  opts = normalize_prompt_editor_opts(opts)
   open_scratch_editor({
     name = "sherpa://prompt",
     title = label,
-    hint_lines = hint_lines,
+    hint_lines = opts.hint_lines,
+    prefill = opts.prefill,
+    on_cancel = opts.on_cancel,
   }, on_submit)
 end
 
-function M.open_prompt_editor_allow_empty(label, on_submit, hint_lines)
+function M.open_prompt_editor_allow_empty(label, on_submit, opts)
+  opts = normalize_prompt_editor_opts(opts)
+  opts.allow_empty = true
   open_scratch_editor({
     name = "sherpa://prompt",
     title = label,
-    hint_lines = hint_lines,
+    hint_lines = opts.hint_lines,
+    prefill = opts.prefill,
+    on_cancel = opts.on_cancel,
     allow_empty = true,
   }, on_submit)
 end

@@ -110,6 +110,19 @@ end
 -- failure happens later in the extension's async promise chain.
 -- Without a handler here, these silently evaporate and the log just
 -- hangs on "Waiting for assistant response...".
+local function q_anchor_id(pending)
+  local metadata = pending and pending.metadata or nil
+  local anchor = metadata and metadata.q_anchor_id or nil
+  return anchor ~= "" and anchor or nil
+end
+
+local function finish_q_turn(pending)
+  local anchor = q_anchor_id(pending)
+  if anchor then
+    M.send_q_end(anchor)
+  end
+end
+
 local function handle_extension_error(event)
   local reason = event.error or "Sherpa extension error"
   -- Collapse multi-line reasons to the first non-empty line for the
@@ -124,11 +137,12 @@ local function handle_extension_error(event)
   ui.notify(first_line, vim.log.levels.ERROR)
   -- Clear the pending request so the activity spinner actually stops
   -- and the next send doesn't think a turn is still in flight.
-  state.consume_pending_request()
+  local pending = state.consume_pending_request()
+  finish_q_turn(pending)
 end
 
 local function ensure_stream_log(pending)
-  if not pending or pending.log_opened or pending.operation == "plan" then
+  if not pending or pending.log_opened or pending.operation == "plan" or pending.operation == "q" then
     return
   end
   pending.log_opened = true
@@ -267,6 +281,7 @@ local function handle_message_end(event)
     ui.append_block("error", reason)
     local level = stop_reason == "aborted" and "cancel" or "error"
     ui.finish_activity(reason, level)
+    finish_q_turn(pending)
     if stop_reason == "error" then
       ui.notify(reason, vim.log.levels.ERROR)
     end
@@ -299,6 +314,7 @@ local function handle_message_end(event)
 
   if not text then
     ui.finish_activity("Sherpa request complete (no text)", "success")
+    finish_q_turn(pending)
     return
   end
 
@@ -317,6 +333,7 @@ local function handle_message_end(event)
     review.capture_assistant_text(text)
   end
   ui.finish_activity("Sherpa request complete", "success")
+  finish_q_turn(pending)
 end
 
 local function track_tool_path(session, event)

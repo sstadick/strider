@@ -51,26 +51,27 @@ require("sherpa").setup()
 |---|---|
 | `:SherpaSearch {prompt}` | Structured code search (picker + quickfix) |
 | `:SherpaSearches` | Reopen recent search result sets |
-| `:SherpaReview {prompt}` | Start a pre-planned walkthrough |
-| `:'<,'>SherpaReview {prompt}` | Selection-scoped walkthrough |
-| `:SherpaReview {question}` | During a review, ask about the current stop |
+| `:SherpaReview [prompt]` | Open the review popup; submit to start a walkthrough or ask about the current stop |
+| `:'<,'>SherpaReview [prompt]` | Open the review popup scoped to the selected range |
 | `:SherpaNext` / `:SherpaPrev` | Walk review stops |
 | `:SherpaReviewItems` | Pick any stop from the plan |
 | `:SherpaComment {text}` | Comment on the current stop |
 | `:'<,'>SherpaComment {text}` | Comment on a visual sub-range |
 | `:SherpaComments` | Browse recorded review comments |
-| `:'<,'>SherpaPatch {prompt}` | Small targeted edit on a selection |
-| `:SherpaQ [prompt]` | Start a tangent that branches off the active session |
-| `:'<,'>SherpaQ [prompt]` | Tangent with a selection excerpt |
-| `:SherpaQ` (while active) | End the tangent (drops it from active history) |
-| `:SherpaChat [prompt]` | Toggle chat surfaces; with args, send directly |
+| `:SherpaPatch [prompt]` | Open the patch popup for the current review item |
+| `:'<,'>SherpaPatch [prompt]` | Open the patch popup for a visual selection |
+| `:SherpaQ [prompt]` | Open the Q popup and run a background tangent question |
+| `:'<,'>SherpaQ [prompt]` | Open the Q popup with a selection-scoped tangent |
+| `:SherpaChat` | Toggle the chat log + compose buffers |
+| `:[range]SherpaChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:SherpaStop` | Abort the current in-flight turn |
 | `:SherpaRetry` | Re-dispatch a stalled plan turn |
 
-`:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, and `:SherpaComment`
-with no args open a floating editor. Submit with `<C-s>`, cancel with
-`<Esc><Esc>`. `:SherpaQ` uses the main chat surfaces instead; see
-below.
+`:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, `:SherpaQ`, and
+`:SherpaComment` use floating editors. Submit with `<C-s>`, cancel with
+`<Esc><Esc>`. `:SherpaChat` keeps the persistent log + compose buffers:
+no-args toggles them, while args/ranges prefill compose instead of
+sending immediately.
 
 ## Slash commands in compose
 
@@ -125,17 +126,15 @@ Patch:
 Tangent — ask something mid-session without polluting history:
 
 ```vim
-:SherpaQ what does this flag actually do?
-:SherpaQ                                     " follow up
-:SherpaQ                                     " end tangent (no args while active)
+:SherpaQ what does this flag actually do?    " opens popup prefilled with the question
 :'<,'>SherpaQ why is this loop written this way?
 ```
 
 Chain chat → review:
 
 ```vim
-:SherpaChat add loading states to the lobby flow
-:SherpaReview walk through the diff on this branch
+:SherpaChat add loading states to the lobby flow   " prefill compose, then <C-s>
+:SherpaReview walk through the diff on this branch  " prefill popup, then <C-s>
 :SherpaNext
 ```
 
@@ -165,6 +164,9 @@ when the review ends. No external sync.
 
 `:SherpaChat` (no args) toggles two persistent buffers: `sherpa://log`
 (transcript) and `sherpa://compose` (input). `<C-s>` in compose sends.
+With args, or with an Ex range like `:1,5SherpaChat`, Sherpa opens chat
+and prefills compose instead of sending immediately. Range-prefill uses
+`path:start-end` so you can add the rest of the request before sending.
 
 Compose clears on successful send and survives across turns. Sending
 while a reply is streaming steers the running turn via pi's `steer`
@@ -209,26 +211,22 @@ proposal body so you can edit in place.
 
 ## Tangents
 
-`:SherpaQ` opens a tangent: a mini-conversation that happens in the
-main chat surfaces but is dropped from the active path on end, so
-follow-up turns in the main session don't carry it as context.
+`:SherpaQ` opens a floating editor for a one-shot tangent question.
+Submitting it asks the question in the background without popping open
+chat. If you invoke it with a range, Sherpa includes the selected
+excerpt in the tangent prompt.
 
 Tangents still live in pi's session graph (visible via `/tree`) — they
-aren't deleted, they're just off the leaf path. Starting a tangent
-records a tree anchor; ending it navigates the session back to that
-anchor.
-
-Re-invoking `:SherpaQ` with no args while a tangent is active ends it.
-Any other `:Sherpa*` command also ends it implicitly. The compose
-winbar shows `[Tangent]` while active.
+aren't deleted, they're just restored to the previous leaf once the
+background answer finishes.
 
 ## Patch
 
 `:SherpaPatch` is for hyper-local edits — one function or region at a
-time. It requires a visual range (or an active review item) and
-embeds the excerpt + range in the prompt. The model is instructed to
-stay inside the selection. Use it when you want the agent to touch one
-spot and nothing else.
+time. It opens a floating editor and requires a visual range (or an
+active review item). Sherpa embeds the excerpt + range in the prompt
+and instructs the model to stay inside the selection. Use it when you
+want the agent to touch one spot and nothing else.
 
 ## Clarify
 

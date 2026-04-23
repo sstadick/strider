@@ -5,6 +5,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+from typing import Optional
 
 
 class TmuxNvimHarness:
@@ -129,6 +130,18 @@ class TmuxNvimHarness:
 
     def buffer_lines(self, name: str):
         return self.json_expr(f"getbufline({json.dumps(name)}, 1, '$')")
+
+    def popup_open(self, name: str = "sherpa://prompt") -> bool:
+        return self.expr(f"bufexists('{name}')") == "1"
+
+    def submit_popup(self, text: Optional[str] = None, name: str = "sherpa://prompt",
+                     timeout: float = 3.0, pause: float = 0.3) -> None:
+        self.wait_until(lambda: self.popup_open(name), timeout=timeout)
+        if text is None:
+            self.send("C-s", pause=pause)
+        else:
+            self.send(text, "C-s", pause=pause)
+        self.wait_until(lambda: not self.popup_open(name), timeout=timeout)
 
     def __enter__(self):
         self.start()

@@ -27,6 +27,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat update the fixture app")
+                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.send("C-s", pause=0.3)
                 h.wait_until(
                     lambda: "[diff]" in "\n".join(h.log_lines()),
                     timeout=5.0,
@@ -52,6 +54,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat update the fixture app")
+                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.send("C-s", pause=0.3)
                 h.wait_until(
                     lambda: "[tool] read" in "\n".join(h.log_lines()),
                     timeout=5.0,
@@ -146,6 +150,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat update the fixture app")
+                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.send("C-s", pause=0.3)
                 h.wait_until(
                     lambda: "[tool]" in "\n".join(h.log_lines()),
                     timeout=5.0,

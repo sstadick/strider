@@ -125,6 +125,12 @@ class TmuxPopupTests(unittest.TestCase):
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat add a banner")
                 h.wait_until(
+                    lambda: h.current_state()["buf"] == "sherpa://compose",
+                    timeout=3.0,
+                )
+                self.assertIn("add a banner", "\n".join(h.buffer_lines("sherpa://compose")))
+                h.send("C-s", pause=0.3)
+                h.wait_until(
                     lambda: "[thinking]" in "\n".join(h.log_lines())
                     and "[assistant]" in "\n".join(h.log_lines()),
                     timeout=4.0,
@@ -175,6 +181,18 @@ class TmuxPopupTests(unittest.TestCase):
                 h.ex("SherpaChat")
                 h.wait_until(lambda: not h.lua_bool(visible_expr), timeout=3.0)
 
+    def test_chat_with_range_prefills_pointer(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("edit src/main.tsx")
+                h.ex("1,2SherpaChat")
+                h.wait_until(
+                    lambda: h.current_state()["buf"] == "sherpa://compose",
+                    timeout=3.0,
+                )
+                compose_text = "\n".join(h.buffer_lines("sherpa://compose"))
+                self.assertIn("src/main.tsx:1-2", compose_text)
+
     def test_chat_with_args_does_not_follow_tool_edits(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
@@ -182,6 +200,11 @@ class TmuxPopupTests(unittest.TestCase):
                 h.ex("normal! 2G")
 
                 h.ex("SherpaChat update the fixture app")
+                h.wait_until(
+                    lambda: h.current_state()["buf"] == "sherpa://compose",
+                    timeout=3.0,
+                )
+                h.send("C-s", pause=0.3)
                 h.wait_until(
                     lambda: "Loading fixture app" in (project_root / "src" / "App.tsx").read_text(),
                     timeout=3.0,
@@ -192,8 +215,7 @@ class TmuxPopupTests(unittest.TestCase):
                 )
 
                 state = h.current_state()
-                self.assertTrue(state["buf"].endswith("src/main.tsx"), state)
-                self.assertEqual(2, state["line"], state)
+                self.assertEqual("sherpa://compose", state["buf"], state)
 
     def test_compose_buffer_identity_is_stable(self) -> None:
         # The compose buffer is created once and reused. After a send +
@@ -288,6 +310,7 @@ class TmuxPopupTests(unittest.TestCase):
     def test_empty_review_during_active_session_opens_question_editor(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("SherpaReview explain src/main.tsx")
+            h.submit_popup()
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
             h.ex("SherpaNext")

@@ -110,54 +110,45 @@ Important UX rule:
 
 ### Patch
 
-1. user visually selects a range
-2. user runs `:SherpaPatch <prompt>`
-3. plugin sends `/patch ...` with file, line range, and excerpt context
-4. tool events update the file jump and edit highlighting
-5. edited ranges remain highlighted after the patch
+1. user visually selects a range (or relies on the active review item)
+2. user runs `:SherpaPatch [prompt]`
+3. plugin opens the floating patch editor, prefilled when inline args were given
+4. on submit, plugin sends `/patch ...` with file, line range, and excerpt context
+5. tool events update the file jump and edit highlighting
+6. edited ranges remain highlighted after the patch
 
 ### Tangent
 
-`:SherpaQ` opens a tangent: a mini-conversation that reuses the main
-chat surfaces but is dropped from the active session path on end. The
-tree does the isolation; the UI stays single-pane.
+`:SherpaQ` opens a floating editor for a one-shot tangent. The tangent
+still branches off the current pi leaf, but Sherpa no longer reuses the
+chat surfaces for input.
 
 1. user runs `:SherpaQ [prompt]` (optionally with a visual range)
-2. plugin sends `/q-anchor` to the extension; extension responds with
-   the current leaf messageId via `setStatus("sherpa-q-anchor", ...)`
-3. plugin stores the anchor and flips `q_active = true`; the compose
-   winbar gains a `[Tangent]` badge
-4. if the user provided a prompt, plugin dispatches it as `/prompt ...`
-   (with an excerpt block when a range was given); otherwise plugin
-   opens the compose buffer so the user can type
-5. while `q_active` is true, compose sends route as tangent follow-ups
-   through `/prompt`; a one-shot stashed range is consumed on the
-   first send to include the excerpt
-6. re-invoking `:SherpaQ` with no args ends the tangent: plugin sends
-   `/q-end <anchor>`, extension calls `ctx.navigateTree(anchor)`. The
-   tangent's messages remain in pi's session graph (visible via
-   `/tree`) but are no longer on the leaf path.
-7. any other `:Sherpa*` command implicitly ends an active tangent
-   first via the `send()` guard (skipped when the caller passes
-   `is_q = true`)
-
-Tangent state lives only in the Neovim session — the extension owns no
-tangent concept beyond the two command handlers. Tree navigation is
-idempotent: ending a tangent that never produced a message is a no-op
-because `navigateTree(currentLeaf)` returns early.
+2. plugin opens the floating editor, prefilled when inline args were given
+3. on submit, plugin sends `/q-anchor`; the extension responds with the
+   current leaf messageId via `setStatus("sherpa-q-anchor", ...)`
+4. plugin dispatches the question as `/prompt ...` (with an excerpt block
+   when a range was given), tagging the pending request with the anchor id
+5. the question runs in the background: log state is updated, but chat is
+   not auto-opened
+6. when the answer finishes (success or error), plugin sends
+   `/q-end <anchor>` so the tangent drops off the active session path.
+   The tangent's messages remain in pi's session graph (visible via
+   `/tree`) but are no longer on the active leaf path.
 
 ### Chat
 
-1. user runs `:SherpaChat` (no args) to open the log + compose surfaces,
-   or `:SherpaChat <message>` to send directly
-2. plugin sends `/prompt <message>` if no request is pending, or
+1. user runs `:SherpaChat` (no args) to toggle the log + compose surfaces
+2. `:[range]SherpaChat [message]` opens chat and prefills compose with the
+   range pointer and/or inline text instead of sending immediately
+3. compose `<C-s>` sends `/prompt <message>` if no request is pending, or
    `/steer <message>` to redirect a running turn
-3. assistant handles the request under the user's global pi system
+4. assistant handles the request under the user's global pi system
    prompt; Sherpa adds no mode-specific guidance beyond making
    `sherpa_clarify` available
-4. the compose buffer persists across sends; user can fire off steers
+5. the compose buffer persists across sends; user can fire off steers
    any time, even while a reply is streaming
-5. user can follow up with `:SherpaReview` to walk through the result
+6. user can follow up with `:SherpaReview` to walk through the result
 
 ## Review state model
 
@@ -204,19 +195,19 @@ Purpose:
 ### Input editor
 
 Buffer names:
-- `sherpa://prompt` — used by `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`
+- `sherpa://prompt` — used by `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, `:SherpaQ`
 - `sherpa://compose` — persistent user input buffer used by `:SherpaChat`;
   also hijacked to reply to `sherpa_clarify` questions and to edit
   plan-proposal bodies (the `[Clarify]` badge marks this state)
 - `sherpa://comment` — used by `:SherpaComment`
 
-A centered floating scratch buffer that opens when any text-input command is
-called with no arguments. Renders per-command guidance as `Comment`-highlighted
-virtual lines plus a `<C-s> to submit · <Esc><Esc> to cancel` hint.
-Non-empty arguments still dispatch directly — the editor is purely for the
-no-args path. For `:SherpaReview`, the editor has two modes: when no review is
-active, the first word is parsed as a scope key; when a review is active, the
-text is treated as a question about the current review item.
+A centered floating scratch buffer used by popup-style commands. Renders
+per-command guidance as `Comment`-highlighted virtual lines plus a
+`<C-s> to submit · <Esc><Esc> to cancel` hint. Inline command arguments
+prefill the editor instead of dispatching directly. For `:SherpaReview`,
+the editor has two modes: when no review is active the text describes the
+review scope; when a review is active, the text is treated as a question
+about the current review item.
 
 ## RPC events used by the plugin
 

@@ -37,6 +37,10 @@ class PlanHelperTests(unittest.TestCase):
             timeout=5.0,
         )
 
+    def _submit_review(self, h: TmuxNvimHarness, command: str) -> None:
+        h.ex(command)
+        h.submit_popup()
+
     def _lua_json(self, h: TmuxNvimHarness, expression: str):
         raw = h.expr(f"json_encode(luaeval({json.dumps(expression)}))")
         return json.loads(raw)
@@ -187,7 +191,7 @@ class PlanHelperTests(unittest.TestCase):
         with TmuxNvimHarness(self.repo_root, project) as h:
             # Need the backend up so we have a session. Kick off any
             # review first — we'll overwrite the review state below.
-            h.ex("SherpaReview prime the session")
+            self._submit_review(h, "SherpaReview prime the session")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             h.wait_until(
                 lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
@@ -321,7 +325,7 @@ class PlanHelperTests(unittest.TestCase):
 
             with TmuxNvimHarness(self.repo_root, project) as h:
                 h.ex("edit wide.txt")
-                h.ex("1,60SherpaReview walk through everything")
+                self._submit_review(h, "1,60SherpaReview walk through everything")
                 h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
                 h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2)
 
@@ -348,7 +352,7 @@ class PlanHelperTests(unittest.TestCase):
         # annotation extmark in the stop's buffer.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            h.ex("SherpaReview explain the app")
+            self._submit_review(h, "SherpaReview explain the app")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             h.wait_until(
                 lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
@@ -401,7 +405,7 @@ class PlanHelperTests(unittest.TestCase):
         # next stop clears the previous buffer's annotations.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            h.ex("SherpaReview explain the app")
+            self._submit_review(h, "SherpaReview explain the app")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             h.wait_until(
                 lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
@@ -443,7 +447,7 @@ class PlanHelperTests(unittest.TestCase):
         # /review dispatch required.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            h.ex("SherpaReview explain the app")
+            self._submit_review(h, "SherpaReview explain the app")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             h.wait_until(
                 lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
@@ -473,7 +477,7 @@ class PlanHelperTests(unittest.TestCase):
         # file.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            h.ex("SherpaReview explain the app")
+            self._submit_review(h, "SherpaReview explain the app")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             h.wait_until(
                 lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
@@ -496,7 +500,7 @@ class PlanHelperTests(unittest.TestCase):
         # emits a 2-stop sherpa_plan tool call for this project.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            h.ex("SherpaReview explain the app")
+            self._submit_review(h, "SherpaReview explain the app")
 
             # Wait for the plan to land and planning to finish.
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))

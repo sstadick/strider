@@ -5,8 +5,8 @@ end
 vim.g.loaded_sherpa = 1
 
 vim.api.nvim_create_user_command("SherpaChat", function(opts)
-  require("sherpa").chat(opts.args)
-end, { nargs = "*", desc = "Open or toggle the Sherpa chat surfaces; with args, send the message" })
+  require("sherpa").chat(opts.args, opts)
+end, { nargs = "*", range = true, desc = "Toggle Sherpa chat; with args or a range, open compose prefilled with context" })
 
 vim.api.nvim_create_user_command("SherpaSearch", function(opts)
   require("sherpa").search(opts.args)
@@ -14,11 +14,11 @@ end, { nargs = "*", desc = "Run Sherpa search or open recent searches" })
 
 vim.api.nvim_create_user_command("SherpaReview", function(opts)
   require("sherpa").review(opts.args, opts)
-end, { nargs = "*", range = true, desc = "Start Sherpa review mode or ask about the active review item" })
+end, { nargs = "*", range = true, desc = "Open the Sherpa review editor for the project, current review item, or a visual range" })
 
 vim.api.nvim_create_user_command("SherpaPatch", function(opts)
   require("sherpa").patch(opts.args, opts)
-end, { nargs = "*", range = true, desc = "Apply a selection-scoped Sherpa patch" })
+end, { nargs = "*", range = true, desc = "Open the Sherpa patch editor for a selection or active review item" })
 
 vim.api.nvim_create_user_command("SherpaComment", function(opts)
   require("sherpa").comment(opts.args, opts)
@@ -46,7 +46,7 @@ end, { desc = "Open recent Sherpa searches" })
 
 vim.api.nvim_create_user_command("SherpaQ", function(opts)
   require("sherpa").q(opts.args, opts)
-end, { nargs = "*", range = true, desc = "Ask a tangent that branches off the active session (re-invoke with no args to end)" })
+end, { nargs = "*", range = true, desc = "Open the Sherpa Q editor for a background tangent question" })
 
 vim.api.nvim_create_user_command("SherpaRetry", function()
   require("sherpa").retry()

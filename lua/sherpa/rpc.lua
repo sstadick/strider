@@ -42,6 +42,28 @@ local function decode(line)
   end
 end
 
+-- Build a short inline summary of tool arguments for the log line.
+-- Returns nil when nothing interesting to show.
+local function format_tool_args(tool_name, args)
+  if not args then return nil end
+  local parts = {}
+  if tool_name == "grep" then
+    if args.pattern then table.insert(parts, string.format("%q", args.pattern)) end
+    if args.glob then table.insert(parts, args.glob) end
+    if args.path then table.insert(parts, args.path) end
+  elseif tool_name == "find" then
+    if args.pattern then table.insert(parts, args.pattern) end
+    if args.path then table.insert(parts, args.path) end
+  elseif tool_name == "ls" then
+    if args.path then table.insert(parts, args.path) end
+  elseif tool_name == "subagent" then
+    if args.agent then table.insert(parts, args.agent) end
+    if args.task then table.insert(parts, args.task:sub(1, 80)) end
+  end
+  if #parts == 0 then return nil end
+  return table.concat(parts, " ")
+end
+
 local function append_tool(tool_name, args, lane)
   local path = args and args.path
   if path then
@@ -60,6 +82,14 @@ local function append_tool(tool_name, args, lane)
 
   if tool_name == "bash" and args and args.command then
     ui.append_block("tool", string.format("```bash\n%s\n```", args.command), lane)
+    return
+  end
+
+  -- Tools with a pattern/glob argument (grep, find, ls, etc.): show
+  -- the key args inline so the log is scannable without expanding output.
+  local summary = format_tool_args(tool_name, args)
+  if summary then
+    ui.append({ string.format("[tool] %s %s", tool_name, summary) }, lane)
     return
   end
 

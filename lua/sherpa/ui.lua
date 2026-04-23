@@ -222,7 +222,7 @@ function M.refresh_compose_winbar(lane)
   local left, right = compose_status_line(session and session.progress, lane)
   left = left:gsub("%%", "%%%%")
   local value = right
-    and (left .. "%%=" .. right:gsub("%%", "%%%%"))
+    and (left .. "%=" .. right:gsub("%%", "%%%%"))
     or left
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
@@ -944,6 +944,70 @@ function M.append_tool_output(text, lang, lane)
       hl_eol = true,
       priority = 4,
     })
+  end
+end
+
+-- Live streaming block: an unformatted region at the tail of the log
+-- buffer that receives incremental text (e.g. thinking tokens). When
+-- finalized, the raw text is replaced with a properly styled block.
+
+function M.start_live_block(lane)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  if not session then return end
+  if session.live_block then
+    M.finalize_live_block(nil, nil, lane)
+  end
+  local buf = M.ensure_log_buffer(lane)
+  session.live_block = {
+    buf = buf,
+    start_row = vim.api.nvim_buf_line_count(buf),
+    lines_in_buffer = 0,
+  }
+end
+
+-- Idempotent variant: reuse an existing live block if one is already
+-- active. Used by text_delta streaming where many deltas share one
+-- block, vs start_live_block which force-creates (used by thinking).
+function M.ensure_live_block(lane)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  if not session or session.live_block then return end
+  local buf = M.ensure_log_buffer(lane)
+  session.live_block = {
+    buf = buf,
+    start_row = vim.api.nvim_buf_line_count(buf),
+    lines_in_buffer = 0,
+  }
+end
+
+function M.update_live_block(full_text, lane)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  local lb = session and session.live_block
+  if not lb then return end
+  if not vim.api.nvim_buf_is_valid(lb.buf) then return end
+  local lines = vim.split(full_text or "", "\n", { plain = true })
+  while #lines > 1 and lines[#lines] == "" do
+    table.remove(lines)
+  end
+  if #lines == 0 then return end
+  vim.api.nvim_buf_set_lines(lb.buf, lb.start_row, lb.start_row + lb.lines_in_buffer, false, lines)
+  lb.lines_in_buffer = #lines
+  scroll_log_windows(lb.buf)
+end
+
+function M.finalize_live_block(label, text, lane)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  if not session then return end
+  local lb = session.live_block
+  session.live_block = nil
+  if lb and vim.api.nvim_buf_is_valid(lb.buf) and lb.lines_in_buffer > 0 then
+    vim.api.nvim_buf_set_lines(lb.buf, lb.start_row, lb.start_row + lb.lines_in_buffer, false, {})
+  end
+  if label and text and vim.trim(text) ~= "" then
+    M.append_block(label, text, lane)
   end
 end
 

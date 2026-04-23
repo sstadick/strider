@@ -1,5 +1,4 @@
 # Ready for work
-- Stream all text back, but especially thinking
 - Render reads nicely / fence them even when they are given back as line ranges
     - just codeblock fece them.
     - I think every tool call needs a codeblock fence actually, otherwise the markdown tries to render all kinds of weird stuff
@@ -19,6 +18,7 @@
 - Buffer per question? seems like it could be useful to get multiple streams going at once... but we do already have two
 
 # Done
+- Stream all text back, but especially thinking
 - Make use of vim.notify for when Patch and Q are done so the user can open the chat
     - bonus, notify if chat is not open and the model hits the end of a turn.
 - If the "coding" pane is in use, don't "follow along" with tool use. and if that's too hard, maybe dont' follow along at all, and only do jump to locations for the review itself.

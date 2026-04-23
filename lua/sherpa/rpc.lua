@@ -182,7 +182,7 @@ local function flush_thinking_index(session, pending, content_index, lane)
     return
   end
   ensure_stream_log(pending, lane)
-  ui.append_block("thinking", text, lane)
+  ui.finalize_live_block("thinking", text, lane)
 end
 
 local function flush_all_thinking(session, pending, lane)
@@ -218,12 +218,14 @@ local function handle_message_update(event, lane)
 
   if delta.type == "thinking_start" then
     session.assistant_thinking[delta.contentIndex or 0] = ""
+    ui.start_live_block(lane)
     return
   end
   if delta.type == "thinking_delta" then
     local index = delta.contentIndex or 0
     session.assistant_thinking[index] = (session.assistant_thinking[index] or "") .. (delta.delta or "")
     ensure_stream_log(pending, lane)
+    ui.update_live_block(session.assistant_thinking[index], lane)
     return
   end
   if delta.type == "thinking_end" then
@@ -242,12 +244,15 @@ local function handle_message_update(event, lane)
     return
   end
   session.assistant_text = (session.assistant_text or "") .. (delta.delta or "")
+  session.message_text = (session.message_text or "") .. (delta.delta or "")
 
   -- Auto-open the log on the first streamed delta of any answer-producing
   -- operation, without stealing focus. Idempotent: open_log is a no-op
   -- when the log is already visible. One-per-pending guard avoids
   -- reopening a manually-closed log mid-stream.
   ensure_stream_log(pending, lane)
+  ui.ensure_live_block(lane)
+  ui.update_live_block(session.message_text, lane)
 
   if pending.operation == "review" then
     review.capture_assistant_text(session.assistant_text, { partial = true })
@@ -296,6 +301,8 @@ local function handle_message_end(event, lane)
   local session = state.get_session(lane)
 
   flush_all_thinking(session, pending, lane)
+  ui.finalize_live_block(nil, nil, lane)
+  session.message_text = nil
 
   -- Do not consume pending on tool-call turns or user messages.
   -- Only the final text-bearing assistant message should consume it.

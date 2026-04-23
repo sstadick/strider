@@ -46,6 +46,7 @@ local function new_session(cwd, lane)
   return {
     assistant_text = nil,
     assistant_thinking = {},
+    message_text = nil,
     chunk_lines = {},
     chunk_path = nil,
     comment_buffers = {},

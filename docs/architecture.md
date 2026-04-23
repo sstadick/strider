@@ -208,6 +208,20 @@ about the current review item.
 
 ### From pi
 
+- `message_update`
+  - carries incremental streaming events inside
+    `assistantMessageEvent`: `thinking_start`, `thinking_delta`,
+    `thinking_end`, `text_delta`, `done`, `error`
+  - thinking deltas stream raw text into a live block in the log buffer;
+    on `thinking_end` the raw text is replaced with a styled
+    `[thinking]` block
+  - text deltas stream per-message text into a live block (reset on each
+    `message_end`, separate from the cross-message `assistant_text`
+    accumulator used by reviews); on `message_end` the raw text is
+    replaced with a styled `[assistant]` block
+  - `done` / `error` flush any remaining thinking blocks
+  - the live block mechanism is shared: `start_live_block` (force-create,
+    used by thinking) vs `ensure_live_block` (idempotent, used by text)
 - `message_end`
   - capture assistant text
   - update log
@@ -311,6 +325,9 @@ Working today:
   (no more silent hangs)
 - cycle thinking level via `<S-Tab>` in compose (mirrors pi's TUI);
   active level shown as `Model: …/… (level)` on the log winbar
+- live streaming: thinking and assistant text tokens render in the log
+  as unformatted plain text during generation, then finalize into styled
+  blocks when the stream completes
 - rich log rendering: `[diff]` blocks for edit tools (green/red per
   line); syntax-highlighted fenced output for read/write via
   treesitter + render-markdown; muted plain output for bash/grep/

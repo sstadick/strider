@@ -318,12 +318,15 @@ export default function (pi: ExtensionAPI) {
 		);
 	}
 
-	pi.on("session_start", async (_event: any, ctx: any) => {
+	pi.on("session_start", async (event: any, ctx: any) => {
 		state = emptyState();
 		// Start with Sherpa's op-scoped tools hidden. They'll be turned
 		// on by startOperation when a command that needs them runs.
 		applyOperationTools(ctx, undefined);
 		updateWidget(ctx);
+		if (event.reason === "new" || event.reason === "fork" || event.reason === "resume") {
+			ctx.ui.setStatus("sherpa-session", event.reason);
+		}
 	});
 
 	pi.on("before_agent_start", async (event: any, _ctx: any) => {

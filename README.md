@@ -89,6 +89,15 @@ extensions instead of the model. Beyond Sherpa's own `/prompt`,
   (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`); also bound to
   `<S-Tab>` in compose, mirroring pi's own shift-tab. Pi clamps the
   level to what the current model supports.
+- `/compact [instructions]` — manually compact context
+- `/new` — start a fresh session (log gets a visual separator)
+- `/fork [entryId]` — fork the session from a conversation point
+- `/export [path]` — export session to HTML
+- `/resume [sessionPath]` — switch to a saved session
+
+Some pi TUI commands (`/session`, `/copy`, `/share`, `/hotkeys`,
+`/changelog`, `/settings`) have no RPC equivalent and are not available
+in Sherpa.
 
 ## Examples
 

@@ -1,13 +1,4 @@
 # Ready for work
-- Render reads nicely / fence them even when they are given back as line ranges
-    - just codeblock fece them.
-    - I think every tool call needs a codeblock fence actually, otherwise the markdown tries to render all kinds of weird stuff
-    - there is also something sus happening with multi-tool call turns, like the ordering is getting messsed up
-    - (don't act on this yet, needs more invstigatin) there's something annoying happening "thinking" where some code-looking elements are getting highlighting
-    - diffs are getting rendered really weird. I think they need code block fencing, it's weird that they have the `tool edit` and then a ---[diff] marker
-        - also it's the background that should be green / red, not the text
-- The "sherpa_clarify" blocks so I can't see the plan that I'm asked to provide a response on
-- Add a way to hard reset the agent
 - something is wrong with the log header bar, it is showing the lat assistant message or something, but then I can't see amount of context used, which is very important
 - take a pass at simplifying / speeding up each turn, I think we have quite a bit of tooling between each request, and the model, and each reply and the user
 - for the SherpaLogFlow, need some indicator that it's working. Probably need to refactor and unify the SherpaCompose header to not be ont eh compose buffer or something.
@@ -17,8 +8,18 @@
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on
 - Buffer per question? seems like it could be useful to get multiple streams going at once... but we do already have two
+- Some pi TUI commands (/session, /copy, /share, /hotkeys, /changelog, /settings) have no RPC equivalent
 
 # Done
+- The "sherpa_clarify" blocks so I can't see the plan that I'm asked to provide a response on
+    - fixed: force vim.cmd("redraw") before vim.ui.select in plan proposal picker
+- Add a way to hard reset the agent
+    - /new sends the new_session RPC type; /fork, /compact, /export, /resume also routed
+    - session changes render a visual separator in the log
+- Running /compact does nothing - are we stripping commands or something?
+    - fixed: /compact is a dedicated RPC type, not a prompt-routed extension command
+- multi-tool call ordering: results now insert next to their headers via extmark tracking
+- diffs use ```diff fencing and treesitter diff parser for highlighting
 - Stream all text back, but especially thinking
 - Make use of vim.notify for when Patch and Q are done so the user can open the chat
     - bonus, notify if chat is not open and the model hits the end of a turn.
@@ -42,3 +43,10 @@
 - Don't do .5s second ticks
     - move the timer to the right side of the bar so it isn't jumping around
 - Running /compact does nothing - are we stripping commands or something?
+    - fixed: dedicated RPC type, not a prompt-routed command
+- Render reads nicely / fence them even when they are given back as line ranges
+    - just codeblock fence them.
+    - every tool call gets a codeblock fence
+    - multi-tool call ordering fixed via extmark tracking
+    - (don't act on this yet, needs more invstigatin) there's something annoying happening "thinking" where some code-looking elements are getting highlighting
+    - diffs use ```diff fencing with treesitter parser for highlighting

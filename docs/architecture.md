@@ -241,9 +241,12 @@ about the current review item.
     highlighted in the `SherpaLogPath` accent color)
   - track touched paths
 - `tool_execution_end`
+  - output is inserted directly after the matching tool header
+    (via extmark tracking) rather than appended at the end of the log,
+    so parallel tool calls render header+result pairs in order
   - for `edit`: parse `result.details.diff` and render it as a
-    `[diff]` block with per-line `+` / `-` / context coloring
-    (matches the gutter-sign palette)
+    `[diff]` block fenced with ` ```diff ` so treesitter's diff parser
+    handles syntax highlighting
   - for `read` / `write`: inline `result.content[*].text` wrapped in
     a fenced markdown code block tagged with the language derived
     from the file's extension (lua, rust, typescript, …) so
@@ -287,8 +290,15 @@ about the current review item.
 ### To pi
 
 - `prompt` — user prompt message (slash-commands are passed through
-  verbatim so pi routes them to the matching extension command; other
-  text is wrapped in `/prompt`)
+- `prompt` — user prompt message (extension commands like `/models`,
+  `/tree`, `/thinking` are passed through verbatim so pi routes them to
+  the matching extension command handler; other text is wrapped in
+  `/prompt`)
+- `new_session` — start a fresh session (`/new` in compose)
+- `fork` — fork the current session from an entry (`/fork [entryId]`)
+- `compact` — compact context (`/compact [instructions]`)
+- `export_html` — export session to HTML (`/export [path]`)
+- `switch_session` — resume a saved session (`/resume [path]`)
 - `steer` — mid-turn user redirect delivered after the current assistant
   turn's tool calls complete. Slash-commands are rejected as steers
   (pi forbids them).
@@ -329,12 +339,16 @@ Working today:
 - live streaming: thinking and assistant text tokens render in the log
   as unformatted plain text during generation, then finalize into styled
   blocks when the stream completes
-- rich log rendering: `[diff]` blocks for edit tools (green/red per
-  line); syntax-highlighted fenced output for read/write via
+- rich log rendering: `[diff]` blocks for edit tools (treesitter diff
+  highlighting); syntax-highlighted fenced output for read/write via
   treesitter + render-markdown; fenced plain output for bash/grep/
   ls/find; last-15-lines only with a `N earlier lines…` note above
   when earlier lines are hidden; accent-colored file paths in
-  `[tool]` headers
+  `[tool]` headers; parallel tool results inserted next to their
+  headers via extmark tracking
+- session management: `/new`, `/fork`, `/compact`, `/export`, `/resume`
+  route to their dedicated RPC message types; session changes render
+  a visual separator (`──── New session ────`) in the log
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests on bundled fixture projects
 

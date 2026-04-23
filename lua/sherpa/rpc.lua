@@ -705,6 +705,14 @@ local function handle_extension_ui(event, lane)
     local session = state.get_session(lane)
     local previous = session.status[event.statusKey]
     state.set_status(event.statusKey, event.statusText, lane)
+    if event.statusKey == "sherpa-session" then
+      local reason = event.statusText
+      if reason == "new" or reason == "fork" or reason == "resume" then
+        local labels = { new = "New session", fork = "Forked session", resume = "Resumed session" }
+        ui.append_block("sherpa", string.format("──── %s ────", labels[reason] or reason), lane)
+      end
+      return
+    end
     if event.statusKey == "sherpa" and event.statusText ~= previous then
       if event.statusText == "complete" then
         ui.append({ "[sherpa] Workflow complete", "" }, lane)
@@ -1074,6 +1082,24 @@ function M.send_steer(arg1, arg2)
     message = message,
     type = "steer",
   }
+  vim.fn.chansend(session.job_id, vim.json.encode(payload) .. "\n")
+  return true
+end
+
+-- Send a raw RPC command (not a prompt). Used for session-management
+-- commands like new_session, fork, compact that are dedicated RPC
+-- message types rather than slash-commands routed through prompt.
+function M.send_command(cmd_type, extra, lane)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  if not session or not session.job_id then
+    ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
+    return false
+  end
+  local payload = vim.tbl_extend("force", extra or {}, {
+    id = state.next_request_id(lane),
+    type = cmd_type,
+  })
   vim.fn.chansend(session.job_id, vim.json.encode(payload) .. "\n")
   return true
 end

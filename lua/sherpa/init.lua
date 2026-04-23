@@ -320,16 +320,36 @@ local function is_prompt_slash(text)
   return name and sherpa_prompt_commands[name] or false
 end
 
+-- Session-management and built-in commands that are dedicated RPC
+-- message types, not extension commands routed through prompt.
+local rpc_commands = {
+  new     = { type = "new_session" },
+  fork    = { type = "fork", args_key = "entryId" },
+  compact = { type = "compact", args_key = "customInstructions" },
+  export  = { type = "export_html", args_key = "outputPath" },
+  resume  = { type = "switch_session", args_key = "sessionPath" },
+}
+
 local function dispatch_prompt(text)
   -- If the user typed a slash-command (e.g. /models, /tree, /compact),
   -- pass it through verbatim so pi routes it to the matching extension
   -- command instead of wrapping it in /prompt (which would send the
   -- slash-command to the LLM as prose and never fire the handler).
   if text:sub(1, 1) == "/" then
+    local name, rest = text:match("^/([%w%-_]+)%s*(.*)$")
+    local rpc_def = name and rpc_commands[name]
+    if rpc_def then
+      local extra = {}
+      if rpc_def.args_key and rest and rest ~= "" then
+        extra[rpc_def.args_key] = rest
+      end
+      rpc.send_command(rpc_def.type, extra)
+      return
+    end
     if is_prompt_slash(text) then
       send(text, text, { operation = "prompt", open_log = true })
     else
-      -- Pi built-in or extension command (e.g. /compact, /models).
+      -- Pi built-in or extension command (e.g. /models).
       -- Still needs a pending request so streamed response events
       -- aren't silently dropped by the message_update handler.
       send(text, text, { operation = "command", open_log = true })

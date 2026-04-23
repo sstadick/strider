@@ -1,9 +1,4 @@
 # Ready for work
-- Make use of vim.notify for when Patch and Q are done so the user can open the chat
-    - bonus, notify if chat is not open and the model hits the end of a turn.
-- Don't markdown render the compose buffer
-- Don't do .5s second ticks
-    - move the timer to the right side of the bar so it isn't jumping around
 - Stream all text back, but especially thinking
 - Render reads nicely / fence them even when they are given back as line ranges
     - just codeblock fece them.
@@ -16,11 +11,16 @@
 - Add a way to hard reset the agent
 - something is wrong with the log header bar, it is showing the lat assistant message or something, but then I can't see amount of context used, which is very important
 - take a pass at simplifying / speeding up each turn, I think we have quite a bit of tooling between each request, and the model, and each reply and the user
+- for the SherpaLogFlow, need some indicator that it's working. Probably need to refactor and unify the SherpaCompose header to not be ont eh compose buffer or something.
+- How do I expose notifications / "SherpaQ running" even when in insert mode and such?
+    - Looks like it shows up after leaving insert mode, cool
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on
 
 # Done
+- Make use of vim.notify for when Patch and Q are done so the user can open the chat
+    - bonus, notify if chat is not open and the model hits the end of a turn.
 - If the "coding" pane is in use, don't "follow along" with tool use. and if that's too hard, maybe dont' follow along at all, and only do jump to locations for the review itself.
 - The first review message in each file does not get the inlay help text
 - :SherpaComment should pop up our multiline buffer
@@ -37,3 +37,6 @@
     - I think SherpaReview should actually get it's own dedicated pi process as well. Any follow up questions in the review hit that specific process, kill it on review end, have a review summary (with comments) forwarded to the main chat.
     - This second log buffer, let's just call it SherpaLogFlow (for the Q, Search, Patch) and SherpaLogReview (for the review tool), open and close it when that command is called. 
     - the goal is to make the flow easier for programmers to stay in the zone, by moving Q/Prompt/Search to pop ups and non-interactable (easily) chat, and no default window pops, that lets the programmer stay programming longer. By moving these to their own processes, it gives us something to do while larger prompts are running in SherpaChat
+- Don't markdown render the compose buffer
+- Don't do .5s second ticks
+    - move the timer to the right side of the bar so it isn't jumping around

@@ -168,16 +168,13 @@ local function stop_spin(lane)
 end
 
 -- Format a hrtime-based nanosecond duration as a short human string
--- that fits in the winbar. Under 60s: `3.4s`. Under an hour: `1m24s`.
--- Otherwise: `1h12m`. Small durations get a decimal so the timer looks
--- alive even before a full second ticks over.
+-- that fits in the winbar. Under 60s: `3s`. Under an hour: `1m24s`.
+-- Otherwise: `1h12m`. 
 local function format_elapsed(start_ns)
   if not start_ns then return nil end
   local now = vim.uv.hrtime()
   local elapsed_s = (now - start_ns) / 1e9
-  if elapsed_s < 10 then
-    return string.format("%.1fs", elapsed_s)
-  elseif elapsed_s < 60 then
+  if elapsed_s < 60 then
     return string.format("%ds", math.floor(elapsed_s))
   elseif elapsed_s < 3600 then
     local minutes = math.floor(elapsed_s / 60)
@@ -210,10 +207,11 @@ local function compose_status_line(progress, lane)
   local op_prefix = activity_prefixes[progress.operation] or "Sherpa"
   local label = progress.spin_label or activity_labels(progress.operation)[1]
   local elapsed = format_elapsed(progress.started_at)
+  local left = string.format("%s%s: %s", prefix, op_prefix, label)
   if elapsed then
-    return string.format("%s%s: %s · %s", prefix, op_prefix, label, elapsed)
+    return left, elapsed
   end
-  return string.format("%s%s: %s", prefix, op_prefix, label)
+  return left
 end
 
 function M.refresh_compose_winbar(lane)
@@ -221,7 +219,11 @@ function M.refresh_compose_winbar(lane)
   local session = state.get_session(lane)
   local buf = session and session.compose_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  local value = compose_status_line(session and session.progress, lane):gsub("%%", "%%%%")
+  local left, right = compose_status_line(session and session.progress, lane)
+  left = left:gsub("%%", "%%%%")
+  local value = right
+    and (left .. "%%=" .. right:gsub("%%", "%%%%"))
+    or left
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       pcall(function() vim.wo[win].winbar = value end)
@@ -233,8 +235,8 @@ end
 -- label to the next one. Between rotations, the winbar still refreshes
 -- (so the elapsed-time suffix updates smoothly) but the label stays
 -- put. That keeps the label readable while the timer feels alive.
-local SPIN_INTERVAL_MS = 500
-local SPIN_ROTATE_EVERY = 4   -- 4 * 500ms = 2s per label
+local SPIN_INTERVAL_MS = 1000
+local SPIN_ROTATE_EVERY = 2   -- 2 * 1000ms = 2s per label
 
 local function spin_tick(lane)
   local spin = spin_state(lane)
@@ -453,7 +455,6 @@ function M.ensure_compose_buffer(on_send)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].swapfile = false
   vim.bo[buf].bufhidden = "hide"
-  vim.bo[buf].filetype = "markdown"
   session.compose_buf = buf
 
   local function render_hint()

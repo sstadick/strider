@@ -258,6 +258,29 @@ local function has_tool_use(message)
   return false
 end
 
+local function notify_turn_done(pending, lane)
+  if not pending then return end
+  local op = pending.operation
+  -- Flow-lane operations: notify when SherpaLogFlow isn't visible.
+  if state.is_flow_operation(op) then
+    if ui.log_is_visible("flow") then return end
+    local messages = {
+      q = "SherpaQ answer is ready",
+      search = "SherpaSearch complete",
+      patch = "SherpaPatch complete",
+    }
+    local icon = "🟢 "
+    ui.notify(icon .. (messages[op] or "Sherpa flow complete"), vim.log.levels.INFO)
+    return
+  end
+  -- Chat (main lane): notify when SherpaLog isn't visible.
+  if lane == "main" then
+    if ui.log_is_visible("main") then return end
+    ui.notify("Sherpa chat complete", vim.log.levels.INFO)
+  end
+  -- Review pops up on its own, no notify needed.
+end
+
 local function handle_message_end(event, lane)
   local message = event.message
   local text = strip_sherpa_footer(text_content(message))
@@ -323,6 +346,7 @@ local function handle_message_end(event, lane)
 
   if not text then
     ui.finish_activity("Sherpa request complete (no text)", "success", lane)
+    notify_turn_done(pending, lane)
     return
   end
 
@@ -332,7 +356,7 @@ local function handle_message_end(event, lane)
     state.set_summary(summary, lane)
     ui.append_block("assistant", summary, lane)
     ui.finish_activity(summary, "success", lane)
-    ui.notify("SherpaSearch ready", vim.log.levels.INFO) 
+    notify_turn_done(pending, lane)
     return
   end
 
@@ -346,9 +370,7 @@ local function handle_message_end(event, lane)
   end
 
   ui.finish_activity("Sherpa request complete", "success", lane)
-  if pending and pending.operation == "q" then
-    ui.notify("SherpaQ answer ready", vim.log.levels.INFO) 
-  end
+  notify_turn_done(pending, lane)
   if completing_review_summary then
     vim.schedule(function()
       local ok, mod = pcall(require, "sherpa")

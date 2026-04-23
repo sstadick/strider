@@ -6,6 +6,8 @@ for _, lane in ipairs(lane_order) do
   lane_set[lane] = true
 end
 
+local flow_operations = {q = true, search = true, patch = true}
+
 local function plugin_root()
   local source = debug.getinfo(1, "S").source:sub(2)
   local dir = vim.fs.dirname(source)
@@ -229,6 +231,10 @@ function M.consume_pending_clarify(lane)
   local p = session.pending_clarify
   session.pending_clarify = nil
   return p
+end
+
+function M.is_flow_operation(op)
+  return flow_operations[op] == true
 end
 
 return M

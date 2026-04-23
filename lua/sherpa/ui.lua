@@ -1238,6 +1238,11 @@ end
 -- happens in the compose buffer, owned by the caller.
 function M.clarify_plan_proposal_picker(cb)
   vim.schedule(function()
+    -- Force a redraw so the plan body appended just before this picker
+    -- is actually painted on screen. Without this, Neovim can batch
+    -- the scheduled callbacks and show the select dialog before the
+    -- log buffer visually updates.
+    vim.cmd("redraw")
     vim.ui.select({ "Accept", "Modify", "Reject" }, {
       prompt = "Plan proposal — accept, modify, or reject?",
     }, function(choice)

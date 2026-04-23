@@ -6,18 +6,29 @@ local ui = require("sherpa.ui")
 
 local M = {}
 
+local MAIN_LANE = "main"
+local FLOW_LANE = "flow"
+local REVIEW_LANE = "review"
+
 local function current_cwd()
   return vim.fn.getcwd()
 end
 
-local function ensure_backend()
+local function ensure_backend(lane)
+  lane = state.normalize_lane(lane)
   local cwd = current_cwd()
-  local session = state.get_session()
-  if session and session.cwd ~= cwd then
-    rpc.stop()
-    state.clear_session()
+  for _, session_lane in ipairs(state.lanes()) do
+    local session = state.get_session(session_lane)
+    if session and session.cwd ~= cwd then
+      rpc.stop(session_lane)
+      state.clear_session(session_lane)
+    end
   end
-  return rpc.start(cwd)
+  return rpc.start(cwd, lane)
+end
+
+local function ensure_session(lane)
+  return state.ensure_session(lane, current_cwd())
 end
 
 local function activity_title(operation)
@@ -32,39 +43,42 @@ local function activity_title(operation)
   return titles[operation] or "Sherpa running..."
 end
 
-local function activity_target(operation)
-  if (operation == "review" or operation == "plan") and review.has_active_review() then
+local function activity_target(operation, lane)
+  if lane == REVIEW_LANE and (operation == "review" or operation == "plan")
+      and (review.has_active_review() or review.is_awaiting_summary()) then
     return "review"
   end
   return "log"
 end
 
 local function send(command, user_text, opts)
-  if not ensure_backend() then
+  opts = opts or {}
+  local lane = state.normalize_lane(opts.lane)
+  if not ensure_backend(lane) then
     return false
   end
-  if opts and opts.open_log then
+  if opts.open_log then
     -- Don't steal focus from whatever the user is currently doing (e.g.
     -- composing in sherpa://compose). If the log isn't visible yet,
     -- opening it should be silent.
-    ui.open_log({ preserve_focus = true })
+    ui.open_log({ preserve_focus = true }, lane)
   end
-  local operation = opts and opts.operation or nil
-  state.set_pending_request(operation, opts and opts.metadata)
+  local operation = opts.operation or nil
+  state.set_pending_request(operation, opts.metadata, lane)
   if operation then
-    ui.start_activity(activity_title(operation), activity_target(operation), operation)
+    ui.start_activity(activity_title(operation), activity_target(operation, lane), operation, lane)
   end
-  local ok = rpc.send_prompt(command)
+  local ok = rpc.send_prompt(command, lane)
   if not ok then
-    state.set_pending_request(nil)
-    ui.finish_activity("Sherpa request failed to start", "error")
+    state.set_pending_request(nil, nil, lane)
+    ui.finish_activity("Sherpa request failed to start", "error", lane)
     return false
   end
   if user_text and user_text ~= "" then
-    ui.append_block("user", user_text)
+    ui.append_block("user", user_text, lane)
   end
-  if opts and opts.debug_prompt and opts.debug_prompt ~= "" then
-    ui.append_block("review-prompt", opts.debug_prompt)
+  if opts.debug_prompt and opts.debug_prompt ~= "" then
+    ui.append_block("review-prompt", opts.debug_prompt, lane)
   end
   return true
 end
@@ -136,13 +150,47 @@ end
 
 local function send_review_prompt(prompt, label)
   return send("/review " .. prompt, label, {
+    lane = REVIEW_LANE,
     operation = "review",
     debug_prompt = prompt,
+    open_log = true,
   })
 end
 
+local function append_review_summary_to_main(summary)
+  if not summary or summary == "" then
+    return false
+  end
+  ensure_session(MAIN_LANE)
+  local lines = {
+    "Review summary",
+    "",
+    summary,
+  }
+  local comment_lines = review.pending_comment_lines()
+  if comment_lines and #comment_lines > 0 then
+    table.insert(lines, "")
+    table.insert(lines, "Review comments")
+    table.insert(lines, "")
+    vim.list_extend(lines, comment_lines)
+  end
+  ui.append_block("assistant", table.concat(lines, "\n"), MAIN_LANE)
+  return true
+end
+
+function M.complete_review_summary(summary)
+  summary = trimmed(summary)
+  if summary == "" then
+    return false
+  end
+  append_review_summary_to_main(summary)
+  ui.hide_log(REVIEW_LANE)
+  rpc.stop(REVIEW_LANE)
+  return true
+end
+
 local function start_selection_review(opts)
-  if not ensure_backend() then
+  if not ensure_backend(REVIEW_LANE) then
     return false
   end
   local item = review.start_planned("selection", opts)
@@ -164,15 +212,17 @@ local function start_free_review(focus)
     ui.notify("SherpaReview requires input", vim.log.levels.WARN)
     return false
   end
-  if not ensure_backend() then
+  if not ensure_backend(REVIEW_LANE) then
     return false
   end
   if not review.start_planning(text) then
     return false
   end
   return send("/plan " .. text, text, {
+    lane = REVIEW_LANE,
     operation = "plan",
     debug_prompt = text,
+    open_log = true,
   })
 end
 
@@ -206,15 +256,17 @@ function M.retry()
     return false
   end
   if review.is_planning() then
-    local session = state.get_session()
+    local session = state.get_session(REVIEW_LANE)
     local goal = session and session.review and session.review.goal
     if not goal or goal == "" then
       ui.notify("Cannot retry plan: review goal is missing", vim.log.levels.WARN)
       return false
     end
     return send("/plan " .. goal, goal, {
+      lane = REVIEW_LANE,
       operation = "plan",
       debug_prompt = goal,
+      open_log = true,
     })
   end
   ui.notify("Nothing to retry — explanations are pre-computed.", vim.log.levels.INFO)
@@ -231,8 +283,8 @@ end
 -- update triggered on the TS side refreshes the `(level)` suffix on
 -- the winbar's model line.
 function M.cycle_thinking()
-  if not ensure_backend() then return end
-  rpc.send_prompt("/thinking")
+  if not ensure_backend(MAIN_LANE) then return end
+  rpc.send_prompt(MAIN_LANE, "/thinking")
 end
 
 -- :SherpaStop — cancel the current in-flight turn via pi's abort RPC.
@@ -242,11 +294,11 @@ end
 -- user a quick notify so the interval between keypress and message_end
 -- doesn't feel like nothing happened.
 function M.stop()
-  if not state.peek_pending_request() then
+  if not state.peek_pending_request(MAIN_LANE) then
     ui.notify("Sherpa is idle — nothing to stop", vim.log.levels.INFO)
     return
   end
-  if rpc.abort() then
+  if rpc.abort(MAIN_LANE) then
     ui.notify("Stopping Sherpa…", vim.log.levels.INFO)
   end
 end
@@ -300,7 +352,7 @@ local dispatch_compose
 -- here so we don't have to expose that helper — we just write the JSON
 -- to the same channel via the rpc module.
 local function reply_to_clarify(pending, text)
-  local session = state.get_session()
+  local session = state.get_session(MAIN_LANE)
   if not session or not session.job_id then return false end
   local body = { type = "extension_ui_response", id = pending.id, value = text }
   local ok, encoded = pcall(vim.json.encode, body)
@@ -310,7 +362,7 @@ local function reply_to_clarify(pending, text)
 end
 
 local function cancel_clarify(pending)
-  local session = state.get_session()
+  local session = state.get_session(MAIN_LANE)
   if not session or not session.job_id then return false end
   local body = { type = "extension_ui_response", id = pending.id, cancelled = true }
   local ok, encoded = pcall(vim.json.encode, body)
@@ -323,8 +375,8 @@ end
 -- compose buffer's send callback is the standard dispatch_compose,
 -- which checks pending_clarify first and routes appropriately.
 function M.open_compose_for_clarify()
-  if not ensure_backend() then return end
-  ui.open_log({ preserve_focus = true })
+  if not ensure_backend(MAIN_LANE) then return end
+  ui.open_log({ preserve_focus = true }, MAIN_LANE)
   ui.open_compose(function(text)
     return dispatch_compose(text)
   end)
@@ -334,30 +386,30 @@ end
 -- cancel it. Otherwise fall through so the keymap's usual behavior
 -- (stopinsert) runs.
 function M.cancel_pending_clarify_if_any()
-  local pending = state.consume_pending_clarify()
+  local pending = state.consume_pending_clarify(MAIN_LANE)
   if not pending then return false end
-  state.set_status("sherpa-clarify", nil)
-  ui.refresh_compose_winbar()
+  state.set_status("sherpa-clarify", nil, MAIN_LANE)
+  ui.refresh_compose_winbar(MAIN_LANE)
   cancel_clarify(pending)
-  ui.append({ "[sherpa] clarify cancelled" })
+  ui.append({ "[sherpa] clarify cancelled" }, MAIN_LANE)
   return true
 end
 
 function dispatch_compose(text)
   text = trimmed(text)
   if text == "" then return false end
-  if not ensure_backend() then return false end
+  if not ensure_backend(MAIN_LANE) then return false end
 
   -- A pending clarify takes precedence over everything: the model is
   -- explicitly waiting for a reply on the extension_ui_request channel.
   -- Whatever the user types becomes the answer. No tangent, no steer,
   -- no new prompt turn. Clears the badge on success.
-  local pending_clarify = state.peek_pending_clarify()
+  local pending_clarify = state.peek_pending_clarify(MAIN_LANE)
   if pending_clarify then
-    state.consume_pending_clarify()
-    state.set_status("sherpa-clarify", nil)
-    ui.refresh_compose_winbar()
-    ui.append_block("user", text)
+    state.consume_pending_clarify(MAIN_LANE)
+    state.set_status("sherpa-clarify", nil, MAIN_LANE)
+    ui.refresh_compose_winbar(MAIN_LANE)
+    ui.append_block("user", text, MAIN_LANE)
     if not reply_to_clarify(pending_clarify, text) then
       ui.notify("Failed to send clarify reply", vim.log.levels.ERROR)
       return false
@@ -365,7 +417,7 @@ function dispatch_compose(text)
     return true
   end
 
-  local pending = state.peek_pending_request()
+  local pending = state.peek_pending_request(MAIN_LANE)
   if pending then
     -- Extension commands (/models, /tree, etc.) are not allowed as steer
     -- messages — pi requires them to come through prompt. Reject with a
@@ -376,8 +428,8 @@ function dispatch_compose(text)
     end
     -- Steer: the pending request stays the same, the model gets the
     -- new message mid-stream. No new operation, no new activity.
-    ui.append_block("user", text)
-    local ok = rpc.send_steer(text)
+    ui.append_block("user", text, MAIN_LANE)
+    local ok = rpc.send_steer(MAIN_LANE, text)
     if not ok then
       ui.notify("Steer failed to send", vim.log.levels.ERROR)
       return false
@@ -404,11 +456,11 @@ function M.chat(prompt, opts)
     end
   end
 
-  if not ensure_backend() then
+  if not ensure_backend(MAIN_LANE) then
     return
   end
 
-  ui.open_log({ preserve_focus = true })
+  ui.open_log({ preserve_focus = true }, MAIN_LANE)
   ui.ensure_compose_buffer(function(text)
     return dispatch_compose(text)
   end)
@@ -432,9 +484,9 @@ function M.search(prompt)
     return
   end
   send("/search " .. prompt, prompt, {
+    lane = FLOW_LANE,
     operation = "search",
     metadata = { prompt = prompt },
-    open_log = true,
   })
 end
 
@@ -521,7 +573,10 @@ local function dispatch_patch(prompt, range)
     "</PATCH_EXCERPT>",
     "User request: " .. prompt,
   }
-  send("/patch " .. table.concat(lines, "\n"), prompt, { operation = "patch" })
+  send("/patch " .. table.concat(lines, "\n"), prompt, {
+    lane = FLOW_LANE,
+    operation = "patch",
+  })
 end
 
 local function resolve_patch_range(opts)
@@ -537,7 +592,7 @@ local function resolve_patch_range(opts)
   return range
 end
 
-local function dispatch_q(prompt, range, anchor_id)
+local function dispatch_q(prompt, range)
   local message
   if range then
     local lines = {
@@ -553,7 +608,7 @@ local function dispatch_q(prompt, range, anchor_id)
     message = prompt
   end
   send("/prompt " .. message, prompt, {
-    metadata = { q_anchor_id = anchor_id },
+    lane = FLOW_LANE,
     operation = "q",
   })
 end
@@ -563,24 +618,18 @@ local function submit_q_request(prompt, range)
   if prompt == "" then
     return
   end
-  if not ensure_backend() then
+  if not ensure_backend(FLOW_LANE) then
     return
   end
-  rpc.send_q_anchor(function(anchor_id)
-    if not anchor_id then
-      ui.notify("Cannot start tangent: no conversation to branch from", vim.log.levels.WARN)
-      return
-    end
-    dispatch_q(prompt, range, anchor_id)
-  end)
+  dispatch_q(prompt, range)
 end
 
 function M.q(prompt, opts)
   prompt = trimmed(prompt)
   local range = range_from_opts(opts)
   local hint_lines = {
-    "Ask a tangent question without opening chat.",
-    "Answers stay in the background for now.",
+    "Ask a side question without opening chat.",
+    "Answers land in SherpaLogFlow.",
   }
   local pointer = range_pointer(range)
   if pointer then
@@ -634,14 +683,15 @@ function M.next_step()
 
   if finished then
     local prompt = review.finish()
-    ui.open_log()
-    local comment_lines = review.pending_comment_lines()
-    if comment_lines then
-      ui.append_block("review-comments", table.concat(comment_lines, "\n"))
-    end
     if prompt then
+      ui.open_log({ preserve_focus = true }, REVIEW_LANE)
+      local comment_lines = review.pending_comment_lines()
+      if comment_lines then
+        ui.append_block("review-comments", table.concat(comment_lines, "\n"), REVIEW_LANE)
+      end
       send_review_prompt(prompt, "Summarize unresolved review comments")
     else
+      M.complete_review_summary("Review complete. No unresolved comments.")
       ui.notify("Sherpa review complete", vim.log.levels.INFO)
     end
   end
@@ -669,7 +719,7 @@ function M.comment(text, opts)
   end
 
   local function log_comment(comment)
-    ui.append_block("review", string.format("%s:%d-%d\n%s", comment.path, comment.startLine, comment.endLine, comment.text))
+    ui.append_block("review", string.format("%s:%d-%d\n%s", comment.path, comment.startLine, comment.endLine, comment.text), REVIEW_LANE)
   end
 
   review.open_comment_editor(range, log_comment, {
@@ -686,7 +736,25 @@ function M.review_items()
 end
 
 function M.searches()
-  search.history_picker()
+  search.history_picker(FLOW_LANE)
+end
+
+function M.flow_log()
+  if ui.log_is_visible(FLOW_LANE) then
+    ui.hide_log(FLOW_LANE)
+    return
+  end
+  ensure_session(FLOW_LANE)
+  ui.open_log({}, FLOW_LANE)
+end
+
+function M.review_log()
+  if ui.log_is_visible(REVIEW_LANE) then
+    ui.hide_log(REVIEW_LANE)
+    return
+  end
+  ensure_session(REVIEW_LANE)
+  ui.open_log({}, REVIEW_LANE)
 end
 
 return M

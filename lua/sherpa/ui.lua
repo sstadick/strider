@@ -134,8 +134,21 @@ local activity_prefixes = {
   review = "Review",
   search = "Search",
 }
-local spin_index = 0
-local spin_timer = nil
+local spin_states = {}
+
+local function normalize_lane(lane)
+  return state.normalize_lane(lane)
+end
+
+local function spin_state(lane)
+  lane = normalize_lane(lane)
+  spin_states[lane] = spin_states[lane] or {
+    index = 0,
+    tick_count = 0,
+    timer = nil,
+  }
+  return spin_states[lane], lane
+end
 
 local function activity_echo(message)
   return pcall(vim.api.nvim_echo, { { "sherpa: " .. message } }, false, {})
@@ -145,11 +158,12 @@ local function activity_labels(operation)
   return spin_labels[operation] or spin_labels.default
 end
 
-local function stop_spin()
-  if spin_timer then
-    spin_timer:stop()
-    spin_timer:close()
-    spin_timer = nil
+local function stop_spin(lane)
+  local spin = spin_state(lane)
+  if spin.timer then
+    spin.timer:stop()
+    spin.timer:close()
+    spin.timer = nil
   end
 end
 
@@ -176,8 +190,8 @@ local function format_elapsed(start_ns)
   end
 end
 
-local function compose_status_line(progress)
-  local session = state.get_session()
+local function compose_status_line(progress, lane)
+  local session = state.get_session(lane)
   local statuses = session and session.status or {}
   local clarify_badge = statuses["sherpa-clarify"]
   local q_badge = statuses["sherpa-q"]
@@ -206,11 +220,12 @@ local function compose_status_line(progress)
   return string.format("%s%s: %s", prefix, op_prefix, label)
 end
 
-function M.refresh_compose_winbar()
-  local session = state.get_session()
+function M.refresh_compose_winbar(lane)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
   local buf = session and session.compose_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  local value = compose_status_line(session and session.progress):gsub("%%", "%%%%")
+  local value = compose_status_line(session and session.progress, lane):gsub("%%", "%%%%")
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       pcall(function() vim.wo[win].winbar = value end)
@@ -224,38 +239,40 @@ end
 -- put. That keeps the label readable while the timer feels alive.
 local SPIN_INTERVAL_MS = 500
 local SPIN_ROTATE_EVERY = 4   -- 4 * 500ms = 2s per label
-local tick_count = 0
 
-local function spin_tick()
-  local session = state.get_session()
+local function spin_tick(lane)
+  local spin = spin_state(lane)
+  local session = state.get_session(lane)
   local progress = session and session.progress
   if not progress then
+    stop_spin(lane)
     return
   end
-  tick_count = tick_count + 1
-  if tick_count % SPIN_ROTATE_EVERY ~= 0 then
+  spin.tick_count = spin.tick_count + 1
+  if spin.tick_count % SPIN_ROTATE_EVERY ~= 0 then
     -- Label unchanged; just refresh the winbar so the elapsed updates.
-    M.refresh_compose_winbar()
+    M.refresh_compose_winbar(lane)
     return
   end
   local labels = activity_labels(progress.operation)
-  spin_index = (spin_index % #labels) + 1
-  progress.spin_label = labels[spin_index]
-  M.refresh_compose_winbar()
+  spin.index = (spin.index % #labels) + 1
+  progress.spin_label = labels[spin.index]
+  M.refresh_compose_winbar(lane)
 end
 
-local function start_spin(progress)
-  stop_spin()
+local function start_spin(progress, lane)
+  local spin = spin_state(lane)
+  stop_spin(lane)
   local labels = activity_labels(progress and progress.operation)
-  spin_index = 1
+  spin.index = 1
   if progress then
-    progress.spin_label = labels[spin_index]
+    progress.spin_label = labels[spin.index]
   end
-  M.refresh_compose_winbar()
-  tick_count = 0
-  spin_timer = vim.uv.new_timer()
-  spin_timer:start(SPIN_INTERVAL_MS, SPIN_INTERVAL_MS, vim.schedule_wrap(function()
-    spin_tick()
+  M.refresh_compose_winbar(lane)
+  spin.tick_count = 0
+  spin.timer = vim.uv.new_timer()
+  spin.timer:start(SPIN_INTERVAL_MS, SPIN_INTERVAL_MS, vim.schedule_wrap(function()
+    spin_tick(lane)
   end))
 end
 
@@ -263,7 +280,14 @@ local function notify(message, level)
   vim.notify(message, level or vim.log.levels.INFO, { title = "sherpa" })
 end
 
-local function log_name()
+local function log_name(lane)
+  lane = normalize_lane(lane)
+  if lane == "flow" then
+    return "sherpa://SherpaLogFlow"
+  end
+  if lane == "review" then
+    return "sherpa://SherpaLogReview"
+  end
   return state.get_config().log_buffer_name
 end
 
@@ -289,14 +313,14 @@ local function configure_scratch_buffer(buf, filetype)
   end
 end
 
-function M.ensure_log_buffer()
-  local session = state.get_session()
+function M.ensure_log_buffer(lane)
+  local session = state.get_session(lane)
   if session.log_buf and vim.api.nvim_buf_is_valid(session.log_buf) then
     return session.log_buf
   end
 
   local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_name(buf, log_name())
+  vim.api.nvim_buf_set_name(buf, log_name(lane))
   configure_scratch_buffer(buf, "markdown")
   -- Setting `filetype = "markdown"` on a hidden scratch buffer doesn't
   -- always run the full FileType pipeline. Replay it manually, but do so
@@ -315,7 +339,7 @@ function M.ensure_log_buffer()
 end
 
 function M.ensure_review_buffer()
-  local session = state.get_session()
+  local session = state.get_session("review")
   if session.review_buf and vim.api.nvim_buf_is_valid(session.review_buf) then
     return session.review_buf
   end
@@ -340,8 +364,8 @@ end
 -- via setWidget("sherpa", [...]). We flatten meaningful lines (Model,
 -- Context, Cost, last response, etc.) joined with ` · `. Empty widget
 -- renders a minimal idle label.
-local function format_log_winbar()
-  local session = state.get_session()
+local function format_log_winbar(lane)
+  local session = state.get_session(lane)
   local widget = session and session.widget or {}
   local parts = {}
   for _, line in ipairs(widget) do
@@ -361,11 +385,11 @@ end
 
 -- Apply the winbar to every window currently showing the log buffer.
 -- Idempotent; safe to call on every widget update.
-function M.refresh_log_winbar()
-  local session = state.get_session()
+function M.refresh_log_winbar(lane)
+  local session = state.get_session(lane)
   local buf = session and session.log_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  local value = format_log_winbar()
+  local value = format_log_winbar(lane)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       pcall(function() vim.wo[win].winbar = value end)
@@ -373,17 +397,18 @@ function M.refresh_log_winbar()
   end
 end
 
-function M.open_log(opts)
+function M.open_log(opts, lane)
   opts = opts or {}
+  lane = normalize_lane(lane)
   local previous = opts.preserve_focus and (target_window() or vim.api.nvim_get_current_win()) or nil
-  local buf = M.ensure_log_buffer()
+  local buf = M.ensure_log_buffer(lane)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       if not opts.preserve_focus then
         vim.api.nvim_set_current_win(win)
       end
       scroll_log_windows(buf)
-      M.refresh_log_winbar()
+      M.refresh_log_winbar(lane)
       return
     end
   end
@@ -400,14 +425,14 @@ function M.open_log(opts)
     vim.wo[win].concealcursor = "nc"
   end)
   scroll_log_windows(buf)
-  M.refresh_log_winbar()
+  M.refresh_log_winbar(lane)
   if previous and vim.api.nvim_win_is_valid(previous) then
     vim.api.nvim_set_current_win(previous)
   end
 end
 
-function M.hide_log()
-  local session = state.get_session()
+function M.hide_log(lane)
+  local session = state.get_session(lane)
   close_windows_for_buffer(session and session.log_buf)
 end
 
@@ -612,6 +637,20 @@ end
 -- True if either chat surface (log or compose) has a live window.
 -- Used by :SherpaChat to decide between open and hide on the no-args
 -- toggle path.
+function M.log_is_visible(lane)
+  local session = state.get_session(lane)
+  local buf = session and session.log_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return false
+  end
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      return true
+    end
+  end
+  return false
+end
+
 function M.chat_is_visible()
   local session = state.get_session()
   if not session then return false end
@@ -633,8 +672,8 @@ function M.hide_chat()
   M.hide_log()
 end
 
-function M.append(lines)
-  local buf = M.ensure_log_buffer()
+function M.append(lines, lane)
+  local buf = M.ensure_log_buffer(lane)
   local items = log_lines(lines)
   if #items == 0 then
     return
@@ -660,9 +699,9 @@ local log_label_hl = {
   ["review-comments"] = log_tool_hl,
 }
 
-function M.append_block(label, text)
+function M.append_block(label, text, lane)
   ensure_chunk_style()
-  local buf = M.ensure_log_buffer()
+  local buf = M.ensure_log_buffer(lane)
 
   -- Thin rule above every block makes it easy to scan past tool-call
   -- noise when looking for the most recent assistant answer. Match pi's
@@ -760,15 +799,15 @@ end
 -- path + range range substring highlighted distinctly. `range` is an
 -- already-formatted suffix like ":1-40" or nil. The tool name keeps
 -- the default tool color; only the path/range pops visually.
-function M.append_tool_line(tool_name, path, range)
-  local session = state.get_session()
+function M.append_tool_line(tool_name, path, range, lane)
+  local session = state.get_session(lane)
   local buf = session and session.log_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     -- Fall back to plain append so we don't silently lose the line;
     -- the log buffer may not exist yet during very early dispatches.
     local line = string.format("[tool] %s %s%s", tool_name, path or "",
       range or "")
-    M.append({ line })
+    M.append({ line }, lane)
     return
   end
 
@@ -778,7 +817,7 @@ function M.append_tool_line(tool_name, path, range)
   local full_line = prefix .. path_text .. range_text
 
   local start_row = vim.api.nvim_buf_line_count(buf)
-  M.append({ full_line })
+  M.append({ full_line }, lane)
 
   -- The line we just appended sits one above the trailing blank that
   -- `M.append` keeps at end-of-buffer; its row is start_row.
@@ -807,12 +846,12 @@ end
 -- Empty text is skipped (not every tool produces output worth showing).
 local TOOL_OUTPUT_TAIL = 15
 
-function M.append_tool_output(text, lang)
+function M.append_tool_output(text, lang, lane)
   if type(text) ~= "string" then return end
   local trimmed = vim.trim(text)
   if trimmed == "" then return end
 
-  local session = state.get_session()
+  local session = state.get_session(lane)
   local buf = session and session.log_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -878,7 +917,7 @@ function M.append_tool_output(text, lang)
   table.insert(lines, "")
 
   local start_row = vim.api.nvim_buf_line_count(buf)
-  M.append(lines)
+  M.append(lines, lane)
 
   -- Style the `N earlier lines…` marker as italic muted so it reads
   -- like a note rather than code / prose.
@@ -922,7 +961,7 @@ local function configure_review_window(win)
 end
 
 function M.show_review()
-  local session = state.get_session()
+  local session = state.get_session("review")
   local buf = M.ensure_review_buffer()
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
@@ -947,7 +986,7 @@ function M.show_review()
 end
 
 function M.set_review_lines(lines)
-  local session = state.get_session()
+  local session = state.get_session("review")
   local buf = M.ensure_review_buffer()
   local win = M.show_review()
   local items = log_lines(lines or {})
@@ -968,20 +1007,20 @@ local function set_buffer_busy(buf, busy)
   end
 end
 
-local function progress_buffers(target)
+local function progress_buffers(target, lane)
   local bufs = {}
   if target == "review" or target == "both" then
     table.insert(bufs, M.ensure_review_buffer())
   end
   if target == "log" or target == "both" then
-    table.insert(bufs, M.ensure_log_buffer())
+    table.insert(bufs, M.ensure_log_buffer(lane))
   end
   return bufs
 end
 
-function M.start_activity(title, target, operation)
-  local session = state.get_session()
-  M.finish_activity(nil, "cancel")
+function M.start_activity(title, target, operation, lane)
+  local session = state.get_session(lane)
+  M.finish_activity(nil, "cancel", lane)
   session.progress = {
     title = title,
     target = target or "log",
@@ -991,7 +1030,7 @@ function M.start_activity(title, target, operation)
     -- even while the spin label is between rotations.
     started_at = vim.uv.hrtime(),
   }
-  for _, buf in ipairs(progress_buffers(session.progress.target)) do
+  for _, buf in ipairs(progress_buffers(session.progress.target, lane)) do
     set_buffer_busy(buf, true)
   end
   -- Keep the one-shot activity echo, but move the rotating status out of the
@@ -999,22 +1038,22 @@ function M.start_activity(title, target, operation)
   vim.defer_fn(function()
     activity_echo(title)
   end, 10)
-  start_spin(session.progress)
+  start_spin(session.progress, lane)
 end
 
-function M.finish_activity(message, status)
-  local session = state.get_session()
+function M.finish_activity(message, status, lane)
+  local session = state.get_session(lane)
   local progress = session and session.progress
   if not progress then
     return
   end
-  for _, buf in ipairs(progress_buffers(progress.target)) do
+  for _, buf in ipairs(progress_buffers(progress.target, lane)) do
     set_buffer_busy(buf, false)
   end
   activity_echo(message or progress.title)
   session.progress = nil
-  stop_spin()
-  M.refresh_compose_winbar()
+  stop_spin(lane)
+  M.refresh_compose_winbar(lane)
 end
 
 local editor_ns = vim.api.nvim_create_namespace("sherpa-editor-hint")
@@ -1314,7 +1353,7 @@ close_windows_for_buffer = function(buf)
 end
 
 function M.hide_review()
-  local session = state.get_session()
+  local session = state.get_session("review")
   close_windows_for_buffer(session and session.review_buf)
   if session then
     session.review_win = nil
@@ -1331,6 +1370,9 @@ local function refresh_buffer(buf)
 end
 
 local function clear_chunk_highlight(session)
+  if not session then
+    return
+  end
   local buf = session.highlight_buf
   if buf and vim.api.nvim_buf_is_valid(buf) then
     vim.api.nvim_buf_clear_namespace(buf, chunk_namespace, 0, -1)
@@ -1424,8 +1466,8 @@ function M.jump_to_file(path, line)
   end)
 end
 
-function M.highlight_lines(path, lines)
-  local session = state.get_session()
+function M.highlight_lines(path, lines, lane)
+  local session = state.get_session(lane) or state.ensure_session(lane or "main", vim.fn.getcwd())
   local buf = get_buffer(path)
   if not buf then
     return
@@ -1465,7 +1507,7 @@ function M.highlight_lines(path, lines)
   session.highlight_buf = buf
 end
 
-function M.highlight_range(path, first_line, last_line)
+function M.highlight_range(path, first_line, last_line, lane)
   local buf = get_buffer(path)
   if not buf then
     return
@@ -1478,7 +1520,7 @@ function M.highlight_range(path, first_line, last_line)
   for line = start_line, end_line do
     table.insert(lines, { line = line, kind = "added" })
   end
-  M.highlight_lines(path, lines)
+  M.highlight_lines(path, lines, lane)
 end
 
 -- Wrap a text blob into roughly `width`-char lines. Splits on whitespace;
@@ -1592,7 +1634,7 @@ function M.set_stop_annotations(item)
 end
 
 function M.clear_comment_markers()
-  local session = state.get_session()
+  local session = state.get_session("review")
   if not session then
     return
   end
@@ -1605,7 +1647,7 @@ function M.clear_comment_markers()
 end
 
 function M.add_comment_marker(path, line)
-  local session = state.get_session()
+  local session = state.get_session("review")
   local buf = get_buffer(path)
   if not buf then
     return

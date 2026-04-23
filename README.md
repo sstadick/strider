@@ -50,8 +50,10 @@ require("sherpa").setup()
 | Command | What it does |
 |---|---|
 | `:SherpaSearch {prompt}` | Structured code search (picker + quickfix) |
-| `:SherpaSearches` | Reopen recent search result sets |
-| `:SherpaReview [prompt]` | Open the review popup; submit to start a walkthrough or ask about the current stop |
+| `:SherpaSearches` | Reopen recent flow-lane search result sets |
+| `:SherpaLogFlow` | Toggle the flow log used by Q/Search/Patch |
+| `:SherpaReview [prompt]` | Open the review popup; submit to start a dedicated review-lane walkthrough or ask about the current stop |
+| `:SherpaLogReview` | Toggle the dedicated review log |
 | `:'<,'>SherpaReview [prompt]` | Open the review popup scoped to the selected range |
 | `:SherpaNext` / `:SherpaPrev` | Walk review stops |
 | `:SherpaReviewItems` | Pick any stop from the plan |
@@ -60,8 +62,8 @@ require("sherpa").setup()
 | `:SherpaComments` | Browse recorded review comments |
 | `:SherpaPatch [prompt]` | Open the patch popup for the current review item |
 | `:'<,'>SherpaPatch [prompt]` | Open the patch popup for a visual selection |
-| `:SherpaQ [prompt]` | Open the Q popup and run a background tangent question |
-| `:'<,'>SherpaQ [prompt]` | Open the Q popup with a selection-scoped tangent |
+| `:SherpaQ [prompt]` | Open the Q popup and run a background flow-lane question |
+| `:'<,'>SherpaQ [prompt]` | Open the Q popup with a selection-scoped flow-lane question |
 | `:SherpaChat` | Toggle the chat log + compose buffers |
 | `:[range]SherpaChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:SherpaStop` | Abort the current in-flight turn |
@@ -69,9 +71,11 @@ require("sherpa").setup()
 
 `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, `:SherpaQ`, and
 `:SherpaComment` use floating editors. Submit with `<C-s>`, cancel with
-`<Esc><Esc>`. `:SherpaChat` keeps the persistent log + compose buffers:
-no-args toggles them, while args/ranges prefill compose instead of
-sending immediately.
+`<Esc><Esc>`. `:SherpaChat` keeps the persistent main log + compose
+buffers; `:SherpaQ`, `:SherpaSearch`, and `:SherpaPatch` run on a
+separate flow lane whose transcript lives in `:SherpaLogFlow`.
+`:SherpaReview` runs on its own dedicated review lane whose transcript
+lives in `:SherpaLogReview`.
 
 ## Slash commands in compose
 
@@ -211,22 +215,28 @@ proposal body so you can edit in place.
 
 ## Tangents
 
-`:SherpaQ` opens a floating editor for a one-shot tangent question.
-Submitting it asks the question in the background without popping open
-chat. If you invoke it with a range, Sherpa includes the selected
-excerpt in the tangent prompt.
+`:SherpaQ` opens a floating editor for a one-shot side question.
+Submitting it asks the question on Sherpa's separate flow lane without
+popping open main chat. If you invoke it with a range, Sherpa includes
+the selected excerpt in the prompt.
 
-Tangents still live in pi's session graph (visible via `/tree`) — they
-aren't deleted, they're just restored to the previous leaf once the
-background answer finishes.
+Answers land in `:SherpaLogFlow`. Q no longer branches the main chat
+session tree.
+
+## Review lane
+
+`:SherpaReview` uses its own dedicated pi process. Planning, in-review
+questions, and the final review-summary turn all stay on that review
+lane. When the review ends, Sherpa forwards the summary back into the
+main chat transcript and stops the review backend.
 
 ## Patch
 
 `:SherpaPatch` is for hyper-local edits — one function or region at a
 time. It opens a floating editor and requires a visual range (or an
 active review item). Sherpa embeds the excerpt + range in the prompt
-and instructs the model to stay inside the selection. Use it when you
-want the agent to touch one spot and nothing else.
+and instructs the model to stay inside the selection. Patch runs on the
+flow lane; transcript/tool output lands in `:SherpaLogFlow`.
 
 ## Clarify
 
@@ -234,15 +244,16 @@ During `:SherpaChat` and `:SherpaPatch`, the model may pause to ask a
 clarifying question, propose a plan, or confirm a destructive action
 (via the `sherpa_clarify` tool).
 
-Questions and plan bodies both render inline in the chat log — no
-floating editors. The compose buffer is hijacked for the reply,
-marked with a `[Clarify]` badge on the winbar. `<C-s>` submits,
-`<Esc><Esc>` rejects — the model treats cancellation as "stop."
+On main chat, questions and plan bodies render inline in the chat log
+and the compose buffer is hijacked for the reply, marked with a
+`[Clarify]` badge on the winbar. `<C-s>` submits, `<Esc><Esc>` rejects.
+
+On the flow lane (`:SherpaQ`, `:SherpaSearch`, `:SherpaPatch`), clarify
+prompts stay popup-based and their transcript lands in `:SherpaLogFlow`.
 
 Plan proposals pair the `[plan]` body block with an Accept / Modify /
-Reject picker. Modify seeds the compose buffer with the proposal body
-so you can edit the plan in place and submit; Reject sends
-cancellation.
+Reject picker. Modify opens an editor seeded with the proposal body;
+Reject sends cancellation.
 
 Confirmations (yes/no) still surface via a plain `vim.ui.select`
 picker — no keyboard-to-compose roundtrip, just a pick.

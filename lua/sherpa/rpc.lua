@@ -6,6 +6,27 @@ local ui = require("sherpa.ui")
 
 local M = {}
 
+local function normalize_lane(lane)
+  return state.normalize_lane(lane)
+end
+
+local function resolve_lane_and_cwd(arg1, arg2)
+  if state.is_lane(arg1) then
+    return normalize_lane(arg1), arg2
+  end
+  return normalize_lane(arg2), arg1
+end
+
+local function resolve_lane_and_payload(arg1, arg2)
+  if arg2 == nil then
+    return "main", arg1
+  end
+  if state.is_lane(arg1) then
+    return normalize_lane(arg1), arg2
+  end
+  return normalize_lane(arg2), arg1
+end
+
 local function command_list()
   local config = state.get_config()
   local cmd = vim.deepcopy(config.pi_cmd)
@@ -21,7 +42,7 @@ local function decode(line)
   end
 end
 
-local function append_tool(tool_name, args)
+local function append_tool(tool_name, args, lane)
   local path = args and args.path
   if path then
     if tool_name == "read" then
@@ -30,19 +51,19 @@ local function append_tool(tool_name, args)
       local range = limit
         and string.format(":%d-%d", start_line, start_line + limit - 1)
         or string.format(":%d", start_line)
-      ui.append_tool_line(tool_name, path, range)
+      ui.append_tool_line(tool_name, path, range, lane)
       return
     end
-    ui.append_tool_line(tool_name, path, nil)
+    ui.append_tool_line(tool_name, path, nil, lane)
     return
   end
 
   if tool_name == "bash" and args and args.command then
-    ui.append_block("tool", string.format("bash\n%s", args.command))
+    ui.append_block("tool", string.format("bash\n%s", args.command), lane)
     return
   end
 
-  ui.append({ string.format("[tool] %s", tool_name) })
+  ui.append({ string.format("[tool] %s", tool_name) }, lane)
 end
 
 local function text_content(message)
@@ -87,7 +108,7 @@ local function absolute_path(session, path)
   return vim.fs.joinpath(session.cwd, path)
 end
 
-local function handle_response(event)
+local function handle_response(event, lane)
   if event.success then
     return
   end
@@ -97,8 +118,8 @@ local function handle_response(event)
   -- handle_message_end). Both paths log into the buffer so the user
   -- always has a record beyond the fleeting notify.
   local reason = event.errorMessage or "Sherpa RPC request failed"
-  ui.append_block("error", reason)
-  ui.finish_activity(reason, "error")
+  ui.append_block("error", reason, lane)
+  ui.finish_activity(reason, "error", lane)
   ui.notify(reason, vim.log.levels.ERROR)
 end
 
@@ -116,14 +137,14 @@ local function q_anchor_id(pending)
   return anchor ~= "" and anchor or nil
 end
 
-local function finish_q_turn(pending)
+local function finish_q_turn(pending, lane)
   local anchor = q_anchor_id(pending)
   if anchor then
-    M.send_q_end(anchor)
+    M.send_q_end(anchor, lane)
   end
 end
 
-local function handle_extension_error(event)
+local function handle_extension_error(event, lane)
   local reason = event.error or "Sherpa extension error"
   -- Collapse multi-line reasons to the first non-empty line for the
   -- notify + activity echo; put the full text in the [error] block so
@@ -132,24 +153,27 @@ local function handle_extension_error(event)
   for line in reason:gmatch("[^\r\n]+") do
     if vim.trim(line) ~= "" then first_line = line; break end
   end
-  ui.append_block("error", reason)
-  ui.finish_activity(first_line, "error")
+  ui.append_block("error", reason, lane)
+  ui.finish_activity(first_line, "error", lane)
   ui.notify(first_line, vim.log.levels.ERROR)
   -- Clear the pending request so the activity spinner actually stops
   -- and the next send doesn't think a turn is still in flight.
-  local pending = state.consume_pending_request()
-  finish_q_turn(pending)
+  local pending = state.consume_pending_request(lane)
+  finish_q_turn(pending, lane)
 end
 
-local function ensure_stream_log(pending)
+local function ensure_stream_log(pending, lane)
+  if lane ~= "main" then
+    return
+  end
   if not pending or pending.log_opened or pending.operation == "plan" or pending.operation == "q" then
     return
   end
   pending.log_opened = true
-  ui.open_log({ preserve_focus = true })
+  ui.open_log({ preserve_focus = true }, lane)
 end
 
-local function flush_thinking_index(session, pending, content_index)
+local function flush_thinking_index(session, pending, content_index, lane)
   if not session then
     return
   end
@@ -163,11 +187,11 @@ local function flush_thinking_index(session, pending, content_index)
   if text == "" then
     return
   end
-  ensure_stream_log(pending)
-  ui.append_block("thinking", text)
+  ensure_stream_log(pending, lane)
+  ui.append_block("thinking", text, lane)
 end
 
-local function flush_all_thinking(session, pending)
+local function flush_all_thinking(session, pending, lane)
   if not session then
     return
   end
@@ -182,20 +206,20 @@ local function flush_all_thinking(session, pending)
     return (tonumber(a) or 0) < (tonumber(b) or 0)
   end)
   for _, index in ipairs(indices) do
-    flush_thinking_index(session, pending, index)
+    flush_thinking_index(session, pending, index, lane)
   end
 end
 
-local function handle_message_update(event)
+local function handle_message_update(event, lane)
   local delta = event.assistantMessageEvent
   if not delta then
     return
   end
-  local pending = state.peek_pending_request()
+  local pending = state.peek_pending_request(lane)
   if not pending then
     return
   end
-  local session = state.get_session()
+  local session = state.get_session(lane)
   session.assistant_thinking = session.assistant_thinking or {}
 
   if delta.type == "thinking_start" then
@@ -205,7 +229,7 @@ local function handle_message_update(event)
   if delta.type == "thinking_delta" then
     local index = delta.contentIndex or 0
     session.assistant_thinking[index] = (session.assistant_thinking[index] or "") .. (delta.delta or "")
-    ensure_stream_log(pending)
+    ensure_stream_log(pending, lane)
     return
   end
   if delta.type == "thinking_end" then
@@ -213,11 +237,11 @@ local function handle_message_update(event)
     if (not session.assistant_thinking[index] or session.assistant_thinking[index] == "") and delta.content then
       session.assistant_thinking[index] = delta.content
     end
-    flush_thinking_index(session, pending, index)
+    flush_thinking_index(session, pending, index, lane)
     return
   end
   if delta.type == "done" or delta.type == "error" then
-    flush_all_thinking(session, pending)
+    flush_all_thinking(session, pending, lane)
     return
   end
   if delta.type ~= "text_delta" then
@@ -229,7 +253,7 @@ local function handle_message_update(event)
   -- operation, without stealing focus. Idempotent: open_log is a no-op
   -- when the log is already visible. One-per-pending guard avoids
   -- reopening a manually-closed log mid-stream.
-  ensure_stream_log(pending)
+  ensure_stream_log(pending, lane)
 
   if pending.operation == "review" then
     review.capture_assistant_text(session.assistant_text, { partial = true })
@@ -248,13 +272,13 @@ local function has_tool_use(message)
   return false
 end
 
-local function handle_message_end(event)
+local function handle_message_end(event, lane)
   local message = event.message
   local text = strip_sherpa_footer(text_content(message))
-  local pending = state.peek_pending_request()
-  local session = state.get_session()
+  local pending = state.peek_pending_request(lane)
+  local session = state.get_session(lane)
 
-  flush_all_thinking(session, pending)
+  flush_all_thinking(session, pending, lane)
 
   -- Do not consume pending on tool-call turns or user messages.
   -- Only the final text-bearing assistant message should consume it.
@@ -265,7 +289,7 @@ local function handle_message_end(event)
     return
   end
 
-  pending = state.consume_pending_request()
+  pending = state.consume_pending_request(lane)
   session.assistant_text = nil
   session.assistant_thinking = {}
 
@@ -278,10 +302,10 @@ local function handle_message_end(event)
   local stop_reason = message.stopReason
   if stop_reason == "error" or stop_reason == "aborted" then
     local reason = message.errorMessage or (stop_reason == "aborted" and "Turn aborted" or "Model request failed")
-    ui.append_block("error", reason)
+    ui.append_block("error", reason, lane)
     local level = stop_reason == "aborted" and "cancel" or "error"
-    ui.finish_activity(reason, level)
-    finish_q_turn(pending)
+    ui.finish_activity(reason, level, lane)
+    finish_q_turn(pending, lane)
     if stop_reason == "error" then
       ui.notify(reason, vim.log.levels.ERROR)
     end
@@ -295,14 +319,14 @@ local function handle_message_end(event)
   if pending and pending.operation == "plan" then
     if text and text ~= "" then
       review.capture_plan_message(text)
-      ui.append_block("assistant", text)
+      ui.append_block("assistant", text, lane)
     end
     if review.has_active_review() and review.is_planning() then
       ui.notify("Sherpa could not produce a plan — try rephrasing.", vim.log.levels.ERROR)
-      ui.finish_activity("Sherpa plan failed", "error")
+      ui.finish_activity("Sherpa plan failed", "error", lane)
       return
     end
-    ui.finish_activity("Sherpa plan complete", "success")
+    ui.finish_activity("Sherpa plan complete", "success", lane)
     vim.schedule(function()
       local ok, mod = pcall(require, "sherpa")
       if ok and mod and mod.dispatch_first_review then
@@ -313,27 +337,38 @@ local function handle_message_end(event)
   end
 
   if not text then
-    ui.finish_activity("Sherpa request complete (no text)", "success")
-    finish_q_turn(pending)
+    ui.finish_activity("Sherpa request complete (no text)", "success", lane)
+    finish_q_turn(pending, lane)
     return
   end
 
   if pending and pending.operation == "search" then
-    local result_set = search.handle_response(text, pending.metadata)
+    local result_set = search.handle_response(text, pending.metadata, lane)
     local summary = search.summary_text(result_set)
-    state.set_summary(summary)
-    ui.append_block("assistant", summary)
-    ui.finish_activity(summary, "success")
+    state.set_summary(summary, lane)
+    ui.append_block("assistant", summary, lane)
+    ui.finish_activity(summary, "success", lane)
     return
   end
 
-  state.set_summary(text:gsub("\n", " "))
-  ui.append_block("assistant", text)
+  state.set_summary(text:gsub("\n", " "), lane)
+  ui.append_block("assistant", text, lane)
+  local completing_review_summary = lane == "review"
+    and pending and pending.operation == "review"
+    and review.is_awaiting_summary()
   if pending and pending.operation == "review" then
     review.capture_assistant_text(text)
   end
-  ui.finish_activity("Sherpa request complete", "success")
-  finish_q_turn(pending)
+  ui.finish_activity("Sherpa request complete", "success", lane)
+  if completing_review_summary then
+    vim.schedule(function()
+      local ok, mod = pcall(require, "sherpa")
+      if ok and mod and mod.complete_review_summary then
+        mod.complete_review_summary(text)
+      end
+    end)
+  end
+  finish_q_turn(pending, lane)
 end
 
 local function track_tool_path(session, event)
@@ -422,9 +457,9 @@ local function read_range(event)
   return start, start + limit - 1
 end
 
-local function handle_tool_start(event)
-  local session = state.get_session()
-  append_tool(event.toolName, event.args)
+local function handle_tool_start(event, lane)
+  local session = state.get_session(lane)
+  append_tool(event.toolName, event.args, lane)
 
   -- Cache args for Sherpa planning tools — tool_execution_end events do not
   -- carry args, so we have to capture them here while they're available.
@@ -437,7 +472,7 @@ local function handle_tool_start(event)
   if not path then
     return
   end
-  state.record_file(path)
+  state.record_file(path, lane)
   -- Do not auto-jump for model tool reads. Sherpa review navigation is the
   -- only flow that should move the user's code window mechanically; prompt /
   -- chat tool use should leave the coding pane where it is.
@@ -515,8 +550,8 @@ local function language_for_path(path)
   return LANG_BY_EXT[ext:lower()]
 end
 
-local function handle_tool_end(event)
-  local session = state.get_session()
+local function handle_tool_end(event, lane)
+  local session = state.get_session(lane)
 
   -- Render textual output for tools where seeing the content helps the
   -- user follow along (everything except edit, which gets a diff block
@@ -535,7 +570,7 @@ local function handle_tool_end(event)
         local stashed = event.toolCallId and session.tool_paths[event.toolCallId] or nil
         lang = language_for_path(stashed)
       end
-      ui.append_tool_output(text, lang)
+      ui.append_tool_output(text, lang, lane)
     end
   end
 
@@ -557,7 +592,7 @@ local function handle_tool_end(event)
     if item then
       ui.append({ string.format("[sherpa] plan: %d stop(s), scope=%s",
         #(args.stops or {}),
-        args.scope or "?") })
+        args.scope or "?") }, lane)
     else
       ui.notify("Sherpa plan was empty or invalid; review cannot start", vim.log.levels.ERROR)
     end
@@ -567,7 +602,7 @@ local function handle_tool_end(event)
     local args = consume_tool_args(session, event) or {}
     local added = review.ingest_append_stops(args)
     if added > 0 then
-      ui.append({ string.format("[sherpa] appended %d stop(s)", added) })
+      ui.append({ string.format("[sherpa] appended %d stop(s)", added) }, lane)
     end
     return
   end
@@ -577,36 +612,36 @@ local function handle_tool_end(event)
     return
   end
   if event.toolName == "read" then
-    state.record_file(path)
+    state.record_file(path, lane)
     return
   end
   if event.toolName == "edit" then
-    state.record_file(path)
+    state.record_file(path, lane)
     -- Keep local highlights if the edited buffer is already around, but do
     -- not move the user's window to follow model tool use.
     local lines = changed_lines(event)
-    ui.highlight_lines(path, lines)
+    ui.highlight_lines(path, lines, lane)
     -- Also show the diff in the log as a [diff] block. Pi emits a
     -- unified diff at event.result.details.diff already formatted with
     -- `+NUM / -NUM /  NUM` line prefixes; append_block's diff branch
     -- colors each line by prefix.
     local diff_text = event.result and event.result.details and event.result.details.diff
     if diff_text and diff_text ~= "" then
-      ui.append_block("diff", diff_text)
+      ui.append_block("diff", diff_text, lane)
     end
     return
   end
   if event.toolName == "write" then
-    state.record_file(path)
+    state.record_file(path, lane)
     -- Same rule as edits: annotate opportunistically, never steal focus.
-    ui.highlight_range(path, 1)
+    ui.highlight_range(path, 1, nil, lane)
   end
 end
 
 -- Send an extension_ui_response back to pi. Payload merges an id + any
 -- response-specific fields (value / cancelled / confirmed).
-local function send_ui_response(id, payload)
-  local session = state.get_session()
+local function send_ui_response(id, payload, lane)
+  local session = state.get_session(lane)
   if not session or not session.job_id then
     return false
   end
@@ -621,7 +656,7 @@ local function send_ui_response(id, payload)
   return true
 end
 
-local function handle_extension_ui(event)
+local function handle_extension_ui(event, lane)
   if event.method == "notify" then
     local levels = {
       error = vim.log.levels.ERROR,
@@ -632,13 +667,13 @@ local function handle_extension_ui(event)
     return
   end
   if event.method == "setStatus" then
-    local session = state.get_session()
+    local session = state.get_session(lane)
     local previous = session.status[event.statusKey]
-    state.set_status(event.statusKey, event.statusText)
+    state.set_status(event.statusKey, event.statusText, lane)
     -- /q-anchor echoes the leaf messageId back via this key. Hand it to
     -- whoever called send_q_anchor and return — no other UI side-effects.
     if event.statusKey == "sherpa-q-anchor" then
-      local cb = state.consume_q_anchor_callback()
+      local cb = state.consume_q_anchor_callback(lane)
       if cb then
         local id = event.statusText
         if id == nil or id == "" then
@@ -651,18 +686,18 @@ local function handle_extension_ui(event)
     end
     if event.statusKey == "sherpa" and event.statusText ~= previous then
       if event.statusText == "complete" then
-        ui.append({ "[sherpa] Workflow complete", "" })
+        ui.append({ "[sherpa] Workflow complete", "" }, lane)
       elseif event.statusText and event.statusText:find("final%-awaiting%-next", 1, false) then
-        ui.append({ "[sherpa] Final chunk awaiting :SherpaNext", "" })
+        ui.append({ "[sherpa] Final chunk awaiting :SherpaNext", "" }, lane)
       elseif event.statusText and event.statusText:find("awaiting-next", 1, true) then
-        ui.append({ "[sherpa] Awaiting :SherpaNext", "" })
+        ui.append({ "[sherpa] Awaiting :SherpaNext", "" }, lane)
       end
     end
     return
   end
   if event.method == "setWidget" then
-    state.set_widget(event.widgetLines)
-    ui.refresh_log_winbar()
+    state.set_widget(event.widgetLines, lane)
+    ui.refresh_log_winbar(lane)
     return
   end
   if event.method == "editor" then
@@ -679,29 +714,77 @@ local function handle_extension_ui(event)
     local title = event.title or "Sherpa clarify"
     local prefill = event.prefill or ""
     local plan_prefix = "[sherpa-plan-proposal] "
+    if lane ~= "main" then
+      local function popup_cancel(message)
+        ui.append({ message or "[sherpa] clarify cancelled" }, lane)
+        send_ui_response(id, { cancelled = true }, lane)
+      end
+
+      if title:sub(1, #plan_prefix) == plan_prefix then
+        local display_title = title:sub(#plan_prefix + 1)
+        local body = prefill ~= "" and prefill or "(empty proposal)"
+        ui.append_block("plan", string.format("%s\n\n%s", display_title, body), lane)
+        ui.clarify_plan_proposal_picker(function(choice)
+          if choice == "accept" then
+            ui.append_block("user", prefill ~= "" and prefill or "(accepted)", lane)
+            send_ui_response(id, { value = prefill }, lane)
+          elseif choice == "modify" then
+            ui.open_prompt_editor(display_title, function(text)
+              ui.append_block("user", text, lane)
+              send_ui_response(id, { value = text }, lane)
+            end, {
+              hint_lines = { "Edit the proposal, then submit it back to Sherpa." },
+              on_cancel = function()
+                popup_cancel("[sherpa] plan proposal rejected")
+              end,
+              prefill = prefill,
+            })
+          else
+            popup_cancel("[sherpa] plan proposal rejected")
+          end
+        end)
+        return
+      end
+
+      local body_parts = { title }
+      if prefill ~= "" then
+        table.insert(body_parts, "")
+        table.insert(body_parts, prefill)
+      end
+      ui.append_block("clarify", table.concat(body_parts, "\n"), lane)
+      ui.open_prompt_editor(title, function(text)
+        ui.append_block("user", text, lane)
+        send_ui_response(id, { value = text }, lane)
+      end, {
+        hint_lines = { "Reply to Sherpa's question." },
+        on_cancel = popup_cancel,
+        prefill = prefill ~= "" and prefill or nil,
+      })
+      return
+    end
     if title:sub(1, #plan_prefix) == plan_prefix then
       local display_title = title:sub(#plan_prefix + 1)
       -- Put the full proposal body in the chat log first so the user can
       -- read it in-place before the Accept/Modify/Reject picker pops.
       -- No floating preview — everything lives in the chat transcript.
       local body = prefill ~= "" and prefill or "(empty proposal)"
-      ui.append_block("plan", string.format("%s\n\n%s", display_title, body))
+      ui.append_block("plan", string.format("%s\n\n%s", display_title, body), lane)
       ui.clarify_plan_proposal_picker(function(choice)
         if choice == "accept" then
-          ui.append_block("user", prefill ~= "" and prefill or "(accepted)")
-          send_ui_response(id, { value = prefill })
+          ui.append_block("user", prefill ~= "" and prefill or "(accepted)", lane)
+          send_ui_response(id, { value = prefill }, lane)
         elseif choice == "modify" then
           -- Hijack compose as the clarify-reply surface, seeded with
           -- the proposal body. The user edits in-place and hits <C-s>
           -- to submit the edited text as the clarify value.
-          state.set_pending_clarify(id, display_title)
-          state.set_status("sherpa-clarify", "clarify")
-          ui.refresh_compose_winbar()
+          state.set_pending_clarify(id, display_title, lane)
+          state.set_status("sherpa-clarify", "clarify", lane)
+          ui.refresh_compose_winbar(lane)
           require("sherpa").open_compose_for_clarify()
           ui.seed_compose(prefill)
         else
-          ui.append({ "[sherpa] plan proposal rejected" })
-          send_ui_response(id, { cancelled = true })
+          ui.append({ "[sherpa] plan proposal rejected" }, lane)
+          send_ui_response(id, { cancelled = true }, lane)
         end
       end)
       return
@@ -715,11 +798,11 @@ local function handle_extension_ui(event)
       table.insert(body_parts, "")
       table.insert(body_parts, prefill)
     end
-    ui.append_block("clarify", table.concat(body_parts, "\n"))
-    state.set_pending_clarify(id, title)
-    state.set_status("sherpa-clarify", "clarify")
-    ui.refresh_compose_winbar()
-    ui.open_log({ preserve_focus = true })
+    ui.append_block("clarify", table.concat(body_parts, "\n"), lane)
+    state.set_pending_clarify(id, title, lane)
+    state.set_status("sherpa-clarify", "clarify", lane)
+    ui.refresh_compose_winbar(lane)
+    ui.open_log({ preserve_focus = true }, lane)
     -- Bring compose up; dispatch_compose (init.lua) checks
     -- pending_clarify before anything else and routes there.
     require("sherpa").open_compose_for_clarify()
@@ -733,12 +816,12 @@ local function handle_extension_ui(event)
     vim.schedule(function()
       vim.ui.select({ "Yes", "No" }, { prompt = prompt }, function(choice)
         if choice == nil then
-          ui.append({ "[sherpa] confirm cancelled" })
-          send_ui_response(id, { cancelled = true })
+          ui.append({ "[sherpa] confirm cancelled" }, lane)
+          send_ui_response(id, { cancelled = true }, lane)
         else
           local confirmed = choice == "Yes"
-          ui.append({ string.format("[sherpa] confirm: %s", choice) })
-          send_ui_response(id, { confirmed = confirmed })
+          ui.append({ string.format("[sherpa] confirm: %s", choice) }, lane)
+          send_ui_response(id, { confirmed = confirmed }, lane)
         end
       end)
     end)
@@ -754,17 +837,17 @@ local function handle_extension_ui(event)
     for _, opt in ipairs(options) do
       table.insert(items, { label = tostring(opt), value = opt })
     end
-    ui.append_block("sherpa", string.format("select: %s", title))
+    ui.append_block("sherpa", string.format("select: %s", title), lane)
     local delivered = false
     local function deliver(chosen)
       if delivered then return end
       delivered = true
       if chosen == nil then
-        ui.append({ "[sherpa] select cancelled" })
-        send_ui_response(id, { cancelled = true })
+        ui.append({ "[sherpa] select cancelled" }, lane)
+        send_ui_response(id, { cancelled = true }, lane)
       else
-        ui.append({ string.format("[sherpa] select: %s", chosen) })
-        send_ui_response(id, { value = chosen })
+        ui.append({ string.format("[sherpa] select: %s", chosen) }, lane)
+        send_ui_response(id, { value = chosen }, lane)
       end
     end
     vim.schedule(function()
@@ -783,15 +866,15 @@ local function handle_extension_ui(event)
     local id = event.id
     local title = event.title or "Sherpa input"
     local placeholder = event.placeholder or ""
-    ui.append_block("sherpa", string.format("input: %s", title))
+    ui.append_block("sherpa", string.format("input: %s", title), lane)
     vim.schedule(function()
       vim.ui.input({ prompt = title .. ": ", default = placeholder }, function(value)
         if value == nil then
-          ui.append({ "[sherpa] input cancelled" })
-          send_ui_response(id, { cancelled = true })
+          ui.append({ "[sherpa] input cancelled" }, lane)
+          send_ui_response(id, { cancelled = true }, lane)
         else
-          ui.append_block("user", value)
-          send_ui_response(id, { value = value })
+          ui.append_block("user", value, lane)
+          send_ui_response(id, { value = value }, lane)
         end
       end)
     end)
@@ -799,33 +882,33 @@ local function handle_extension_ui(event)
   end
 end
 
-local function dispatch(event)
+local function dispatch(event, lane)
   if event.type == "response" then
-    handle_response(event)
+    handle_response(event, lane)
     return
   end
   if event.type == "extension_error" then
-    handle_extension_error(event)
+    handle_extension_error(event, lane)
     return
   end
   if event.type == "message_update" then
-    handle_message_update(event)
+    handle_message_update(event, lane)
     return
   end
   if event.type == "message_end" then
-    handle_message_end(event)
+    handle_message_end(event, lane)
     return
   end
   if event.type == "tool_execution_start" then
-    handle_tool_start(event)
+    handle_tool_start(event, lane)
     return
   end
   if event.type == "tool_execution_end" then
-    handle_tool_end(event)
+    handle_tool_end(event, lane)
     return
   end
   if event.type == "extension_ui_request" then
-    handle_extension_ui(event)
+    handle_extension_ui(event, lane)
   end
 end
 
@@ -849,20 +932,20 @@ local function split_lines(data, tail)
   return lines, current
 end
 
-local function consume_json(session, data, tail_key)
+local function consume_json(session, data, tail_key, lane)
   local lines
   lines, session[tail_key] = split_lines(data, session[tail_key])
   for _, line in ipairs(lines) do
     local event = decode(line)
     if event then
       vim.schedule(function()
-        dispatch(event)
+        dispatch(event, lane)
       end)
     end
   end
 end
 
-local function consume_text(session, data, tail_key)
+local function consume_text(session, data, tail_key, lane)
   local lines
   lines, session[tail_key] = split_lines(data, session[tail_key])
   if #lines == 0 then
@@ -870,13 +953,14 @@ local function consume_text(session, data, tail_key)
   end
   vim.schedule(function()
     for _, line in ipairs(lines) do
-      ui.append({ "[stderr] " .. line })
+      ui.append({ "[stderr] " .. line }, lane)
     end
   end)
 end
 
-function M.start(cwd)
-  local session = state.ensure_session(cwd)
+function M.start(arg1, arg2)
+  local lane, cwd = resolve_lane_and_cwd(arg1, arg2)
+  local session = state.ensure_session(lane, cwd)
   if session.job_id and vim.fn.jobwait({ session.job_id }, 0)[1] == -1 then
     return true
   end
@@ -890,10 +974,10 @@ function M.start(cwd)
       end)
     end,
     on_stderr = function(_, data)
-      consume_text(session, data, "stderr_tail")
+      consume_text(session, data, "stderr_tail", lane)
     end,
     on_stdout = function(_, data)
-      consume_json(session, data, "stdout_tail")
+      consume_json(session, data, "stdout_tail", lane)
     end,
   })
 
@@ -903,15 +987,15 @@ function M.start(cwd)
   end
 
   session.job_id = job_id
-  if state.get_config().open_log_on_start then
-    ui.open_log({ preserve_focus = true })
+  if lane == "main" and state.get_config().open_log_on_start then
+    ui.open_log({ preserve_focus = true }, lane)
   end
-  ui.append({ "[sherpa] backend started", "" })
+  ui.append({ "[sherpa] backend started", "" }, lane)
   return true
 end
 
-function M.stop()
-  local session = state.get_session()
+function M.stop(lane)
+  local session = state.get_session(lane)
   if not session or not session.job_id then
     return
   end
@@ -925,8 +1009,8 @@ end
 -- as a cancel-flavored `[error]` block and clears pending state.
 -- No-op when no turn is in flight (still sends the RPC; pi answers
 -- with success=true either way, costs nothing).
-function M.abort()
-  local session = state.get_session()
+function M.abort(lane)
+  local session = state.get_session(lane)
   if not session or not session.job_id then
     ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
     return false
@@ -935,15 +1019,16 @@ function M.abort()
   return true
 end
 
-function M.send_prompt(message)
-  local session = state.get_session()
+function M.send_prompt(arg1, arg2)
+  local lane, message = resolve_lane_and_payload(arg1, arg2)
+  local session = state.get_session(lane)
   if not session or not session.job_id then
     ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
     return false
   end
 
   local payload = {
-    id = state.next_request_id(),
+    id = state.next_request_id(lane),
     message = message,
     type = "prompt",
   }
@@ -959,35 +1044,38 @@ end
 -- arrives as a `setStatus` event with key `sherpa-q-anchor` and is
 -- routed to `cb(id_or_nil)`. Fire-and-forget send; the callback resolves
 -- when the event lands (or with nil if no conversation exists).
-function M.send_q_anchor(cb)
-  local session = state.get_session()
+function M.send_q_anchor(arg1, arg2)
+  local lane, cb = resolve_lane_and_payload(arg1, arg2)
+  local session = state.get_session(lane)
   if not session or not session.job_id then
     ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
     if cb then cb(nil) end
     return false
   end
-  state.set_q_anchor_callback(cb)
-  return M.send_prompt("/q-anchor")
+  state.set_q_anchor_callback(cb, lane)
+  return M.send_prompt(lane, "/q-anchor")
 end
 
 -- Navigate the session tree back to `message_id` so the Q branch drops
 -- off the active path. Fire-and-forget; pi handles navigation.
-function M.send_q_end(message_id)
+function M.send_q_end(arg1, arg2)
+  local lane, message_id = resolve_lane_and_payload(arg1, arg2)
   if not message_id or message_id == "" then
     return false
   end
-  return M.send_prompt("/q-end " .. message_id)
+  return M.send_prompt(lane, "/q-end " .. message_id)
 end
 
-function M.send_steer(message)
-  local session = state.get_session()
+function M.send_steer(arg1, arg2)
+  local lane, message = resolve_lane_and_payload(arg1, arg2)
+  local session = state.get_session(lane)
   if not session or not session.job_id then
     ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
     return false
   end
 
   local payload = {
-    id = state.next_request_id(),
+    id = state.next_request_id(lane),
     message = message,
     type = "steer",
   }

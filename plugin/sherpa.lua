@@ -14,7 +14,7 @@ end, { nargs = "*", desc = "Run Sherpa search or open recent searches" })
 
 vim.api.nvim_create_user_command("SherpaReview", function(opts)
   require("sherpa").review(opts.args, opts)
-end, { nargs = "*", range = true, desc = "Open the Sherpa review editor for the project, current review item, or a visual range" })
+end, { nargs = "*", range = true, desc = "Open the Sherpa review editor on the dedicated review lane" })
 
 vim.api.nvim_create_user_command("SherpaPatch", function(opts)
   require("sherpa").patch(opts.args, opts)
@@ -42,11 +42,19 @@ end, { desc = "Move to the previous Sherpa review item" })
 
 vim.api.nvim_create_user_command("SherpaSearches", function()
   require("sherpa").searches()
-end, { desc = "Open recent Sherpa searches" })
+end, { desc = "Open recent Sherpa flow searches" })
+
+vim.api.nvim_create_user_command("SherpaLogFlow", function()
+  require("sherpa").flow_log()
+end, { desc = "Toggle the Sherpa flow log" })
+
+vim.api.nvim_create_user_command("SherpaLogReview", function()
+  require("sherpa").review_log()
+end, { desc = "Toggle the Sherpa review log" })
 
 vim.api.nvim_create_user_command("SherpaQ", function(opts)
   require("sherpa").q(opts.args, opts)
-end, { nargs = "*", range = true, desc = "Open the Sherpa Q editor for a background tangent question" })
+end, { nargs = "*", range = true, desc = "Open the Sherpa Q editor for a background flow-lane question" })
 
 vim.api.nvim_create_user_command("SherpaRetry", function()
   require("sherpa").retry()

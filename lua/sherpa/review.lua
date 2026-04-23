@@ -4,13 +4,19 @@ local ui = require("sherpa.ui")
 
 local M = {}
 
+local REVIEW_LANE = "review"
+
 local git_run
 local relative_path
 
 local MAX_REVIEW_LINES = 40
 
+local function review_session()
+  return state.get_session(REVIEW_LANE)
+end
+
 local function active_review()
-  local session = state.get_session()
+  local session = review_session()
   if not session then
     return nil
   end
@@ -242,12 +248,12 @@ local function unresolved_comments(review)
 end
 
 local function review_state()
-  local session = state.get_session()
+  local session = review_session()
   return session and session.review or nil
 end
 
 relative_path = function(path)
-  local session = state.get_session()
+  local session = review_session()
   local cwd = session and session.cwd or nil
   if cwd and vim.startswith(path, cwd .. "/") then
     return path:sub(#cwd + 2)
@@ -460,6 +466,11 @@ function M.has_active_review()
   return active_review() ~= nil
 end
 
+function M.is_awaiting_summary()
+  local review = review_state()
+  return review ~= nil and review.awaiting_summary == true
+end
+
 function M.current_item()
   return current_item(active_review())
 end
@@ -469,7 +480,7 @@ function M.focus_item(item)
     return false
   end
   ui.jump_to_file(item.path, item.startLine)
-  ui.highlight_range(item.path, item.startLine, item.endLine)
+  ui.highlight_range(item.path, item.startLine, item.endLine, REVIEW_LANE)
   -- Swap inline annotations: clear prior stop's, render this one's.
   -- Each step clears the annotations of the previous step (by design).
   -- Any pending ranged-question answer also gets cleared — the user
@@ -835,7 +846,7 @@ end
 -- keystroke zero.
 function M.start_planning(focus, opts)
   opts = opts or {}
-  local session = state.get_session()
+  local session = review_session()
   if not session then
     ui.notify("No active Sherpa session", vim.log.levels.WARN)
     return false
@@ -843,7 +854,7 @@ function M.start_planning(focus, opts)
 
   ui.clear_comment_markers()
   ui.clear_stop_annotations()
-  ui.hide_log()
+  ui.open_log({ preserve_focus = true }, REVIEW_LANE)
   session.review = {
     active = true,
     awaiting_summary = false,
@@ -866,10 +877,10 @@ function M.start_planning(focus, opts)
     "Sherpa operation: plan",
     "Mode: read-only",
     "Planning review...",
-  })
-  state.set_status("sherpa", "plan active")
-  state.set_status("sherpa-operation", "plan")
-  state.set_status("sherpa-kind", "plan")
+  }, REVIEW_LANE)
+  state.set_status("sherpa", "plan active", REVIEW_LANE)
+  state.set_status("sherpa-operation", "plan", REVIEW_LANE)
+  state.set_status("sherpa-kind", "plan", REVIEW_LANE)
   ui.show_review()
   M.render()
   return true
@@ -883,7 +894,7 @@ function M.ingest_plan(args)
   if not review or not review.planning then
     return nil
   end
-  local session = state.get_session()
+  local session = review_session()
   if not session then
     return nil
   end
@@ -930,7 +941,7 @@ function M.ingest_append_stops(args)
   if review.scope ~= "free" then
     return 0
   end
-  local session = state.get_session()
+  local session = review_session()
   if not session then
     return 0
   end
@@ -960,7 +971,7 @@ end
 -- plan_from_* helpers and carry the `why` field.
 function M.start_planned(scope, opts)
   opts = opts or {}
-  local session = state.get_session()
+  local session = review_session()
   if not session then
     ui.notify("No active Sherpa session", vim.log.levels.WARN)
     return nil
@@ -988,7 +999,7 @@ function M.start_planned(scope, opts)
 
   ui.clear_comment_markers()
   ui.clear_stop_annotations()
-  ui.hide_log()
+  ui.open_log({ preserve_focus = true }, REVIEW_LANE)
   local source = opts.resolved_source or scope
   session.review = {
     active = true,
@@ -1180,7 +1191,7 @@ function M.open_comment_editor(range, on_submit, opts)
 end
 
 function M.comment_picker()
-  local session = state.get_session()
+  local session = review_session()
   if not session then
     ui.notify("No active Sherpa session", vim.log.levels.WARN)
     return false
@@ -1210,12 +1221,12 @@ function M.comment_picker()
   return picker.select("Sherpa Comments", items, function(entry)
     local comment = entry.value
     ui.jump_to_file(comment.path, comment.startLine)
-    ui.highlight_range(comment.path, comment.startLine, comment.endLine)
+    ui.highlight_range(comment.path, comment.startLine, comment.endLine, REVIEW_LANE)
   end)
 end
 
 function M.item_picker()
-  local session = state.get_session()
+  local session = review_session()
   local review = active_review() or (session and session.review)
   if not review then
     ui.notify("No Sherpa review session available", vim.log.levels.WARN)

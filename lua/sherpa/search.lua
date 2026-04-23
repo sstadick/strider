@@ -4,20 +4,24 @@ local ui = require("sherpa.ui")
 
 local M = {}
 
+local function normalize_lane(lane)
+  return state.normalize_lane(lane or "flow")
+end
+
 local function is_absolute(path)
   return path:match("^/") ~= nil
     or path:match("^%a:[/\\]") ~= nil
     or path:match("^\\\\") ~= nil
 end
 
-local function absolute_path(path)
+local function absolute_path(path, lane)
   if path == nil or path == "" then
     return nil
   end
   if is_absolute(path) then
     return path
   end
-  local session = state.get_session()
+  local session = state.get_session(normalize_lane(lane))
   if not session then
     return nil
   end
@@ -32,7 +36,7 @@ local function truncate(text, width)
   return text:sub(1, width - 1) .. "…"
 end
 
-local function parse_line(line)
+local function parse_line(line, lane)
   line = line:gsub("^[-*]%s+", "")
   line = line:gsub("^`+", ""):gsub("`+$", "")
   local path, lnum_raw, rest = line:match("^(.-):([^:]+):(.+)$")
@@ -48,7 +52,7 @@ local function parse_line(line)
   local lnum = tonumber(lnum_raw) or 1
   local col = tonumber(col_raw) or 1
   local count = math.max(tonumber(count_raw) or 1, 1)
-  local filename = absolute_path(path)
+  local filename = absolute_path(path, lane)
   if not filename then
     return nil
   end
@@ -113,12 +117,13 @@ function M.picker_items(results)
   return items
 end
 
-function M.open_result(result)
+function M.open_result(result, lane)
   if not result then
     return false
   end
+  lane = normalize_lane(lane)
   ui.jump_to_file(result.filename, result.lnum)
-  ui.highlight_range(result.filename, result.lnum, result.end_lnum)
+  ui.highlight_range(result.filename, result.lnum, result.end_lnum, lane)
   return true
 end
 
@@ -137,19 +142,19 @@ local function present_result_set(result_set)
     local items = M.picker_items(result_set.results)
     store_quickfix(result_set, false)
     return picker.select("Sherpa Search Results", items, function(item)
-      M.open_result(item.value)
+      M.open_result(item.value, result_set.lane)
     end)
   end
 
   store_quickfix(result_set, true)
   if count == 1 then
-    M.open_result(result_set.results[1])
+    M.open_result(result_set.results[1], result_set.lane)
   end
   return true
 end
 
-function M.open_result_set(result_set)
-  local session = state.get_session()
+function M.open_result_set(result_set, lane)
+  local session = state.get_session(normalize_lane(lane))
   if not result_set or not result_set.results or #result_set.results == 0 then
     ui.notify("No search results available", vim.log.levels.WARN)
     return false
@@ -168,8 +173,9 @@ function M.open_result_set(result_set)
   return present_result_set(result_set)
 end
 
-function M.handle_response(text, metadata)
-  local session = state.get_session()
+function M.handle_response(text, metadata, lane)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
   if not session then
     return nil
   end
@@ -177,7 +183,7 @@ function M.handle_response(text, metadata)
   local results = {}
 
   for _, line in ipairs(vim.split(text or "", "\n", { plain = true })) do
-    local result = parse_line(vim.trim(line))
+    local result = parse_line(vim.trim(line), lane)
     if result then
       table.insert(results, result)
     end
@@ -185,6 +191,7 @@ function M.handle_response(text, metadata)
 
   local result_set = {
     id = string.format("search-%d", session.request_seq),
+    lane = lane,
     prompt = prompt,
     raw = text,
     created_at = os.time(),
@@ -202,7 +209,7 @@ function M.handle_response(text, metadata)
     return result_set
   end
 
-  M.open_result_set(result_set)
+  M.open_result_set(result_set, lane)
   return result_set
 end
 
@@ -220,13 +227,13 @@ function M.summary_text(result_set)
   return string.format("Sherpa search: %d matches for '%s'", count, result_set.prompt or "search")
 end
 
-function M.last_result_set()
-  local session = state.get_session()
+function M.last_result_set(lane)
+  local session = state.get_session(normalize_lane(lane))
   return session and session.search_history[1] or nil
 end
 
-function M.history_picker()
-  local session = state.get_session()
+function M.history_picker(lane)
+  local session = state.get_session(normalize_lane(lane))
   if not session then
     ui.notify("No Sherpa searches recorded yet", vim.log.levels.WARN)
     return false
@@ -245,7 +252,7 @@ function M.history_picker()
   end
 
   return picker.select("Sherpa Searches", items, function(item)
-    M.open_result_set(item.value)
+    M.open_result_set(item.value, lane)
   end)
 end
 

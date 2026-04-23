@@ -1,5 +1,11 @@
 local M = {}
 
+local lane_order = { "main", "flow", "review" }
+local lane_set = {}
+for _, lane in ipairs(lane_order) do
+  lane_set[lane] = true
+end
+
 local function plugin_root()
   local source = debug.getinfo(1, "S").source:sub(2)
   local dir = vim.fs.dirname(source)
@@ -14,29 +20,52 @@ local defaults = {
   pi_cmd = { "pi" },
 }
 
-local function new_session(cwd)
+local function normalize_lane(lane)
+  if lane == nil or lane == "" then
+    return "main"
+  end
+  if lane_set[lane] then
+    return lane
+  end
+  return "main"
+end
+
+local function resolve_lane_and_cwd(arg1, arg2)
+  if lane_set[arg1] then
+    return arg1, arg2
+  end
+  if lane_set[arg2] then
+    return arg2, arg1
+  end
+  return "main", arg1 or arg2
+end
+
+local function new_session(cwd, lane)
   return {
     assistant_text = nil,
     assistant_thinking = {},
     chunk_lines = {},
     chunk_path = nil,
     comment_buffers = {},
+    compose_buf = nil,
     cwd = cwd,
     highlight_buf = nil,
-    review_buf = nil,
-    review_win = nil,
     job_id = nil,
+    lane = lane,
     last_summary = nil,
     last_touched_file = nil,
+    log_buf = nil,
     pending_request = nil,
     progress = nil,
     recent_files = {},
     request_seq = 0,
     review = nil,
+    review_buf = nil,
+    review_win = nil,
     search_history = {},
     status = {},
-    stdout_tail = "",
     stderr_tail = "",
+    stdout_tail = "",
     tool_args = {},
     tool_paths = {},
     widget = {},
@@ -47,7 +76,7 @@ M.config = vim.tbl_deep_extend("force", defaults, {
   plugin_root = plugin_root(),
 })
 
-M.session = nil
+M.sessions = {}
 
 function M.setup(opts)
   local next_config = vim.tbl_deep_extend("force", M.config, opts or {})
@@ -64,29 +93,56 @@ function M.get_config()
   return M.config
 end
 
-function M.get_session()
-  return M.session
+function M.lanes()
+  return vim.deepcopy(lane_order)
 end
 
-function M.ensure_session(cwd)
-  if not M.session or M.session.cwd ~= cwd then
-    M.session = new_session(cwd)
+function M.is_lane(lane)
+  return lane_set[lane] == true
+end
+
+function M.normalize_lane(lane)
+  return normalize_lane(lane)
+end
+
+function M.get_session(lane)
+  return M.sessions[normalize_lane(lane)]
+end
+
+function M.ensure_session(arg1, arg2)
+  local lane, cwd = resolve_lane_and_cwd(arg1, arg2)
+  if not cwd or cwd == "" then
+    local current = M.sessions[lane]
+    cwd = current and current.cwd or vim.fn.getcwd()
   end
-  return M.session
+  if not M.sessions[lane] or M.sessions[lane].cwd ~= cwd then
+    M.sessions[lane] = new_session(cwd, lane)
+  end
+  return M.sessions[lane]
 end
 
-function M.clear_session()
-  M.session = nil
+function M.clear_session(lane)
+  if lane == nil then
+    M.sessions = {}
+    return
+  end
+  M.sessions[normalize_lane(lane)] = nil
 end
 
-function M.next_request_id()
-  local session = M.get_session()
+function M.next_request_id(lane)
+  local session = M.get_session(lane)
+  if not session then
+    return nil
+  end
   session.request_seq = session.request_seq + 1
-  return string.format("sherpa-%d", session.request_seq)
+  return string.format("sherpa-%s-%d", normalize_lane(lane), session.request_seq)
 end
 
-function M.record_file(path)
-  local session = M.get_session()
+function M.record_file(path, lane)
+  local session = M.get_session(lane)
+  if not session then
+    return
+  end
   session.last_touched_file = path
   local recent = { path }
   for _, item in ipairs(session.recent_files) do
@@ -97,23 +153,35 @@ function M.record_file(path)
   session.recent_files = recent
 end
 
-function M.set_status(key, value)
-  local session = M.get_session()
+function M.set_status(key, value, lane)
+  local session = M.get_session(lane)
+  if not session then
+    return
+  end
   session.status[key] = value
 end
 
-function M.set_widget(lines)
-  local session = M.get_session()
+function M.set_widget(lines, lane)
+  local session = M.get_session(lane)
+  if not session then
+    return
+  end
   session.widget = lines or {}
 end
 
-function M.set_summary(text)
-  local session = M.get_session()
+function M.set_summary(text, lane)
+  local session = M.get_session(lane)
+  if not session then
+    return
+  end
   session.last_summary = text
 end
 
-function M.set_pending_request(operation, metadata)
-  local session = M.get_session()
+function M.set_pending_request(operation, metadata, lane)
+  local session = M.get_session(lane)
+  if not session then
+    return
+  end
   if not operation then
     session.pending_request = nil
     return
@@ -124,13 +192,16 @@ function M.set_pending_request(operation, metadata)
   }
 end
 
-function M.peek_pending_request()
-  local session = M.get_session()
-  return session.pending_request
+function M.peek_pending_request(lane)
+  local session = M.get_session(lane)
+  return session and session.pending_request
 end
 
-function M.consume_pending_request()
-  local session = M.get_session()
+function M.consume_pending_request(lane)
+  local session = M.get_session(lane)
+  if not session then
+    return nil
+  end
   local pending = session.pending_request
   session.pending_request = nil
   return pending
@@ -139,14 +210,17 @@ end
 -- :SherpaQ tangent state. When a tangent is active, q_anchor_id holds
 -- the leaf messageId captured at tangent start; on end we navigate
 -- back to it so the branch is discarded from the active path.
-function M.q_begin(anchor_id)
-  local session = M.get_session()
+function M.q_begin(anchor_id, lane)
+  local session = M.get_session(lane)
+  if not session then
+    return
+  end
   session.q_active = true
   session.q_anchor_id = anchor_id
 end
 
-function M.q_end()
-  local session = M.get_session()
+function M.q_end(lane)
+  local session = M.get_session(lane)
   local id = session and session.q_anchor_id
   if session then
     session.q_active = false
@@ -155,23 +229,23 @@ function M.q_end()
   return id
 end
 
-function M.q_is_active()
-  local session = M.get_session()
+function M.q_is_active(lane)
+  local session = M.get_session(lane)
   return session and session.q_active == true
 end
 
 -- Pending callback awaiting the next /q-anchor response. rpc.lua routes
 -- the `sherpa-q-anchor` setStatus event here so init.lua can continue
 -- the Q-start flow once Pi echoes the leaf id.
-function M.set_q_anchor_callback(cb)
-  local session = M.get_session()
+function M.set_q_anchor_callback(cb, lane)
+  local session = M.get_session(lane)
   if session then
     session.q_anchor_callback = cb
   end
 end
 
-function M.consume_q_anchor_callback()
-  local session = M.get_session()
+function M.consume_q_anchor_callback(lane)
+  local session = M.get_session(lane)
   if not session then return nil end
   local cb = session.q_anchor_callback
   session.q_anchor_callback = nil
@@ -182,20 +256,20 @@ end
 -- the plugin stashes the extension_ui_request id + title here and
 -- routes the next compose send back as the clarify reply. Cleared by
 -- dispatch_compose (on answer) or by <Esc><Esc> in compose (on reject).
-function M.set_pending_clarify(id, title)
-  local session = M.get_session()
+function M.set_pending_clarify(id, title, lane)
+  local session = M.get_session(lane)
   if session then
     session.pending_clarify = { id = id, title = title or "" }
   end
 end
 
-function M.peek_pending_clarify()
-  local session = M.get_session()
+function M.peek_pending_clarify(lane)
+  local session = M.get_session(lane)
   return session and session.pending_clarify
 end
 
-function M.consume_pending_clarify()
-  local session = M.get_session()
+function M.consume_pending_clarify(lane)
+  local session = M.get_session(lane)
   if not session then return nil end
   local p = session.pending_clarify
   session.pending_clarify = nil
@@ -205,15 +279,15 @@ end
 -- A range stashed by :SherpaQ so the next compose send goes as a
 -- tangent follow-up with the excerpt prepended. One-shot: consumed
 -- by dispatch_compose on the next send (or cleared on end_q_session).
-function M.set_pending_q_range(range)
-  local session = M.get_session()
+function M.set_pending_q_range(range, lane)
+  local session = M.get_session(lane)
   if session then
     session.pending_q_range = range
   end
 end
 
-function M.consume_pending_q_range()
-  local session = M.get_session()
+function M.consume_pending_q_range(lane)
+  local session = M.get_session(lane)
   if not session then return nil end
   local r = session.pending_q_range
   session.pending_q_range = nil

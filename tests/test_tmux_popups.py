@@ -26,7 +26,12 @@ def _winbar_for_buffer(h, name: str) -> str:
         f"  local buf = vim.fn.bufnr('{name}'); "
         "  if buf <= 0 then return '' end; "
         "  for _, win in ipairs(vim.fn.win_findbuf(buf)) do "
-        "    if vim.api.nvim_win_is_valid(win) then return vim.wo[win].winbar or '' end "
+        "    if vim.api.nvim_win_is_valid(win) then "
+        "      local value = vim.wo[win].winbar or ''; "
+        "      local ok, evaluated = pcall(vim.api.nvim_eval_statusline, value, { winid = win, maxwidth = 10000 }); "
+        "      if ok and evaluated and evaluated.str then return evaluated.str end; "
+        "      return value "
+        "    end "
         "  end; "
         "  return '' "
         "end)()"
@@ -113,12 +118,58 @@ class TmuxPopupTests(unittest.TestCase):
                     timeout=3.0,
                 )
 
-                marker = next(
-                    line for line in h.buffer_lines("sherpa://compose") if line.startswith("@image ")
+                lines = h.buffer_lines("sherpa://compose")
+                marker_index, marker = next(
+                    (idx, line) for idx, line in enumerate(lines) if line.startswith("@image ")
                 )
                 pasted_path = Path(marker.removeprefix("@image "))
                 self.assertTrue(pasted_path.exists(), pasted_path)
                 self.assertNotEqual(clipboard_png, pasted_path)
+                self.assertEqual("", lines[marker_index + 1])
+
+    def test_compose_ctrl_v_inserts_image_marker_at_cursor(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            clipboard_png = project_root / "clipboard-test.png"
+            clipboard_png.write_bytes(TEST_PNG)
+
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.lua(
+                    "(function() require('sherpa.state').setup({ clipboard_image_test_file = "
+                    + json.dumps(str(clipboard_png))
+                    + " }); return true end)()"
+                )
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.current_state()["buf"] == "sherpa://compose",
+                    timeout=3.0,
+                )
+                h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('sherpa://compose'); "
+                    "  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {'before', 'after'}); "
+                    "  vim.api.nvim_win_set_cursor(0, {2, 0}); "
+                    "  return true "
+                    "end)()"
+                )
+
+                h.send("C-v", pause=0.3)
+                h.wait_until(
+                    lambda: any(
+                        line.startswith("@image ")
+                        for line in h.buffer_lines("sherpa://compose")
+                    ),
+                    timeout=3.0,
+                )
+
+                lines = h.buffer_lines("sherpa://compose")
+                marker_index = next(
+                    idx for idx, line in enumerate(lines) if line.startswith("@image ")
+                )
+                self.assertEqual(1, marker_index)
+                self.assertEqual("before", lines[marker_index - 1])
+                self.assertEqual("", lines[marker_index + 1])
+                self.assertEqual("after", lines[marker_index + 2])
+                self.assertEqual(marker_index + 2, h.current_state()["line"])
 
     def test_prompt_turn_logs_reasoning_before_assistant_text(self) -> None:
         with FixtureProject(self.project_root) as project_root:
@@ -308,10 +359,14 @@ class TmuxPopupTests(unittest.TestCase):
                     "end)()"
                 )
                 h.wait_until(
-                    lambda: "Working" in _winbar_for_buffer(h, "sherpa://compose"),
+                    lambda: "Working (" in _winbar_for_buffer(h, "sherpa://compose")
+                    and ":SherpaStop to interrupt" in _winbar_for_buffer(h, "sherpa://compose"),
                     timeout=3.0,
                 )
-                first = _winbar_for_buffer(h, "sherpa://compose")
+                active = _winbar_for_buffer(h, "sherpa://compose")
+                self.assertRegex(active, r"Working \((?:\d+s|\d+m\d{2}s|\d+h\d{2}m)\)")
+                self.assertIn(":SherpaStop to interrupt", active)
+                first = active
                 # Elapsed time updates every second; wait for at least
                 # one tick so the winbar changes.
                 h.wait_until(

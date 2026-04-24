@@ -272,9 +272,9 @@ about the current review item.
     with a muted `│` gutter instead of a code fence. `grep`, `ls`, and
     `find` get cheap line-count metadata (`N matches`, `N entries`,
     `N paths`). Compact output uses the same last-15-lines tail window
-    and `N earlier lines…` marker, and escapes markdown-leading text
-    before insertion so command output cannot render as headings, lists,
-    blockquotes, tables, or fences. Search/list headers preserve meaningful
+    and `N earlier lines…` marker. The gutter keeps raw command output
+    from rendering as headings, lists, blockquotes, tables, or fences.
+    Search/list headers preserve meaningful
     arguments from pi, including grep patterns, find patterns, paths, and limits.
   - highlight read/edit/write ranges on the edited file
 - `extension_ui_request`

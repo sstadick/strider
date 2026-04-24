@@ -1,7 +1,10 @@
 # Ready for work
-- move the timer to the left side  next to Working like: `Working (<time>)`
-- Paste clipboard images at the cursor instead of the end of the compose
-  buffer; insert a newline after the `@image <path>` marker.
+- Don't open the review log on review start
+    - Or on review end
+    - The flow at the end of the review could still use a bit of work / messaging, it's not clear what is about to happen when you ht the end / how the end works, and that comments and a summary.
+    - I don't think we need to put that in the side bar, but maybe we need a "final buffer" or something that says review end, and shows the summary in-buffer. Give the user a shot to edit that in the buffer, and then send it to the main flow?
+- I think we lost the "Search/Patch/Q" done green dot in the bottom left, open to other ways to indicate doneness though.
+- reduce the number of output lines from tools to be more like codex
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on
@@ -66,3 +69,6 @@
     - kind of does this when in normal mode
 - Replace the visible diff fence with custom diff rendering; edit headers now carry `(+N -M)` stats.
 - are we actually diong "steering" prompts and such?
+- move the timer to the left side  next to Working like: `Working (<time>)`
+- Paste clipboard images at the cursor instead of the end of the compose
+  buffer; insert a newline after the `@image <path>` marker.

@@ -156,10 +156,10 @@ local function compose_status_line(progress, lane)
     end
     return "Sherpa is ready."
   end
-  -- Active: animate `Working` and keep the elapsed-time / stop hint on the right.
+  -- Active: animate `Working`, keep elapsed time beside it, and leave the stop hint on the right.
   local elapsed = format_elapsed(progress.started_at) or "0s"
-  local left = compose_working_label(prefix, lane)
-  local right = string.format("%s · :SherpaStop to interrupt", elapsed)
+  local left = compose_working_label(prefix, lane) .. escape_status_text(string.format(" (%s)", elapsed))
+  local right = ":SherpaStop to interrupt"
   return left, right, true
 end
 
@@ -182,7 +182,7 @@ function M.refresh_compose_winbar(lane)
   end
 end
 
--- Ticks drive the `Working` shimmer and keep the elapsed-time suffix fresh.
+-- Ticks drive the `Working` shimmer and keep the adjacent elapsed time fresh.
 local SPIN_INTERVAL_MS = 120
 
 local function spin_tick(lane)
@@ -639,7 +639,7 @@ function M.ensure_compose_buffer(on_send)
     callback = render_hint,
   })
 
-  local function resume_compose()
+  local function resume_compose(cursor_lnum)
     local compose_win = vim.fn.win_findbuf(buf)[1]
     if not compose_win or not vim.api.nvim_win_is_valid(compose_win) then
       return
@@ -648,7 +648,8 @@ function M.ensure_compose_buffer(on_send)
       if vim.api.nvim_win_is_valid(compose_win) then
         vim.api.nvim_set_current_win(compose_win)
         local last = math.max(vim.api.nvim_buf_line_count(buf), 1)
-        pcall(vim.api.nvim_win_set_cursor, compose_win, { last, 0 })
+        local lnum = math.max(1, math.min(cursor_lnum or last, last))
+        pcall(vim.api.nvim_win_set_cursor, compose_win, { lnum, 0 })
         vim.cmd("startinsert")
       end
     end)
@@ -657,14 +658,22 @@ function M.ensure_compose_buffer(on_send)
   local function append_compose_marker(marker)
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local is_empty = (#lines == 0) or (#lines == 1 and lines[1] == "")
+    local insert_at = 0
     if is_empty then
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, { marker, "" })
-    elseif lines[#lines] == "" then
-      vim.api.nvim_buf_set_lines(buf, #lines - 1, #lines, false, { marker, "" })
     else
-      vim.api.nvim_buf_set_lines(buf, -1, -1, false, { marker, "" })
+      insert_at = #lines
+      local current_win = vim.api.nvim_get_current_win()
+      if vim.api.nvim_win_get_buf(current_win) == buf then
+        insert_at = vim.api.nvim_win_get_cursor(current_win)[1] - 1
+      elseif lines[#lines] == "" then
+        insert_at = #lines - 1
+      end
+      insert_at = math.max(0, math.min(insert_at, #lines))
+      vim.api.nvim_buf_set_lines(buf, insert_at, insert_at, false, { marker, "" })
     end
     render_hint()
+    return insert_at + 2
   end
 
   local function paste_image()
@@ -674,8 +683,7 @@ function M.ensure_compose_buffer(on_send)
       resume_compose()
       return
     end
-    append_compose_marker("@image " .. path)
-    resume_compose()
+    resume_compose(append_compose_marker("@image " .. path))
   end
 
   local function send_compose()
@@ -1362,18 +1370,6 @@ end
 local compact_output_prefix = "  │ "
 local compact_output_gutter = "  │"
 
-local function neutralize_compact_output(line)
-  local leading, rest = line:match("^(%s*)(.*)$")
-  if rest:match("^```") then
-    rest = rest:gsub("`", function() return "\\`" end)
-  elseif rest:match("^%d+%.%s") then
-    rest = rest:gsub("^(%d+)(%.)", "%1\\%2")
-  elseif rest:match("^[#>%-%*%+|]") then
-    rest = "\\" .. rest
-  end
-  return leading .. rest
-end
-
 local function compact_count_label(opts, count)
   if not opts.count_label and not opts.count_singular and not opts.count_plural then
     return nil
@@ -1435,7 +1431,7 @@ local function compact_tool_output_lines(tool_opts, all_lines, last_meaningful, 
     roles[#roles + 1] = "meta"
   end
   for i = tail_start, last_meaningful do
-    lines[#lines + 1] = compact_output_prefix .. neutralize_compact_output(all_lines[i])
+    lines[#lines + 1] = compact_output_prefix .. all_lines[i]
     roles[#roles + 1] = "row"
   end
   local status_line, status_role = compact_status_line(tool_opts.status)
@@ -1672,9 +1668,9 @@ function M.start_activity(title, target, operation, lane)
     title = title,
     target = target or "log",
     operation = operation,
-    -- hrtime is nanoseconds, monotonic. Drives the elapsed-time suffix
-    -- in the compose winbar so the user can see the turn is moving
-    -- even while the spin label is between rotations.
+    -- hrtime is nanoseconds, monotonic. Drives the elapsed time next to
+    -- `Working` in the compose winbar so the user can see the turn is
+    -- moving even while the spin label is between rotations.
     started_at = vim.uv.hrtime(),
   }
   for _, buf in ipairs(progress_buffers(session.progress.target, lane)) do

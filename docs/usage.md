@@ -100,8 +100,9 @@ Tool calls show their results inline.
   `find *.lua in lua/sherpa`.
 - Tool output is tailed to the last 15 lines with a muted `N earlier lines...`
   note when older lines are hidden.
-- Compact command output is escaped before insertion so markdown-looking output
-  cannot render as headings, lists, blockquotes, tables, or fences.
+- Compact command output keeps the original text after a muted gutter so
+  markdown-looking output cannot render as headings, lists, blockquotes,
+  tables, or fences.
 
 The log tails new output only while the visible log window is already at the
 bottom. Scrolling up pauses follow-mode until you jump back to the tail. The log

@@ -234,7 +234,7 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 self.assertIn("• Explored", log)
                 self.assertIn('└ grep "fixture" in src', log)
                 self.assertIn("2 matches", log)
-                self.assertIn("│ \\# heading-like output", log)
+                self.assertIn("│ # heading-like output", log)
                 self.assertIn("│ src/App.tsx:1:export function App() {", log)
                 self.assertNotIn("```", log, f"grep output should not use markdown fences; got:\n{log}")
 
@@ -278,7 +278,7 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 self.assertIn("│ entry 20", log)
                 self.assertLess(log.find("5 earlier lines…"), log.find("│ entry 6"))
 
-    def test_compact_tool_output_escapes_markdown_leaders(self) -> None:
+    def test_compact_tool_output_preserves_markdown_leaders(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat")
@@ -296,13 +296,15 @@ class TmuxLogRenderingTests(unittest.TestCase):
                     "end)()"
                 )
                 log = "\n".join(h.log_lines())
-                self.assertIn("│ \\# heading", log)
-                self.assertIn("│ \\- item", log)
-                self.assertIn("│ \\> quote", log)
-                self.assertIn("│ 1\\. ordered", log)
-                self.assertIn("│ \\`\\`\\`md", log)
-                self.assertIn("│ \\| table |", log)
-                self.assertNotIn("```md", log)
+                self.assertIn("│ # heading", log)
+                self.assertIn("│ - item", log)
+                self.assertIn("│ > quote", log)
+                self.assertIn("│ 1. ordered", log)
+                self.assertIn("│ ```md", log)
+                self.assertIn("│ | table |", log)
+                self.assertNotIn("\\# heading", log)
+                self.assertNotIn("\\- item", log)
+                self.assertNotRegex(log, r"(?m)^```md")
 
     def test_tool_header_path_has_extmark(self) -> None:
         with FixtureProject(self.project_root) as project_root:

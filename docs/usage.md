@@ -94,7 +94,9 @@ Tool calls show their results inline.
 - `read` and `write` output stays in fenced markdown code blocks tagged with
   the file language for treesitter highlighting.
 - `bash`, `grep`, `ls`, and `find` output renders as compact transcript rows
-  with a muted gutter and count metadata for list tools.
+  with a muted gutter and count metadata for list tools. Search/list headers
+  include their meaningful arguments, such as `grep "term" in src` or
+  `find *.lua in lua/sherpa`.
 - Tool output is tailed to the last 15 lines with a muted `N earlier lines...`
   note when older lines are hidden.
 - Compact command output is escaped before insertion so markdown-looking output

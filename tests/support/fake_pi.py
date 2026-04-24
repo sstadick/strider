@@ -341,6 +341,24 @@ def prompt_response(message: str) -> str:
         )
         return "Finished compact tool output pass."
 
+    if "tool argument headers" in message.lower():
+        emit_tool_output(
+            "grep",
+            {"pattern": "fixture", "path": "src", "glob": "*.tsx", "limit": 5},
+            "src/App.tsx:1:export function App() {",
+        )
+        emit_tool_output(
+            "find",
+            {"pattern": "*.lua", "path": "lua/sherpa", "limit": 3},
+            "lua/sherpa/rpc.lua\nlua/sherpa/ui.lua",
+        )
+        emit_tool_output(
+            "ls",
+            {"path": "lua/sherpa", "limit": 2},
+            "rpc.lua\nui.lua",
+        )
+        return "Finished tool argument header pass."
+
     if project_has("src/App.tsx"):
         path = Path.cwd() / "src" / "App.tsx"
         emit_read(path)

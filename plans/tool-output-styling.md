@@ -143,6 +143,8 @@ syntax highlighting is valuable.
 - Implemented on 2026-04-24.
 - `read` and `write` still use fenced output for syntax highlighting.
 - `bash`, `grep`, `find`, and `ls` now use compact gutter rows.
+- `grep`, `find`, and `ls` headers include their pi arguments instead of
+  collapsing to the path alone.
 - Compact rows escape markdown-leading content before insertion into the log.
 - Exit status is still intentionally omitted until pi exposes reliable status
   metadata.

@@ -44,27 +44,96 @@ end
 
 -- Build a short inline summary of tool arguments for the log line.
 -- Returns nil when nothing interesting to show.
+local function quoted(value)
+  return type(value) == "string" and string.format("%q", value) or nil
+end
+
+local function option_summary(...)
+  local parts = {}
+  for i = 1, select("#", ...) do
+    local option = select(i, ...)
+    if option then
+      table.insert(parts, option)
+    end
+  end
+  return #parts > 0 and (" (" .. table.concat(parts, ", ") .. ")") or ""
+end
+
+local function grep_args(args)
+  local query = quoted(args.pattern)
+  if not query then
+    return args.path
+  end
+  local target = args.path and (" in " .. args.path) or ""
+  return query .. target .. option_summary(
+    args.glob and ("glob " .. args.glob),
+    args.ignoreCase and "ignore-case",
+    args.literal and "literal",
+    args.context and ("context " .. args.context),
+    args.limit and ("limit " .. args.limit)
+  )
+end
+
+local function find_args(args)
+  local query = args.pattern
+  if not query then
+    return args.path
+  end
+  local target = args.path and (" in " .. args.path) or ""
+  return query .. target .. option_summary(args.limit and ("limit " .. args.limit))
+end
+
+local function ls_args(args)
+  if not args.path then
+    return nil
+  end
+  return args.path .. option_summary(args.limit and ("limit " .. args.limit))
+end
+
 local function format_tool_args(tool_name, args)
   if not args then return nil end
-  local parts = {}
   if tool_name == "grep" then
-    if args.pattern then table.insert(parts, string.format("%q", args.pattern)) end
-    if args.glob then table.insert(parts, args.glob) end
-    if args.path then table.insert(parts, args.path) end
-  elseif tool_name == "find" then
-    if args.pattern then table.insert(parts, args.pattern) end
-    if args.path then table.insert(parts, args.path) end
-  elseif tool_name == "ls" then
-    if args.path then table.insert(parts, args.path) end
-  elseif tool_name == "subagent" then
-    if args.agent then table.insert(parts, args.agent) end
-    if args.task then table.insert(parts, args.task:sub(1, 80)) end
+    return grep_args(args)
   end
+  if tool_name == "find" then
+    return find_args(args)
+  end
+  if tool_name == "ls" then
+    return ls_args(args)
+  end
+  if tool_name ~= "subagent" then
+    return nil
+  end
+  local parts = {}
+  if args.agent then table.insert(parts, args.agent) end
+  if args.task then table.insert(parts, args.task:sub(1, 80)) end
   if #parts == 0 then return nil end
   return table.concat(parts, " ")
 end
 
+local summary_tools = {
+  grep = true,
+  find = true,
+  ls = true,
+  subagent = true,
+}
+
+local summary_verbs = {
+  subagent = "Delegated",
+}
+
+local function append_tool_summary(tool_name, summary, lane)
+  local verb = summary_verbs[tool_name] or "Explored"
+  ui.append({ "• " .. verb, string.format("  └ %s %s", tool_name, summary) }, lane)
+end
+
 local function append_tool(tool_name, args, lane)
+  local summary = summary_tools[tool_name] and format_tool_args(tool_name, args)
+  if summary then
+    append_tool_summary(tool_name, summary, lane)
+    return
+  end
+
   local path = args and args.path
   if path then
     if tool_name == "read" then
@@ -85,9 +154,9 @@ local function append_tool(tool_name, args, lane)
     return
   end
 
-  local summary = format_tool_args(tool_name, args)
+  summary = format_tool_args(tool_name, args)
   if summary then
-    ui.append({ string.format("• Explored"), string.format("  └ %s %s", tool_name, summary) }, lane)
+    append_tool_summary(tool_name, summary, lane)
     return
   end
 

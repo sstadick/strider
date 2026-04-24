@@ -212,10 +212,26 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 h.wait_until(lambda: "2 matches" in "\n".join(h.log_lines()), timeout=5.0)
                 log = "\n".join(h.log_lines())
                 self.assertIn("• Explored", log)
+                self.assertIn('└ grep "fixture" in src', log)
                 self.assertIn("2 matches", log)
                 self.assertIn("│ \\# heading-like output", log)
                 self.assertIn("│ src/App.tsx:1:export function App() {", log)
                 self.assertNotIn("```", log, f"grep output should not use markdown fences; got:\n{log}")
+
+    def test_rpc_tool_headers_include_search_args(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat show tool argument headers")
+                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.send("C-s", pause=0.3)
+                h.wait_until(
+                    lambda: "Finished tool argument header pass" in "\n".join(h.log_lines()),
+                    timeout=5.0,
+                )
+                log = "\n".join(h.log_lines())
+                self.assertIn('└ grep "fixture" in src (glob *.tsx, limit 5)', log)
+                self.assertIn("└ find *.lua in lua/sherpa (limit 3)", log)
+                self.assertIn("└ ls lua/sherpa (limit 2)", log)
 
     def test_compact_tool_output_truncates_above_rows(self) -> None:
         with FixtureProject(self.project_root) as project_root:

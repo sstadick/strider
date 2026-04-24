@@ -1,8 +1,8 @@
 # Ready for work
-- something is wrong with the log header bar, it is showing the lat assistant message or something, but then I can't see amount of context used, which is very important
-- take a pass at simplifying / speeding up each turn, I think we have quite a bit of tooling between each request, and the model, and each reply and the user
 - for the SherpaLogFlow, need some indicator that it's working. Probably need to refactor and unify the SherpaCompose header to not be ont eh compose buffer or something.
     - kind of does this when in normal mode
+- Replace the visible ```diff fenced markdown block with custom diff rendering. Diff extmark coloring works, but the fence directive still looks bad.
+- are we actually diong "steering" prompts and such?
 
 
 # Need refinement
@@ -50,3 +50,10 @@
     - multi-tool call ordering fixed via extmark tracking
     - (don't act on this yet, needs more invstigatin) there's something annoying happening "thinking" where some code-looking elements are getting highlighting
     - diffs use ```diff fencing with treesitter parser for highlighting
+- UX status/acceptance pass
+    - `:SherpaStatus` summarizes lane state, pending controls, review progress, and last errors.
+    - `:SherpaNext!` accepts the current review stop and advances without adding another top-level command.
+    - compose ghost text/winbar says whether `<C-s>` will send, steer, or answer clarify.
+- something is wrong with the log header bar, it is showing the lat assistant message or something, but then I can't see amount of context used, which is very important
+- show the args to the tools like grep and such
+- take a pass at simplifying / speeding up each turn, I think we have quite a bit of tooling between each request, and the model, and each reply and the user

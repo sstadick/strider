@@ -183,6 +183,7 @@ local function handle_response(event, lane)
     state.consume_pending_request(lane)
   end
   ui.append_block("error", reason, lane)
+  state.set_error(reason, lane)
   ui.finish_activity(reason, "error", lane)
   ui.notify(reason, vim.log.levels.ERROR)
 end
@@ -205,6 +206,7 @@ local function handle_extension_error(event, lane)
     if vim.trim(line) ~= "" then first_line = line; break end
   end
   ui.append_block("error", reason, lane)
+  state.set_error(first_line, lane)
   ui.finish_activity(first_line, "error", lane)
   ui.notify(first_line, vim.log.levels.ERROR)
   -- Clear the pending request so the activity spinner actually stops
@@ -383,6 +385,7 @@ local function handle_message_end(event, lane)
   if stop_reason == "error" or stop_reason == "aborted" then
     local reason = message.errorMessage or (stop_reason == "aborted" and "Turn aborted" or "Model request failed")
     ui.append_block("error", reason, lane)
+    state.set_error(reason, lane)
     local level = stop_reason == "aborted" and "cancel" or "error"
     ui.finish_activity(reason, level, lane)
     if stop_reason == "error" then
@@ -865,6 +868,7 @@ local function handle_extension_ui(event, lane)
           state.set_pending_clarify(id, display_title, lane)
           state.set_status("sherpa-clarify", "clarify", lane)
           ui.refresh_compose_winbar(lane)
+          ui.refresh_compose_hint()
           require("sherpa").open_compose_for_clarify()
           ui.seed_compose(prefill)
         else
@@ -887,6 +891,7 @@ local function handle_extension_ui(event, lane)
     state.set_pending_clarify(id, title, lane)
     state.set_status("sherpa-clarify", "clarify", lane)
     ui.refresh_compose_winbar(lane)
+    ui.refresh_compose_hint()
     ui.open_log({ preserve_focus = true }, lane)
     -- Bring compose up; dispatch_compose (init.lua) checks
     -- pending_clarify before anything else and routes there.
@@ -997,48 +1002,77 @@ local function dispatch(event, lane)
   end
 end
 
+-- Reusable per-call buffers to reduce GC pressure during rapid streaming.
+-- split_lines populates `reuse_lines`; consume_json decodes into
+-- `reuse_events`. Both are cleared at the start of each call.
+local reuse_lines = {}
+local reuse_events = {}
+
 local function split_lines(data, tail)
   if #data == 0 then
-    return {}, tail
+    return reuse_lines, tail, 0
   end
 
-  local lines = {}
+  local count = 0
   local current = tail .. (data[1] or "")
   for index = 2, #data do
-    table.insert(lines, current)
+    count = count + 1
+    reuse_lines[count] = current
     current = data[index] or ""
   end
   if data[#data] == "" then
     if current ~= "" then
-      table.insert(lines, current)
+      count = count + 1
+      reuse_lines[count] = current
     end
-    return lines, ""
+    return reuse_lines, "", count
   end
-  return lines, current
+  return reuse_lines, current, count
 end
 
 local function consume_json(session, data, tail_key, lane)
-  local lines
-  lines, session[tail_key] = split_lines(data, session[tail_key])
-  for _, line in ipairs(lines) do
-    local event = decode(line)
+  local lines, new_tail, line_count = split_lines(data, session[tail_key])
+  session[tail_key] = new_tail
+  local event_count = 0
+  for i = 1, line_count do
+    local event = decode(lines[i])
     if event then
-      vim.schedule(function()
-        dispatch(event, lane)
-      end)
+      event_count = event_count + 1
+      reuse_events[event_count] = event
     end
+  end
+  if event_count > 0 then
+    -- Snapshot the events for the scheduled callback; clear reuse buffers.
+    local snapshot = {}
+    for i = 1, event_count do
+      snapshot[i] = reuse_events[i]
+      reuse_events[i] = nil
+    end
+    for i = 1, line_count do reuse_lines[i] = nil end
+    vim.schedule(function()
+      for i = 1, #snapshot do
+        dispatch(snapshot[i], lane)
+      end
+    end)
+  else
+    for i = 1, line_count do reuse_lines[i] = nil end
   end
 end
 
 local function consume_text(session, data, tail_key, lane)
-  local lines
-  lines, session[tail_key] = split_lines(data, session[tail_key])
-  if #lines == 0 then
+  local lines, new_tail, line_count = split_lines(data, session[tail_key])
+  session[tail_key] = new_tail
+  if line_count == 0 then
     return
   end
+  local snapshot = {}
+  for i = 1, line_count do
+    snapshot[i] = lines[i]
+    lines[i] = nil
+  end
   vim.schedule(function()
-    for _, line in ipairs(lines) do
-      ui.append({ "[stderr] " .. line }, lane)
+    for i = 1, #snapshot do
+      ui.append({ "[stderr] " .. snapshot[i] }, lane)
     end
   end)
 end

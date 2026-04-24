@@ -85,8 +85,9 @@ front via the `sherpa_plan` tool; the plugin then walks that fixed list.
    immediately — no follow-up model turn.
 5. `:SherpaNext` / `:SherpaPrev` advance through the fixed plan. Each
    move is a local index change plus a buffer jump — instant, no model
-   call. The sidebar flips to the pre-written explanation for the new
-   stop.
+   call. `:SherpaNext!` accepts the current stop before advancing, so
+   explicit acceptance stays on the existing navigation command. The
+   sidebar flips to the pre-written explanation for the new stop.
 6. `:SherpaReview <question>` with an active review is the only way to
    trigger a per-stop model call. It sends `/review ...` scoped to the
    current stop, carrying the question.
@@ -151,6 +152,7 @@ Sherpa keeps local review state in the Neovim session.
 A review session tracks:
 - review items
 - current index
+- accepted stops
 - local comments
 - per-item explanation text
 - end-of-review summary state
@@ -331,6 +333,8 @@ Working today:
   in `:SherpaLogFlow`)
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
+- `:SherpaStatus` for a compact lane/status/control summary
+- accepted review stops via `:SherpaNext!`
 - `:SherpaStop` to abort in-flight turns
 - inline red `[error]` blocks for provider / model / transport errors
   (no more silent hangs)

@@ -197,13 +197,15 @@ local function excerpt_fence(path)
 end
 
 local function item_label(item, index, total)
+  local status_text = item.status == "accepted" and " [accepted]" or ""
   return string.format(
-    "[%d/%d] %s:%d-%d %s",
+    "[%d/%d] %s:%d-%d%s %s",
     index,
     total,
     vim.fn.fnamemodify(item.path, ":."),
     item.startLine,
     item.endLine,
+    status_text,
     item.title or ""
   )
 end
@@ -281,6 +283,41 @@ local function append_section(lines, title, content)
   table.insert(lines, "")
 end
 
+local function accepted_count(review)
+  local count = 0
+  for _, item in ipairs((review and review.items) or {}) do
+    if item.status == "accepted" then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+local function review_status_lines(review, item)
+  local status_text = "active"
+  if review.planning then
+    status_text = "planning"
+  elseif review.awaiting_summary then
+    status_text = "waiting for summary"
+  elseif review.pending_question then
+    status_text = "answering ranged question"
+  elseif not review.active then
+    status_text = "complete"
+  end
+
+  local lines = {
+    string.format("- state: `%s`", status_text),
+    string.format("- accepted: `%d/%d`", accepted_count(review), #review.items),
+  }
+  if item and item.status then
+    table.insert(lines, string.format("- current stop: `%s`", item.status))
+  end
+  if review.pending_question then
+    table.insert(lines, "- waiting: ranged answer is streaming inline; moving stops will clear it")
+  end
+  return lines
+end
+
 local function panel_lines(review)
   if not review then
     return {
@@ -321,12 +358,17 @@ local function panel_lines(review)
 
   local on_msg0 = has_msg0 and review.current_index == 0
 
+  append_section(lines, "Status", review_status_lines(review, item))
+
   if on_msg0 then
     table.insert(lines, "**Synopsis**")
     table.insert(lines, "")
   elseif item then
     table.insert(lines, string.format("**%s**", item.title or "Review item"))
     table.insert(lines, string.format("`%s:%d-%d`", relative_path(item.path), item.startLine, item.endLine))
+    if item.status == "accepted" then
+      table.insert(lines, "Status: accepted")
+    end
     if item.summary and item.summary ~= "" then
       table.insert(lines, string.format("Synopsis: %s", item.summary))
     end
@@ -398,14 +440,16 @@ local function panel_lines(review)
     end
     for index, stop in ipairs(review.items) do
       local marker = (index == review.current_index) and "→" or " "
-      table.insert(toc, string.format("%s [%d] `%s:%d-%d` %s",
-        marker, index, relative_path(stop.path), stop.startLine, stop.endLine, stop.title or ""))
+      local stop_status = stop.status == "accepted" and " [accepted]" or ""
+      table.insert(toc, string.format("%s [%d] `%s:%d-%d`%s %s",
+        marker, index, relative_path(stop.path), stop.startLine, stop.endLine, stop_status, stop.title or ""))
     end
     append_section(lines, "Review plan", toc)
   end
 
   append_section(lines, "Controls", {
     "- `:SherpaNext` / `:SherpaPrev` move between review items",
+    "- `:SherpaNext!` accepts the current stop and moves on",
     "- `:SherpaReview <question>` asks about the current review item",
     "- `:'<,'>SherpaReview <question>` asks about a selected range",
     "- `:SherpaChat` toggles the chat surfaces (log + compose)",
@@ -417,13 +461,30 @@ local function panel_lines(review)
   return lines
 end
 
+-- Deduplicates render calls within the same event loop tick. Multiple
+-- mutations in a single synchronous chain (e.g. focus_item + ingest_plan)
+-- only rebuild the sidebar once.
+local render_scheduled = false
+
 function M.render()
   local review = review_state()
   if not review then
     ui.hide_review()
     return false
   end
-  ui.set_review_lines(panel_lines(review))
+  if render_scheduled then
+    return true
+  end
+  render_scheduled = true
+  vim.schedule(function()
+    render_scheduled = false
+    local r = review_state()
+    if not r then
+      ui.hide_review()
+      return
+    end
+    ui.set_review_lines(panel_lines(r))
+  end)
   return true
 end
 
@@ -857,6 +918,7 @@ function M.start_planning(focus, opts)
   ui.open_log({ preserve_focus = true }, REVIEW_LANE)
   session.review = {
     active = true,
+    accepted_stops = {},
     awaiting_summary = false,
     comments = {},
     current_index = 0,
@@ -873,14 +935,8 @@ function M.start_planning(focus, opts)
   }
   -- Optimistically seed the status widget so the user sees "planning..."
   -- immediately, before the pi extension's setWidget roundtrip lands.
-  state.set_widget({
-    "Sherpa operation: plan",
-    "Mode: read-only",
-    "Planning review...",
-  }, REVIEW_LANE)
+  state.set_widget({ "Planning review..." }, REVIEW_LANE)
   state.set_status("sherpa", "plan active", REVIEW_LANE)
-  state.set_status("sherpa-operation", "plan", REVIEW_LANE)
-  state.set_status("sherpa-kind", "plan", REVIEW_LANE)
   ui.show_review()
   M.render()
   return true
@@ -1003,6 +1059,7 @@ function M.start_planned(scope, opts)
   local source = opts.resolved_source or scope
   session.review = {
     active = true,
+    accepted_stops = {},
     awaiting_summary = false,
     base = opts.resolved_base or plan.base,
     comments = {},
@@ -1088,7 +1145,7 @@ function M.advance(direction)
   end
 
   local previous = current_item(review)
-  if previous and previous.status == nil then
+  if previous and (previous.status == nil or previous.status == "pending") then
     previous.status = "reviewed"
   end
   review.current_index = next_index
@@ -1104,6 +1161,28 @@ function M.advance(direction)
   local item = current_item(review)
   M.focus_item(item)
   return item, false, true     -- moved to a regular stop
+end
+
+function M.accept_current_stop(opts)
+  opts = opts or {}
+  local review = active_review()
+  local item = current_item(review)
+  if not review or not item then
+    if not opts.quiet then
+      ui.notify("No active review stop to accept", vim.log.levels.WARN)
+    end
+    return false
+  end
+
+  item.status = "accepted"
+  review.accepted_stops = review.accepted_stops or {}
+  review.accepted_stops[item.id] = true
+  state.record_review_acceptance(item, REVIEW_LANE)
+  M.render()
+  if not opts.quiet then
+    ui.notify("Accepted review stop", vim.log.levels.INFO)
+  end
+  return true
 end
 
 function M.finish()

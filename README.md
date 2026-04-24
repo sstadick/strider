@@ -55,7 +55,7 @@ require("sherpa").setup()
 | `:SherpaReview [prompt]` | Open the review popup; submit to start a dedicated review-lane walkthrough or ask about the current stop |
 | `:SherpaLogReview` | Toggle the dedicated review log |
 | `:'<,'>SherpaReview [prompt]` | Open the review popup scoped to the selected range |
-| `:SherpaNext` / `:SherpaPrev` | Walk review stops |
+| `:SherpaNext` / `:SherpaPrev` | Walk review stops; `:SherpaNext!` accepts the current stop first |
 | `:SherpaReviewItems` | Pick any stop from the plan |
 | `:SherpaComment {text}` | Comment on the current stop |
 | `:'<,'>SherpaComment {text}` | Comment on a visual sub-range |
@@ -67,6 +67,7 @@ require("sherpa").setup()
 | `:SherpaChat` | Toggle the chat log + compose buffers |
 | `:[range]SherpaChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:SherpaStop` | Abort the current in-flight turn |
+| `:SherpaStatus` | Open the current lane/status/control summary |
 | `:SherpaRetry` | Re-dispatch a stalled plan turn |
 
 `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, `:SherpaQ`, and
@@ -159,9 +160,9 @@ Chain chat → review:
 2. The model produces a full plan up front via the `sherpa_plan` tool —
    an ordered list of stops with file ranges, titles, hooks, and
    explanations. The plan appears in the review pane as a TOC.
-3. `:SherpaNext` / `:SherpaPrev` walk the fixed plan. Navigation is
-   instant — explanations were written at plan time, so no per-stop
-   model call.
+3. `:SherpaNext` / `:SherpaPrev` walk the fixed plan. `:SherpaNext!`
+   accepts the current stop before advancing. Navigation is instant —
+   explanations were written at plan time, so no per-stop model call.
 4. Selection and diff reviews cover every targeted line. Free-form
    reviews let the model choose.
 5. `:SherpaReview <question>` during a review triggers a per-stop model
@@ -181,12 +182,15 @@ With args, or with an Ex range like `:1,5SherpaChat`, Sherpa opens chat
 and prefills compose instead of sending immediately. Range-prefill uses
 `path:start-end` so you can add the rest of the request before sending.
 
-Compose clears on successful send and survives across turns. Sending
-while a reply is streaming steers the running turn via pi's `steer`
-command — pile up mid-stream corrections freely. Slash-commands
-(`/models`, `/tree`, etc.) are rejected mid-turn. `:SherpaStop` aborts
-the in-flight turn; the abort shows up as a cancel-flavored `[error]`
-block in the log and the activity spinner stops.
+Compose clears on successful send and survives across turns. Empty
+compose ghost text and the winbar show whether `<C-s>` will send, steer,
+or answer a clarify. Sending while a reply is streaming steers the
+running turn via pi's `steer` command. Slash-commands (`/models`,
+`/tree`, etc.) are rejected mid-turn. `:SherpaStop` aborts the in-flight
+turn; the abort shows up as a cancel-flavored `[error]` block in the log
+and the activity spinner stops. `:SherpaStatus` opens a compact summary
+of lane state, pending controls, review progress, model/context widget
+lines, and the last error.
 
 Errors from pi (no API key, model rejected by the provider, etc.)
 render inline as red `[error]` blocks in the log rather than silent

@@ -8,8 +8,9 @@ see `docs/review-planning.md`.
 
 Review is pre-planned. The model commits to a full ordered list of stops
 up front; Sherpa then walks that list stop-by-stop. Navigation is
-mechanical (`:SherpaNext` increments an index); explanations stream into
-the `sherpa://review` pane as each stop becomes active.
+mechanical (`:SherpaNext` increments an index, `:SherpaNext!` accepts the
+current stop before advancing); explanations render into the
+`sherpa://review` pane as each stop becomes active.
 
 This is the smwyg-browser pattern: plan first, navigate fast, deepen on
 demand.
@@ -49,9 +50,9 @@ the original range or the diff. Gaps are auto-filled or surfaced as
    `items[1].explanation` and renders in the review pane. No second
    model round-trip happens on plan completion.
 6. **User navigates.** `:SherpaNext` / `:SherpaPrev` increment/decrement
-   `current_index`. Navigation is a local index change plus a buffer
-   jump — no model call. `:SherpaReviewItems` opens a picker over the
-   plan.
+   `current_index`. `:SherpaNext!` marks the current stop accepted and
+   then advances. Navigation is a local index change plus a buffer jump
+   — no model call. `:SherpaReviewItems` opens a picker over the plan.
 7. **Mid-review questions.** `:SherpaReview <question>` with an active
    review sends a `/review` scoped to the current stop, carrying the
    question as the user focus. This is the one place per-stop model
@@ -101,6 +102,7 @@ session.review = {
   current_index = number,              -- 0 while planning, 1..N after
 
   comments      = { ...review comments... },
+  accepted_stops = {},                 -- stop ids accepted via :SherpaNext!
   awaiting_summary = bool,
   summary       = string | nil,
 }
@@ -123,7 +125,7 @@ A stop:
     { kind = "block", startLine = ..., endLine = ..., text = "..." },
     { kind = "line",  line = ...,                      text = "..." },
   },
-  status     = "pending" | "reviewed" | "commented",
+  status     = "pending" | "reviewed" | "commented" | "accepted",
 }
 ```
 

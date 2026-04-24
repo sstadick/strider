@@ -219,7 +219,7 @@ class TmuxPopupTests(unittest.TestCase):
 
     def test_compose_buffer_identity_is_stable(self) -> None:
         # The compose buffer is created once and reused. After a send +
-        # toggle-cycle, its bufnr stays the same — we're not leaking a
+        # toggle-cycle, its bufnr stays the same - we're not leaking a
         # new buffer on every open.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
@@ -249,6 +249,50 @@ class TmuxPopupTests(unittest.TestCase):
                     timeout=3.0,
                 )
 
+    def test_compose_winbar_shows_pending_turn_controls(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    timeout=3.0,
+                )
+                h.lua(
+                    "(function() "
+                    "  require('sherpa.state').set_pending_request('prompt', {}); "
+                    "  require('sherpa.ui').refresh_compose_winbar('main'); "
+                    "  require('sherpa.ui').refresh_compose_hint(); "
+                    "  return true "
+                    "end)()"
+                )
+
+                h.wait_until(
+                    lambda: "type to steer" in _winbar_for_buffer(h, "sherpa://compose")
+                    and ":SherpaStop" in _winbar_for_buffer(h, "sherpa://compose"),
+                    timeout=3.0,
+                )
+
+    def test_status_surface_lists_lanes_and_controls(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    timeout=3.0,
+                )
+                h.ex("SherpaStatus")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://status')") == "1",
+                    timeout=3.0,
+                )
+
+                status_text = "\n".join(h.buffer_lines("sherpa://status"))
+                self.assertIn("## main", status_text)
+                self.assertIn("## flow", status_text)
+                self.assertIn("## review", status_text)
+                self.assertIn(":SherpaStop", status_text)
+                self.assertIn(":SherpaNext!", status_text)
+
     def test_compose_winbar_tracks_and_rotates_activity(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
@@ -259,7 +303,7 @@ class TmuxPopupTests(unittest.TestCase):
                 )
                 h.lua(
                     "(function() "
-                    "  require('sherpa.ui').start_activity('Sherpa review running...', 'review', 'review'); "
+                    "  require('sherpa.ui').start_activity('Sherpa review running...', 'log', 'review', 'main'); "
                     "  return true "
                     "end)()"
                 )
@@ -274,7 +318,7 @@ class TmuxPopupTests(unittest.TestCase):
                     interval=0.2,
                 )
                 h.lua(
-                    "(function() require('sherpa.ui').finish_activity('done', 'success'); return true end)()"
+                    "(function() require('sherpa.ui').finish_activity('done', 'success', 'main'); return true end)()"
                 )
                 h.wait_until(
                     lambda: _winbar_for_buffer(h, "sherpa://compose") == "Chat: Sherpa is ready.",
@@ -291,7 +335,7 @@ class TmuxPopupTests(unittest.TestCase):
             h.wait_until(lambda: not _popup_open(h))
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
 
-            log_text = "\n".join(h.log_lines())
+            log_text = "\n".join(h.review_log_lines())
             self.assertIn("focus on the mount flow", log_text)
 
     def test_empty_selection_review_opens_context_editor(self) -> None:
@@ -315,7 +359,7 @@ class TmuxPopupTests(unittest.TestCase):
             h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
             h.ex("SherpaNext")
             h.wait_until(
-                lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 1,
+                lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 1,
                 timeout=5.0,
             )
 
@@ -325,7 +369,7 @@ class TmuxPopupTests(unittest.TestCase):
             h.send("why does this mount App?", "C-s", pause=0.3)
             h.wait_until(lambda: not _popup_open(h))
 
-            log_text = "\n".join(h.log_lines())
+            log_text = "\n".join(h.review_log_lines())
             self.assertIn("why does this mount App?", log_text)
 
 

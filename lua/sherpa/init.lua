@@ -2,6 +2,7 @@ local review = require("sherpa.review")
 local rpc = require("sherpa.rpc")
 local search = require("sherpa.search")
 local state = require("sherpa.state")
+local status = require("sherpa.status")
 local ui = require("sherpa.ui")
 
 local M = {}
@@ -10,8 +11,25 @@ local MAIN_LANE = "main"
 local FLOW_LANE = "flow"
 local REVIEW_LANE = "review"
 
+-- Cached CWD + hrtime to short-circuit ensure_backend's per-lane cwd check.
+-- CWD changes are user-initiated and rare; avoid calling getcwd() + comparing
+-- every lane's session on every send().
+local cached_cwd = nil
+local cached_cwd_ns = 0
+local CWD_CACHE_NS = 500e6  -- 500ms in nanoseconds
+
 local function current_cwd()
-  return vim.fn.getcwd()
+  local now = vim.uv.hrtime()
+  if cached_cwd and (now - cached_cwd_ns) < CWD_CACHE_NS then
+    return cached_cwd
+  end
+  cached_cwd = vim.fn.getcwd()
+  cached_cwd_ns = now
+  return cached_cwd
+end
+
+local function invalidate_cwd_cache()
+  cached_cwd = nil
 end
 
 local function ensure_backend(lane)
@@ -64,14 +82,18 @@ local function send(command, user_text, opts)
     ui.open_log({ preserve_focus = true }, lane)
   end
   local operation = opts.operation or nil
+  state.clear_error(lane)
   state.set_pending_request(operation, opts.metadata, lane)
   if operation then
     ui.start_activity(activity_title(operation), activity_target(operation, lane), operation, lane)
   end
+  ui.refresh_compose_winbar(lane)
+  ui.refresh_compose_hint()
   local ok = rpc.send_prompt(command, lane)
   if not ok then
     state.set_pending_request(nil, nil, lane)
     ui.finish_activity("Sherpa request failed to start", "error", lane)
+    ui.refresh_compose_hint()
     return false
   end
   if user_text and user_text ~= "" then
@@ -277,6 +299,10 @@ function M.setup(opts)
   state.setup(opts or {})
 end
 
+function M.status()
+  ui.show_status(status.lines())
+end
+
 -- Cycle the pi thinking level (same semantics as pi's own shift-tab).
 -- Dispatched as a pure extension command — no assistant turn, no
 -- activity spinner, no change to compose buffer contents. The widget
@@ -458,6 +484,7 @@ function M.cancel_pending_clarify_if_any()
   if not pending then return false end
   state.set_status("sherpa-clarify", nil, MAIN_LANE)
   ui.refresh_compose_winbar(MAIN_LANE)
+  ui.refresh_compose_hint()
   cancel_clarify(pending)
   ui.append({ "[sherpa] clarify cancelled" }, MAIN_LANE)
   return true
@@ -477,6 +504,7 @@ function dispatch_compose(text)
     state.consume_pending_clarify(MAIN_LANE)
     state.set_status("sherpa-clarify", nil, MAIN_LANE)
     ui.refresh_compose_winbar(MAIN_LANE)
+    ui.refresh_compose_hint()
     ui.append_block("user", text, MAIN_LANE)
     if not reply_to_clarify(pending_clarify, text) then
       ui.notify("Failed to send clarify reply", vim.log.levels.ERROR)
@@ -736,10 +764,14 @@ function M.patch(prompt, opts)
   })
 end
 
-function M.next_step()
+function M.next_step(accept_current)
   if not review.has_active_review() then
     ui.notify("No active Sherpa review session", vim.log.levels.WARN)
     return
+  end
+
+  if accept_current then
+    review.accept_current_stop({ quiet = true })
   end
 
   -- Explanations are pre-computed at plan time. Navigation is a pure

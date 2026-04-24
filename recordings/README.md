@@ -27,7 +27,7 @@ Output gif lands next to the tape name, e.g. `recordings/patch.gif`.
 ## Demos
 
 - `search.gif` — `:SherpaSearch` jumps to the entrypoint
-- `review-file.gif` — `:SherpaReview file` with `:SherpaNext` / `:SherpaPrev`
+- `review-file.gif` — `:SherpaReview file`, `:SherpaNext!` acceptance, `:SherpaStatus`, and `:SherpaPrev`
 - `review-diff.gif` — `:SherpaReview diff` on an uncommitted change
 - `review-searches.gif` — chain a search into `:SherpaReview searches`
 - `review-selection.gif` — ask about a visual range inside an active review

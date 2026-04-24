@@ -1,5 +1,6 @@
 local clipboard = require("sherpa.clipboard")
 local state = require("sherpa.state")
+local status = require("sherpa.status")
 
 local M = {}
 
@@ -24,6 +25,9 @@ local log_tool_output_ellipsis_hl = "SherpaLogToolOutputEllipsis"
 local log_assistant_bg_hl = "SherpaLogAssistantBg"
 local log_user_bg_hl = "SherpaLogUserBg"
 local log_error_bg_hl = "SherpaLogErrorBg"
+local log_diff_add_hl = "SherpaLogDiffAdd"
+local log_diff_remove_hl = "SherpaLogDiffRemove"
+local log_diff_context_hl = "SherpaLogDiffContext"
 local close_windows_for_buffer
 local target_window
 -- Forward declaration — defined later, referenced by append_block.
@@ -199,12 +203,20 @@ local function compose_status_line(progress, lane)
   end
   if not progress then
     if idle_msg then return prefix .. idle_msg end
+    local action = status.pending_action(lane)
+    if action then
+      return "Chat: " .. action
+    end
     return "Chat: Sherpa is ready."
   end
   local op_prefix = activity_prefixes[progress.operation] or "Sherpa"
   local label = progress.spin_label or activity_labels(progress.operation)[1]
   local elapsed = format_elapsed(progress.started_at)
   local left = string.format("%s%s: %s", prefix, op_prefix, label)
+  local action = lane == "main" and status.pending_action(lane) or nil
+  if action then
+    left = left .. " (" .. action .. ")"
+  end
   if elapsed then
     return left, elapsed
   end
@@ -243,9 +255,16 @@ local function spin_tick(lane)
     stop_spin(lane)
     return
   end
+  -- Skip the refresh entirely when the compose buffer has no visible
+  -- windows — no point formatting + setting the winbar string nobody
+  -- can see. Avoids win_findbuf + pcall overhead for background lanes.
+  local cbuf = session.compose_buf
+  if not cbuf or not vim.api.nvim_buf_is_valid(cbuf) or #vim.fn.win_findbuf(cbuf) == 0 then
+    spin.tick_count = spin.tick_count + 1
+    return
+  end
   spin.tick_count = spin.tick_count + 1
   if spin.tick_count % SPIN_ROTATE_EVERY ~= 0 then
-    -- Label unchanged; just refresh the winbar so the elapsed updates.
     M.refresh_compose_winbar(lane)
     return
   end
@@ -288,6 +307,10 @@ end
 
 local function review_name()
   return "sherpa://review"
+end
+
+local function status_name()
+  return "sherpa://status"
 end
 
 local function log_lines(lines)
@@ -346,13 +369,73 @@ function M.ensure_review_buffer()
   return buf
 end
 
-local function scroll_log_windows(buf)
+function M.ensure_status_buffer()
+  local session = state.ensure_session("main", vim.fn.getcwd())
+  if session.status_buf and vim.api.nvim_buf_is_valid(session.status_buf) then
+    return session.status_buf
+  end
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(buf, status_name())
+  configure_scratch_buffer(buf, "markdown")
+  session.status_buf = buf
+  return buf
+end
+
+function M.show_status(lines)
+  local previous = target_window() or vim.api.nvim_get_current_win()
+  local buf = M.ensure_status_buffer()
+  local items = log_lines(lines or {})
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, items)
+  vim.bo[buf].modifiable = false
+
+  local win = vim.fn.win_findbuf(buf)[1]
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    vim.cmd("botright vsplit")
+    win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, buf)
+    pcall(vim.api.nvim_win_set_width, win, 52)
+    vim.wo[win].wrap = true
+    vim.wo[win].linebreak = true
+    vim.wo[win].number = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = "no"
+  end
+  pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
+  if previous and vim.api.nvim_win_is_valid(previous) then
+    vim.api.nvim_set_current_win(previous)
+  end
+  return win
+end
+
+-- Debounced log scroll. During tool-heavy turns scroll_log_windows fires
+-- many times per frame. A 30ms trailing timer coalesces rapid appends.
+local scroll_timers = {}
+local SCROLL_DEBOUNCE_MS = 30
+
+local function scroll_log_windows_now(buf)
   local last = math.max(vim.api.nvim_buf_line_count(buf), 1)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       pcall(vim.api.nvim_win_set_cursor, win, { last, 0 })
     end
   end
+end
+
+local function scroll_log_windows(buf)
+  local timer = scroll_timers[buf]
+  if timer then
+    timer:stop()
+  else
+    timer = vim.uv.new_timer()
+    scroll_timers[buf] = timer
+  end
+  timer:start(SCROLL_DEBOUNCE_MS, 0, vim.schedule_wrap(function()
+    if vim.api.nvim_buf_is_valid(buf) then
+      scroll_log_windows_now(buf)
+    end
+  end))
 end
 
 -- Build a single-line winbar from the widget that the extension pushes
@@ -365,17 +448,14 @@ local function format_log_winbar(lane)
   local parts = {}
   for _, line in ipairs(widget) do
     local trimmed = vim.trim(line or "")
-    if trimmed ~= "" and not trimmed:match("^Sherpa operation:") and not trimmed:match("^Sherpa: idle$") and not trimmed:match("^Use ") and not trimmed:match("^Waiting for ") and not trimmed:match("^Mode:") and not trimmed:match("^Last ") then
+    if trimmed ~= "" then
       table.insert(parts, trimmed)
     end
   end
   if #parts == 0 then
     return "Sherpa"
   end
-  -- %#Normal# keeps it plain; escape `%` so winbar formatting doesn't
-  -- interpret our payload as a statusline directive.
-  local joined = table.concat(parts, " · "):gsub("%%", "%%%%")
-  return joined
+  return table.concat(parts, " · "):gsub("%%", "%%%%")
 end
 
 -- Apply the winbar to every window currently showing the log buffer.
@@ -441,6 +521,16 @@ local function compose_buffer_name()
   return "sherpa://compose"
 end
 
+local function compose_hint_text()
+  if state.peek_pending_clarify() then
+    return "Answer clarify · <C-s> send · <Esc><Esc> reject"
+  end
+  if state.peek_pending_request() then
+    return "Turn in flight · type to steer · <C-s> send · :SherpaStop cancel"
+  end
+  return "Type a message · <C-v> screenshot · <C-s> to send"
+end
+
 function M.ensure_compose_buffer(on_send)
   local session = state.get_session()
   if session.compose_buf and vim.api.nvim_buf_is_valid(session.compose_buf) then
@@ -461,12 +551,13 @@ function M.ensure_compose_buffer(on_send)
     local is_empty = (#lines == 0) or (#lines == 1 and lines[1] == "")
     if is_empty then
       pcall(vim.api.nvim_buf_set_extmark, buf, compose_ns, 0, 0, {
-        virt_text = { { "Type a message · <C-v> screenshot · <C-s> to send", "Comment" } },
+        virt_text = { { compose_hint_text(), "Comment" } },
         virt_text_pos = "overlay",
       })
     end
   end
 
+  session.compose_hint_renderer = render_hint
   render_hint()
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     buffer = buf,
@@ -572,6 +663,14 @@ function M.ensure_compose_buffer(on_send)
   return buf
 end
 
+function M.refresh_compose_hint()
+  local session = state.get_session()
+  local render = session and session.compose_hint_renderer
+  if render then
+    render()
+  end
+end
+
 -- Open the compose window as a horizontal split below an existing log
 -- window (or, if the log isn't open, in the bottom-right corner).
 -- Focus the compose window and drop into insert.
@@ -666,6 +765,18 @@ function M.hide_chat()
   M.hide_log()
 end
 
+-- Trim the oldest lines from a log buffer when it exceeds the configured
+-- max. Removes ~20% of max to avoid trimming on every append. Extmarks on
+-- trimmed lines auto-delete.
+local function trim_log_buffer(buf)
+  local max = state.get_config().log_max_lines
+  if not max or max <= 0 then return end
+  local count = vim.api.nvim_buf_line_count(buf)
+  if count <= max then return end
+  local trim = math.floor(max * 0.2)
+  vim.api.nvim_buf_set_lines(buf, 0, trim, false, {})
+end
+
 function M.append(lines, lane)
   local buf = M.ensure_log_buffer(lane)
   local items = log_lines(lines)
@@ -673,6 +784,7 @@ function M.append(lines, lane)
     return
   end
   vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+  trim_log_buffer(buf)
   scroll_log_windows(buf)
 end
 
@@ -771,6 +883,29 @@ function M.append_block(label, text, lane, opts)
     hl_group = log_rule_hl,
     priority = 5,
   })
+
+  if label == "diff" then
+    for offset = 1, #items - 1 do
+      local row = start_line + offset
+      local line = items[offset + 1] or ""
+      local hl_group = nil
+      if line:match("^%+") then
+        hl_group = log_diff_add_hl
+      elseif line:match("^%-") then
+        hl_group = log_diff_remove_hl
+      elseif line:match("^%s") then
+        hl_group = log_diff_context_hl
+      end
+      if hl_group then
+        pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+          end_row = row + 1,
+          hl_group = hl_group,
+          hl_eol = true,
+          priority = 8,
+        })
+      end
+    end
+  end
 
   scroll_log_windows(buf)
 end
@@ -877,55 +1012,37 @@ function M.append_tool_output(text, lang, lane, opts)
     return
   end
 
+  -- Single backward pass: find the last meaningful line, stripping
+  -- trailing blanks and pi's "[N more lines in file...]" meta lines.
+  -- Then compute the tail-start index, all without intermediate tables.
   local all_lines = vim.split(text, "\n", { plain = true })
-  -- Strip a single trailing empty line that most text tools emit, but
-  -- preserve genuine blank lines inside the output.
-  if all_lines[#all_lines] == "" then
-    all_lines[#all_lines] = nil
-  end
-  -- Pi's read tool appends a trailing meta line like
-  --   `[24 more lines in file. Use offset=31 to continue.]`
-  -- when the read was truncated. It's useful prose for a transcript
-  -- but it's NOT code — if we leave it in and fence the block, the
-  -- language parser tries to parse it as code. Strip it (and any
-  -- trailing blanks it sits next to); our own `N earlier lines…`
-  -- marker conveys the same "there's more you're not seeing" signal.
-  while #all_lines > 0 do
-    local last = all_lines[#all_lines]
-    if last == "" then
-      all_lines[#all_lines] = nil
-    elseif last:match("^%[%d+ more lines in file%..-%]$") then
-      all_lines[#all_lines] = nil
+  local last_meaningful = #all_lines
+  while last_meaningful > 0 do
+    local line = all_lines[last_meaningful]
+    if line == "" or line:match("^%[%d+ more lines in file%..-%]$") then
+      last_meaningful = last_meaningful - 1
     else
       break
     end
   end
-  if #all_lines == 0 then return end
+  if last_meaningful == 0 then return end
 
-  local hidden = math.max(0, #all_lines - TOOL_OUTPUT_TAIL)
-  local shown
-  if hidden > 0 then
-    shown = vim.list_slice(all_lines, #all_lines - TOOL_OUTPUT_TAIL + 1, #all_lines)
-  else
-    shown = all_lines
-  end
+  local hidden = math.max(0, last_meaningful - TOOL_OUTPUT_TAIL)
+  local tail_start = hidden > 0 and (last_meaningful - TOOL_OUTPUT_TAIL + 1) or 1
 
-  -- Assemble lines to append. Order:
-  --   1. Optional pre-fence marker: `N earlier lines…`
-  --   2. Optional fence open (``` + lang)
-  --   3. Shown lines
-  --   4. Optional fence close (```)
-  --   5. Trailing blank for visual separation
+  -- Build output lines directly from the computed window.
   local lines = {}
-  local marker_offset = nil  -- 0-based row offset of the marker within `lines`
+  local marker_offset = nil
   if hidden > 0 then
-    table.insert(lines, string.format("%d earlier %s…", hidden, hidden == 1 and "line" or "lines"))
+    lines[#lines + 1] = string.format("%d earlier %s\u{2026}", hidden, hidden == 1 and "line" or "lines")
     marker_offset = #lines - 1
   end
-  table.insert(lines, lang and ("```" .. lang) or "```")
-  for _, l in ipairs(shown) do table.insert(lines, l) end
-  table.insert(lines, "```")
-  table.insert(lines, "")
+  lines[#lines + 1] = lang and ("```" .. lang) or "```"
+  for i = tail_start, last_meaningful do
+    lines[#lines + 1] = all_lines[i]
+  end
+  lines[#lines + 1] = "```"
+  lines[#lines + 1] = ""
 
   local items = log_lines(lines)
   if #items == 0 then return end
@@ -940,8 +1057,6 @@ function M.append_tool_output(text, lang, lane, opts)
   end
   scroll_log_windows(buf)
 
-  -- Style the `N earlier lines…` marker as italic muted so it reads
-  -- like a note rather than code / prose.
   if marker_offset ~= nil then
     local marker_row = start_row + marker_offset
     pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, marker_row, 0, {
@@ -968,6 +1083,8 @@ function M.start_live_block(lane)
     buf = buf,
     start_row = vim.api.nvim_buf_line_count(buf),
     lines_in_buffer = 0,
+    pending_text = nil,
+    flush_pending = false,
   }
 end
 
@@ -983,7 +1100,50 @@ function M.ensure_live_block(lane)
     buf = buf,
     start_row = vim.api.nvim_buf_line_count(buf),
     lines_in_buffer = 0,
+    pending_text = nil,
+    flush_pending = false,
   }
+end
+
+local LIVE_BLOCK_THROTTLE_MS = 50
+
+local function flush_live_block(lb)
+  local text = lb.pending_text
+  lb.pending_text = nil
+  lb.flush_pending = false
+  if not text then return end
+  if not vim.api.nvim_buf_is_valid(lb.buf) then return end
+
+  local lines = vim.split(text, "\n", { plain = true })
+  while #lines > 1 and lines[#lines] == "" do
+    table.remove(lines)
+  end
+  if #lines == 0 then return end
+
+  local old_count = lb.lines_in_buffer
+  local new_count = #lines
+
+  -- Fast path: only new lines were appended (common during streaming).
+  -- Replace the last existing line (it may have grown) and append the
+  -- rest, avoiding a full splice of the entire block.
+  if new_count > old_count and old_count > 0 then
+    -- Update the last old line (it may have received more text)
+    vim.api.nvim_buf_set_lines(lb.buf, lb.start_row + old_count - 1, lb.start_row + old_count, false, { lines[old_count] })
+    -- Append only the truly new lines
+    if new_count > old_count then
+      local tail = {}
+      for i = old_count + 1, new_count do
+        tail[#tail + 1] = lines[i]
+      end
+      vim.api.nvim_buf_set_lines(lb.buf, lb.start_row + old_count, lb.start_row + old_count, false, tail)
+    end
+  else
+    -- Full replace fallback (content shrunk or first write)
+    vim.api.nvim_buf_set_lines(lb.buf, lb.start_row, lb.start_row + old_count, false, lines)
+  end
+
+  lb.lines_in_buffer = new_count
+  scroll_log_windows(lb.buf)
 end
 
 function M.update_live_block(full_text, lane)
@@ -992,14 +1152,15 @@ function M.update_live_block(full_text, lane)
   local lb = session and session.live_block
   if not lb then return end
   if not vim.api.nvim_buf_is_valid(lb.buf) then return end
-  local lines = vim.split(full_text or "", "\n", { plain = true })
-  while #lines > 1 and lines[#lines] == "" do
-    table.remove(lines)
-  end
-  if #lines == 0 then return end
-  vim.api.nvim_buf_set_lines(lb.buf, lb.start_row, lb.start_row + lb.lines_in_buffer, false, lines)
-  lb.lines_in_buffer = #lines
-  scroll_log_windows(lb.buf)
+  lb.pending_text = full_text
+  if lb.flush_pending then return end
+  lb.flush_pending = true
+  vim.defer_fn(function()
+    local s = state.get_session(lane)
+    if s and s.live_block == lb then
+      flush_live_block(lb)
+    end
+  end, LIVE_BLOCK_THROTTLE_MS)
 end
 
 function M.finalize_live_block(label, text, lane)
@@ -1008,8 +1169,14 @@ function M.finalize_live_block(label, text, lane)
   if not session then return end
   local lb = session.live_block
   session.live_block = nil
-  if lb and vim.api.nvim_buf_is_valid(lb.buf) and lb.lines_in_buffer > 0 then
-    vim.api.nvim_buf_set_lines(lb.buf, lb.start_row, lb.start_row + lb.lines_in_buffer, false, {})
+  if lb then
+    -- Flush any pending throttled content so lines_in_buffer is accurate.
+    if lb.pending_text then
+      flush_live_block(lb)
+    end
+    if vim.api.nvim_buf_is_valid(lb.buf) and lb.lines_in_buffer > 0 then
+      vim.api.nvim_buf_set_lines(lb.buf, lb.start_row, lb.start_row + lb.lines_in_buffer, false, {})
+    end
   end
   if label and text and vim.trim(text) ~= "" then
     M.append_block(label, text, lane)
@@ -1120,6 +1287,7 @@ function M.finish_activity(message, status, lane)
   session.progress = nil
   stop_spin(lane)
   M.refresh_compose_winbar(lane)
+  M.refresh_compose_hint()
 end
 
 local editor_ns = vim.api.nvim_create_namespace("sherpa-editor-hint")
@@ -1418,10 +1586,22 @@ function M.hide_review()
   end
 end
 
+-- Per-buffer checktime guard. checktime is expensive (stat + potential
+-- reload). A single stop focus can call get_buffer 3–4 times for the same
+-- buffer; skip re-checking within 500ms.
+local checktime_stamps = {}
+local CHECKTIME_DEBOUNCE_NS = 500e6  -- 500ms
+
 local function refresh_buffer(buf)
   if buf <= 0 or not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].modified then
     return
   end
+  local now = vim.uv.hrtime()
+  local last = checktime_stamps[buf]
+  if last and (now - last) < CHECKTIME_DEBOUNCE_NS then
+    return
+  end
+  checktime_stamps[buf] = now
   vim.api.nvim_buf_call(buf, function()
     pcall(vim.cmd, "silent checktime")
   end)
@@ -1440,7 +1620,10 @@ local function clear_chunk_highlight(session)
   session.highlight_buf = nil
 end
 
+local chunk_style_done = false
 ensure_chunk_style = function()
+  if chunk_style_done then return end
+  chunk_style_done = true
   vim.api.nvim_set_hl(0, added_chunk_hl, { default = true, fg = "#73C991" })
   vim.api.nvim_set_hl(0, removed_chunk_hl, { default = true, fg = "#F14C4C" })
   vim.api.nvim_set_hl(0, comment_hl, { default = true, fg = "#D7BA7D" })
@@ -1466,6 +1649,9 @@ ensure_chunk_style = function()
   -- Diff lines in tool-output [diff] blocks. Mirror the gutter-sign
   -- palette so the two surfaces agree: green for added, red for
   -- removed, dim for context.
+  vim.api.nvim_set_hl(0, log_diff_add_hl, { default = true, link = "DiffAdd" })
+  vim.api.nvim_set_hl(0, log_diff_remove_hl, { default = true, link = "DiffDelete" })
+  vim.api.nvim_set_hl(0, log_diff_context_hl, { default = true, link = "DiffChange" })
   -- Paths in tool headers (e.g. after `[tool] read`) stand out so the
   -- eye finds the target quickly when scanning the transcript.
   vim.api.nvim_set_hl(0, log_path_hl, { default = true, fg = "#7BB5FF" })
@@ -1606,15 +1792,17 @@ local function wrap_text(text, width)
   return out
 end
 
--- Clear all sherpa annotations across all buffers that have any. We don't
--- track which buffers received extmarks in this namespace — just walk all
--- loaded buffers and clear. Extmarks are per-buffer so this is cheap.
+-- Buffers that received annotation extmarks. Tracked so clear only touches
+-- the 1–2 buffers that actually have marks instead of every loaded buffer.
+local annotated_bufs = {}
+
 function M.clear_stop_annotations()
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+  for buf in pairs(annotated_bufs) do
     if vim.api.nvim_buf_is_valid(buf) then
       pcall(vim.api.nvim_buf_clear_namespace, buf, annotation_namespace, 0, -1)
     end
   end
+  annotated_bufs = {}
 end
 
 -- Render annotations for a single plan stop. `item` is a stop from the
@@ -1632,6 +1820,7 @@ function M.set_stop_annotations(item)
     return
   end
   ensure_chunk_style()
+  annotated_bufs[buf] = true
 
   local max_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
   local stop_start = math.min(math.max(tonumber(item.startLine) or 1, 1), max_line)

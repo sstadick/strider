@@ -15,7 +15,7 @@ class TmuxReviewTests(unittest.TestCase):
         h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
         h.ex("SherpaNext")
         h.wait_until(
-            lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 1,
+            lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 1,
             timeout=5.0,
         )
 
@@ -28,6 +28,7 @@ class TmuxReviewTests(unittest.TestCase):
             self.assertEqual("0", h.expr("exists(':SherpaTeach')"))
             self.assertEqual("2", h.expr("exists(':SherpaReview')"))
             self.assertEqual("2", h.expr("exists(':SherpaQ')"))
+            self.assertEqual("2", h.expr("exists(':SherpaStatus')"))
 
     def test_selection_review_populates_current_explanation(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
@@ -99,9 +100,9 @@ class TmuxReviewTests(unittest.TestCase):
             h.ex("1,2SherpaComment")
             h.wait_until(lambda: h.expr("bufexists('sherpa://comment')") == "1")
             h.send("This needs more context", "Enter", "And a second line", "C-s", pause=1.0)
-            h.wait_until(lambda: h.expr("luaeval(\"#require('sherpa.state').get_session().review.comments\")") == "1")
+            h.wait_until(lambda: h.expr("luaeval(\"#require('sherpa.state').get_session('review').review.comments\")") == "1")
 
-            comment_text = h.expr("luaeval(\"require('sherpa.state').get_session().review.comments[1].text\")")
+            comment_text = h.expr("luaeval(\"require('sherpa.state').get_session('review').review.comments[1].text\")")
             self.assertIn("This needs more context", comment_text)
             self.assertIn("And a second line", comment_text)
 
@@ -121,9 +122,9 @@ class TmuxReviewTests(unittest.TestCase):
             self.assertIn("why does this helper matter?", editor_text)
 
             h.send("Enter", "Please document the intent too.", "C-s", pause=1.0)
-            h.wait_until(lambda: h.expr("luaeval(\"#require('sherpa.state').get_session().review.comments\")") == "1")
+            h.wait_until(lambda: h.expr("luaeval(\"#require('sherpa.state').get_session('review').review.comments\")") == "1")
 
-            comment_text = h.expr("luaeval(\"require('sherpa.state').get_session().review.comments[1].text\")")
+            comment_text = h.expr("luaeval(\"require('sherpa.state').get_session('review').review.comments[1].text\")")
             self.assertIn("why does this helper matter", comment_text)
             self.assertIn("Please document the intent too.", comment_text)
 
@@ -133,7 +134,7 @@ class TmuxReviewTests(unittest.TestCase):
                 and "I found unresolved review comments" in "\n".join(h.buffer_lines("sherpa://review"))
             )
 
-            log_text = "\n".join(h.log_lines())
+            log_text = "\n".join(h.review_log_lines())
             self.assertIn("Summarize unresolved review comments", log_text)
             self.assertIn("I found unresolved review comments", log_text)
 
@@ -142,7 +143,7 @@ class TmuxReviewTests(unittest.TestCase):
             self._submit_review(h, "SherpaReview explain src/main.tsx")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
 
-            summary = h.lua("require('sherpa.state').get_session().review.items[1].summary")
+            summary = h.lua("require('sherpa.state').get_session('review').review.items[1].summary")
             self.assertNotEqual("", summary)
 
     def test_top_level_review_starts_planned_project_review(self) -> None:
@@ -150,13 +151,13 @@ class TmuxReviewTests(unittest.TestCase):
             self._submit_review(h, "SherpaReview Explain what this repo is about")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
-            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2, timeout=8.0)
+            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session('review').review.items")) >= 2, timeout=8.0)
 
-            item_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
+            item_count = int(h.lua("#require('sherpa.state').get_session('review').review.items"))
             self.assertGreaterEqual(item_count, 2)
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
-            current_index = int(h.lua("require('sherpa.state').get_session().review.current_index"))
+            current_index = int(h.lua("require('sherpa.state').get_session('review').review.current_index"))
             open_buffers = h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})')
             self.assertIn("- source: `review`", review_text)
             self.assertIn("## Synopsis", review_text)
@@ -170,21 +171,47 @@ class TmuxReviewTests(unittest.TestCase):
             self._submit_review(h, "SherpaReview Explain what this repo is about")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
-            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2, timeout=8.0)
+            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session('review').review.items")) >= 2, timeout=8.0)
 
-            first_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
-            first_index = int(h.lua("require('sherpa.state').get_session().review.current_index"))
+            first_count = int(h.lua("#require('sherpa.state').get_session('review').review.items"))
+            first_index = int(h.lua("require('sherpa.state').get_session('review').review.current_index"))
             self.assertGreaterEqual(first_count, 2)
             self.assertEqual(0, first_index)
 
             h.ex("SherpaNext")
-            h.wait_until(lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 1, timeout=5.0)
+            h.wait_until(lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 1, timeout=5.0)
 
             h.ex("SherpaPrev")
-            h.wait_until(lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 0, timeout=5.0)
+            h.wait_until(lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 0, timeout=5.0)
 
-            second_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
+            second_count = int(h.lua("#require('sherpa.state').get_session('review').review.items"))
             self.assertEqual(first_count, second_count)
+
+    def test_next_bang_marks_current_item_accepted_and_records_history(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            self._submit_review(h, "SherpaReview Explain what this repo is about")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
+            h.ex("SherpaNext")
+            h.wait_until(
+                lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 1,
+                timeout=5.0,
+            )
+
+            h.ex("SherpaNext!")
+            h.wait_until(
+                lambda: h.lua("require('sherpa.state').get_session('review').review.items[1].status") == "accepted",
+                timeout=3.0,
+            )
+            h.wait_until(
+                lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 2,
+                timeout=3.0,
+            )
+
+            review_text = "\n".join(h.buffer_lines("sherpa://review"))
+            self.assertIn("accepted", review_text)
+            accepted_count = int(h.lua("#require('sherpa.state').review_acceptances('review')"))
+            self.assertEqual(1, accepted_count)
 
     def test_file_review_keeps_focus_on_named_file_when_log_opens_on_start(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
@@ -192,7 +219,7 @@ class TmuxReviewTests(unittest.TestCase):
             self._submit_review(h, "SherpaReview explain src/main.tsx")
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
 
-            item_path = h.lua("require('sherpa.state').get_session().review.items[1].path")
+            item_path = h.lua("require('sherpa.state').get_session('review').review.items[1].path")
             self.assertTrue(item_path.endswith("src/main.tsx"), item_path)
 
 

@@ -18,6 +18,7 @@ local defaults = {
   auto_jump = true,
   extension_path = nil,
   log_buffer_name = "sherpa://log",
+  log_max_lines = 5000,
   open_log_on_start = true,
   pi_cmd = { "pi" },
 }
@@ -57,16 +58,19 @@ local function new_session(cwd, lane)
     lane = lane,
     last_summary = nil,
     last_touched_file = nil,
+    last_error = nil,
     log_buf = nil,
     pending_request = nil,
     progress = nil,
     recent_files = {},
     request_seq = 0,
     review = nil,
+    review_acceptances = {},
     review_buf = nil,
     review_win = nil,
     search_history = {},
     status = {},
+    status_buf = nil,
     stderr_tail = "",
     stdout_tail = "",
     tool_args = {},
@@ -181,6 +185,20 @@ function M.set_summary(text, lane)
   session.last_summary = text
 end
 
+function M.set_error(text, lane)
+  local session = M.get_session(lane)
+  if session then
+    session.last_error = text
+  end
+end
+
+function M.clear_error(lane)
+  local session = M.get_session(lane)
+  if session then
+    session.last_error = nil
+  end
+end
+
 function M.set_pending_request(operation, metadata, lane)
   local session = M.get_session(lane)
   if not session then
@@ -233,6 +251,33 @@ function M.consume_pending_clarify(lane)
   local p = session.pending_clarify
   session.pending_clarify = nil
   return p
+end
+
+function M.record_review_acceptance(stop, lane)
+  local session = M.get_session(lane or "review")
+  if not session or not stop then
+    return
+  end
+  local id = stop.id or string.format("%s:%s-%s", stop.path or "", stop.startLine or "", stop.endLine or "")
+  for _, item in ipairs(session.review_acceptances) do
+    if item.id == id then
+      item.accepted_at = os.time()
+      return
+    end
+  end
+  table.insert(session.review_acceptances, {
+    accepted_at = os.time(),
+    endLine = stop.endLine,
+    id = id,
+    path = stop.path,
+    startLine = stop.startLine,
+    title = stop.title,
+  })
+end
+
+function M.review_acceptances(lane)
+  local session = M.get_session(lane or "review")
+  return session and session.review_acceptances or {}
 end
 
 function M.is_flow_operation(op)

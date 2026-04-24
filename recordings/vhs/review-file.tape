@@ -1,4 +1,4 @@
-# Sherpa review-file demo — start a file walkthrough, step forward and back.
+# Sherpa review-file demo — start a file walkthrough, accept a stop, and step back.
 # Run:   vhs recordings/vhs/review-file.tape
 
 Output recordings/review-file.gif
@@ -29,11 +29,17 @@ Enter
 # Let the review panel render the first explanation.
 Sleep 4000ms
 
-# Advance to the next review item.
-Type ":SherpaNext"
+# Accept the current stop and advance to the next review item.
+Type ":SherpaNext!"
 Sleep 1800ms
 Enter
 Sleep 3500ms
+
+# Check the compact lane/status surface.
+Type ":SherpaStatus"
+Sleep 1800ms
+Enter
+Sleep 3000ms
 
 # Step back to the previous item.
 Type ":SherpaPrev"

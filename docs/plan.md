@@ -15,10 +15,13 @@ Supporting UX:
 - quickfix + telescope/fzf search selection
 - range highlighting for search/edit targets (suppressed during review)
 - local review comments summarized back to the agent at review end
+- accepted review stops via `:SherpaNext!` without adding another
+  top-level review command
 - `[Tangent]` badge in the compose winbar while a `:SherpaQ` branch is
   active; any other `:Sherpa*` command implicitly ends it
 - clarify and plan-proposal flows in the chat log (no popups);
   compose hijacked for replies with a `[Clarify]` badge
+- `:SherpaStatus` for a compact lane/status/control summary
 - `:SherpaStop` to abort in-flight turns (pi `abort` RPC)
 - inline red `[error]` blocks surface provider / model / transport
   errors that used to silently hang the log
@@ -47,6 +50,7 @@ Done:
 - annotation lifecycle: cleared when the active stop changes or the review
   ends; extmarks are in-memory only so nvim exit cleans up automatically
 - `:SherpaNext` / `:SherpaPrev` are instant — no per-stop model call
+- `:SherpaNext!` marks the current stop accepted before moving on
 - TOC in the review pane for multi-stop plans (rendered below comments)
 - coverage guarantees for `selection` and `diff` scopes
 - append-only mid-review plan growth for free-scope (`sherpa_append_stops`)

@@ -28,6 +28,9 @@ local log_error_bg_hl = "SherpaLogErrorBg"
 local log_diff_add_hl = "SherpaLogDiffAdd"
 local log_diff_remove_hl = "SherpaLogDiffRemove"
 local log_diff_context_hl = "SherpaLogDiffContext"
+local compose_working_hl = "SherpaComposeWorking"
+local compose_working_soft_hl = "SherpaComposeWorkingSoft"
+local compose_working_shine_hl = "SherpaComposeWorkingShine"
 local close_windows_for_buffer
 local target_window
 -- Forward declaration — defined later, referenced by append_block.
@@ -43,7 +46,6 @@ local function spin_state(lane)
   lane = normalize_lane(lane)
   spin_states[lane] = spin_states[lane] or {
     index = 0,
-    tick_count = 0,
     timer = nil,
   }
   return spin_states[lane], lane
@@ -64,7 +66,7 @@ end
 
 -- Format a hrtime-based nanosecond duration as a short human string
 -- that fits in the winbar. Under 60s: `3s`. Under an hour: `1m24s`.
--- Otherwise: `1h12m`. 
+-- Otherwise: `1h12m`.
 local function format_elapsed(start_ns)
   if not start_ns then return nil end
   local now = vim.uv.hrtime()
@@ -80,6 +82,38 @@ local function format_elapsed(start_ns)
     local minutes = math.floor((elapsed_s % 3600) / 60)
     return string.format("%dh%02dm", hours, minutes)
   end
+end
+
+local function escape_status_text(text)
+  return (text or ""):gsub("%%", "%%%%")
+end
+
+local WORKING_LABEL = "Working"
+local WORKING_SHINE_PADDING = 2
+
+-- Winbar strings support statusline highlight escapes (`%#Group#...%*`).
+-- Use them to sweep a small highlight window across `Working` so the
+-- compose header gets a subtle Codex-style shine while a turn is active.
+local function compose_working_label(prefix, lane)
+  ensure_chunk_style()
+  local spin = spin_state(lane)
+  local phase = spin.index or 0
+  local center = phase - (WORKING_SHINE_PADDING - 1)
+  local pieces = {}
+  if prefix ~= "" then
+    table.insert(pieces, escape_status_text(prefix))
+  end
+  for i = 1, #WORKING_LABEL do
+    local hl = compose_working_hl
+    local distance = math.abs(i - center)
+    if distance == 0 then
+      hl = compose_working_shine_hl
+    elseif distance == 1 then
+      hl = compose_working_soft_hl
+    end
+    table.insert(pieces, string.format("%%#%s#%s%%*", hl, WORKING_LABEL:sub(i, i)))
+  end
+  return table.concat(pieces)
 end
 
 local function compose_status_line(progress, lane)
@@ -110,11 +144,11 @@ local function compose_status_line(progress, lane)
     end
     return "Sherpa is ready."
   end
-  -- Active: "Working (Ns · :SherpaStop to interrupt)"
+  -- Active: animate `Working` and keep the elapsed-time / stop hint on the right.
   local elapsed = format_elapsed(progress.started_at) or "0s"
-  local left = string.format("%sWorking", prefix)
+  local left = compose_working_label(prefix, lane)
   local right = string.format("%s · :SherpaStop to interrupt", elapsed)
-  return left, right
+  return left, right, true
 end
 
 function M.refresh_compose_winbar(lane)
@@ -122,10 +156,12 @@ function M.refresh_compose_winbar(lane)
   local session = state.get_session(lane)
   local buf = session and session.compose_buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  local left, right = compose_status_line(session and session.progress, lane)
-  left = left:gsub("%%", "%%%%")
+  local left, right, left_is_statusline = compose_status_line(session and session.progress, lane)
+  if not left_is_statusline then
+    left = escape_status_text(left)
+  end
   local value = right
-    and (left .. "%=" .. right:gsub("%%", "%%%%"))
+    and (left .. "%=" .. escape_status_text(right))
     or left
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
@@ -134,9 +170,8 @@ function M.refresh_compose_winbar(lane)
   end
 end
 
--- Ticks run every SPIN_INTERVAL_MS. No label rotation — just refresh
--- the compose winbar so the elapsed-time suffix updates smoothly.
-local SPIN_INTERVAL_MS = 1000
+-- Ticks drive the `Working` shimmer and keep the elapsed-time suffix fresh.
+local SPIN_INTERVAL_MS = 120
 
 local function spin_tick(lane)
   local spin = spin_state(lane)
@@ -146,6 +181,7 @@ local function spin_tick(lane)
     stop_spin(lane)
     return
   end
+  spin.index = (spin.index + 1) % (#WORKING_LABEL + WORKING_SHINE_PADDING * 2)
   local cbuf = session.compose_buf
   if not cbuf or not vim.api.nvim_buf_is_valid(cbuf) or #vim.fn.win_findbuf(cbuf) == 0 then
     return
@@ -156,6 +192,7 @@ end
 local function start_spin(progress, lane)
   local spin = spin_state(lane)
   stop_spin(lane)
+  spin.index = 0
   M.refresh_compose_winbar(lane)
   spin.timer = vim.uv.new_timer()
   spin.timer:start(SPIN_INTERVAL_MS, SPIN_INTERVAL_MS, vim.schedule_wrap(function()
@@ -1572,6 +1609,11 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, removed_chunk_hl, { default = true, fg = "#F14C4C" })
   vim.api.nvim_set_hl(0, comment_hl, { default = true, fg = "#D7BA7D" })
   vim.api.nvim_set_hl(0, annotation_hl, { default = true, link = "Comment" })
+  -- Compose winbar activity shimmer. Keep the base text theme-native,
+  -- then sweep muted + bright accents across `Working` while a turn runs.
+  vim.api.nvim_set_hl(0, compose_working_hl, { default = true, link = "WinBar" })
+  vim.api.nvim_set_hl(0, compose_working_soft_hl, { default = true, fg = "#9CA3AF" })
+  vim.api.nvim_set_hl(0, compose_working_shine_hl, { default = true, fg = "#73C991", bold = true })
   -- Log pane hierarchy: user messages stand out in blue; assistant
   -- blocks are green so replies are visually distinct from tool output
   -- and rules; tool blocks use normal text.

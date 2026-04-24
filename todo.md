@@ -1,8 +1,4 @@
 # Ready for work
-- for the SherpaLogFlow, need some indicator that it's working. Probably need to refactor and unify the SherpaCompose header to not be ont eh compose buffer or something.
-    - kind of does this when in normal mode
-- Replace the visible ```diff fenced markdown block with custom diff rendering. Diff extmark coloring works, but the fence directive still looks bad.
-- are we actually diong "steering" prompts and such?
 
 
 # Need refinement
@@ -57,3 +53,7 @@
 - something is wrong with the log header bar, it is showing the lat assistant message or something, but then I can't see amount of context used, which is very important
 - show the args to the tools like grep and such
 - take a pass at simplifying / speeding up each turn, I think we have quite a bit of tooling between each request, and the model, and each reply and the user
+- for the SherpaLogFlow, need some indicator that it's working. Probably need to refactor and unify the SherpaCompose header to not be ont eh compose buffer or something.
+    - kind of does this when in normal mode
+- Replace the visible ```diff fenced markdown block with custom diff rendering. Diff extmark coloring works, but the fence directive still looks bad.
+- are we actually diong "steering" prompts and such?

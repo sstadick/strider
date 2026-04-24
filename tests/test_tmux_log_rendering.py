@@ -1,5 +1,5 @@
 """Tests for rich log rendering of tool calls: [tool-output] blocks
-after bash/read/grep/ls/find/write, [diff] blocks after edit, and
+after bash/read/grep/ls/find/write, inline diff rows after edit, and
 accent-colored file paths in [tool] headers.
 
 These exercise the UI surface end-to-end through a real Neovim session
@@ -7,6 +7,8 @@ with the fake pi backend. The fake already emits the event shapes these
 paths read (result.content[].text for tool output, result.details.diff
 for edit), so no fake_pi changes are needed.
 """
+import json
+import time
 import unittest
 from pathlib import Path
 
@@ -19,19 +21,23 @@ class TmuxLogRenderingTests(unittest.TestCase):
         self.repo_root = Path(__file__).resolve().parents[1]
         self.project_root = self.repo_root / "tests" / "fixtures" / "app"
 
-    def test_edit_tool_emits_diff_block(self) -> None:
+    def test_edit_tool_emits_inline_diff_rows(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat update the fixture app")
                 h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
-                    lambda: "• Diff" in "\n".join(h.log_lines()),
+                    lambda: any(line.lstrip().startswith("+") for line in h.log_lines()),
                     timeout=5.0,
                 )
                 log = "\n".join(h.log_lines())
-                self.assertIn("• Diff", log)
-                # Diff lines are indented with 2 spaces under the bullet.
+                self.assertIn("• Edited", log)
+                self.assertRegex(log, r"• Edited .+\(\+1 -0\)")
+                self.assertNotIn("• Diff", log)
+                self.assertNotIn("```diff", log)
+                self.assertNotIn("└ edit ", log)
+                # Diff lines are indented with 2 spaces under the edit line.
                 # fake_pi emits `+ <line> edited` as the diff stub.
                 diff_lines = [
                     line for line in h.log_lines()
@@ -42,14 +48,14 @@ class TmuxLogRenderingTests(unittest.TestCase):
                     f"expected at least one +/- diff line, got log:\n{log}",
                 )
 
-    def test_diff_block_has_line_highlighting_extmarks(self) -> None:
+    def test_inline_diff_rows_have_line_highlighting_extmarks(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat update the fixture app")
                 h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
-                    lambda: "• Diff" in "\n".join(h.log_lines()),
+                    lambda: any(line.lstrip().startswith("+") for line in h.log_lines()),
                     timeout=5.0,
                 )
 
@@ -182,6 +188,97 @@ class TmuxLogRenderingTests(unittest.TestCase):
                     "end)()"
                 )
                 self.assertTrue(has_path_hl, "expected SherpaLogPath extmark on a tool header")
+
+    def test_log_pin_shows_last_user_message_preview(self) -> None:
+        pin_state = (
+            "(function() "
+            "  local buf = vim.fn.bufnr('sherpa://log'); "
+            "  if buf <= 0 then return {height = 0, lines = {}} end; "
+            "  local win = vim.fn.win_findbuf(buf)[1]; "
+            "  if not win then return {height = 0, lines = {}} end; "
+            "  local pin = vim.w[win].sherpa_log_pin_win; "
+            "  if not pin or not vim.api.nvim_win_is_valid(pin) then return {height = 0, lines = {}} end; "
+            "  local pbuf = vim.api.nvim_win_get_buf(pin); "
+            "  return {height = vim.api.nvim_win_get_height(pin), lines = vim.api.nvim_buf_get_lines(pbuf, 0, -1, false)} "
+            "end)()"
+        )
+
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                message = " ".join(["sticky"] * 60)
+                h.lua(
+                    "(function() "
+                    "  local state = require('sherpa.state'); "
+                    "  local ui = require('sherpa.ui'); "
+                    "  state.ensure_session('main', vim.fn.getcwd()); "
+                    "  ui.open_log({}, 'main'); "
+                    "  local log_win = vim.fn.win_findbuf(vim.fn.bufnr('sherpa://log'))[1]; "
+                    "  vim.api.nvim_win_set_width(log_win, 28); "
+                    "  ui.append_block('user', " + json.dumps(message) + ", 'main'); "
+                    "  for i = 1, 80 do ui.append({'assistant ' .. i}, 'main') end; "
+                    "  return true "
+                    "end)()"
+                )
+                h.wait_until(lambda: h.json_expr(f"luaeval({json.dumps(pin_state)})")["height"] > 0, timeout=3.0)
+                state = h.json_expr(f"luaeval({json.dumps(pin_state)})")
+                self.assertLessEqual(state["height"], 5)
+                self.assertEqual(state["height"], len(state["lines"]))
+                self.assertEqual(state["height"], 5)
+                self.assertTrue(state["lines"][0].startswith("› sticky"), state)
+                self.assertTrue(state["lines"][-1].endswith("…"), state)
+
+    def test_log_follow_pauses_when_scrolled_up_and_resumes_at_bottom(self) -> None:
+        log_at_bottom = (
+            "(function() "
+            "  local buf = vim.fn.bufnr('sherpa://log'); "
+            "  if buf <= 0 then return false end; "
+            "  local win = vim.fn.win_findbuf(buf)[1]; "
+            "  if not win then return false end; "
+            "  return vim.api.nvim_win_call(win, function() "
+            "    return vim.fn.line('w$') >= vim.fn.line('$') "
+            "  end) "
+            "end)()"
+        )
+        log_following = (
+            "(function() "
+            "  local buf = vim.fn.bufnr('sherpa://log'); "
+            "  if buf <= 0 then return false end; "
+            "  local win = vim.fn.win_findbuf(buf)[1]; "
+            "  if not win then return false end; "
+            "  return vim.w[win].sherpa_log_follow == true "
+            "end)()"
+        )
+
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.lua(
+                    "(function() "
+                    "  local state = require('sherpa.state'); "
+                    "  local ui = require('sherpa.ui'); "
+                    "  state.ensure_session('main', vim.fn.getcwd()); "
+                    "  ui.open_log({}, 'main'); "
+                    "  for i = 1, 80 do ui.append({'initial ' .. i}, 'main') end; "
+                    "  return true "
+                    "end)()"
+                )
+                h.wait_until(lambda: h.lua_bool(log_at_bottom), timeout=3.0)
+
+                h.send("g", "g", pause=0.2)
+                h.wait_until(lambda: not h.lua_bool(log_at_bottom), timeout=3.0)
+                h.wait_until(lambda: not h.lua_bool(log_following), timeout=3.0)
+
+                h.lua("(function() require('sherpa.ui').append({'after paused'}, 'main'); return true end)()")
+                time.sleep(0.2)  # allow the debounced follow-scroll timer to fire
+                self.assertIn("after paused", "\n".join(h.log_lines()))
+                self.assertFalse(h.lua_bool(log_at_bottom), "paused log window should not jump to the tail")
+
+                h.send("G", pause=0.2)
+                h.wait_until(lambda: h.lua_bool(log_at_bottom), timeout=3.0)
+                h.wait_until(lambda: h.lua_bool(log_following), timeout=3.0)
+
+                h.lua("(function() require('sherpa.ui').append({'after relocked'}, 'main'); return true end)()")
+                h.wait_until(lambda: h.lua_bool(log_at_bottom), timeout=3.0)
+                self.assertIn("after relocked", "\n".join(h.log_lines()))
 
 
 if __name__ == "__main__":

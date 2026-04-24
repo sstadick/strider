@@ -19,6 +19,8 @@ local defaults = {
   extension_path = nil,
   log_buffer_name = "sherpa://log",
   log_max_lines = 5000,
+  log_pin_max_rows = 5,
+  log_pin_user_message = true,
   open_log_on_start = true,
   pi_cmd = { "pi" },
 }
@@ -59,6 +61,7 @@ local function new_session(cwd, lane)
     last_summary = nil,
     last_touched_file = nil,
     last_error = nil,
+    last_user_message = nil,
     log_buf = nil,
     pending_request = nil,
     progress = nil,

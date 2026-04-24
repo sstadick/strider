@@ -528,6 +528,19 @@ local function changed_lines(event)
   return changes
 end
 
+local function diff_stats(diff)
+  local added = 0
+  local removed = 0
+  for _, line in ipairs(vim.split(diff or "", "\n", { plain = true })) do
+    if line:match("^%+") and not line:match("^%+%+%+") then
+      added = added + 1
+    elseif line:match("^%-") and not line:match("^%-%-%-") then
+      removed = removed + 1
+    end
+  end
+  return added, removed
+end
+
 local function read_range(event)
   local start = tonumber(event.args and event.args.offset) or 1
   local limit = tonumber(event.args and event.args.limit)
@@ -592,8 +605,8 @@ local function tool_result_text(event)
 end
 
 -- Tools whose textual result is worth showing in the log (vs dropped
--- as noise). edit is deliberately excluded — its `[diff]` block below
--- already captures the change, and the raw text result for edit tends
+-- as noise). edit is deliberately excluded — its inline diff rows below
+-- already capture the change, and the raw text result for edit tends
 -- to be a redundant "OK" string.
 local TOOL_OUTPUT_WHITELIST = {
   bash = true,
@@ -646,8 +659,8 @@ local function handle_tool_end(event, lane)
   local insert_opts = insert_row and { insert_at = insert_row } or {}
 
   -- Render textual output for tools where seeing the content helps the
-  -- user follow along (everything except edit, which gets a diff block
-  -- below, and Sherpa's internal planning tools which carry structured
+  -- user follow along (everything except edit, which renders inline diff
+  -- rows below, and Sherpa's internal planning tools which carry structured
   -- payloads rather than user-facing text). For read/write we pass a
   -- language tag so the content is fenced and treesitter +
   -- render-markdown can syntax-highlight it; other tools render as
@@ -713,13 +726,12 @@ local function handle_tool_end(event, lane)
     -- not move the user's window to follow model tool use.
     local lines = changed_lines(event)
     ui.highlight_lines(path, lines, lane)
-    -- Also show the diff in the log as a [diff] block. Pi emits a
-    -- unified diff at event.result.details.diff already formatted with
-    -- `+NUM / -NUM /  NUM` line prefixes; append_block's diff branch
-    -- colors each line by prefix.
     local diff_text = event.result and event.result.details and event.result.details.diff
     if diff_text and diff_text ~= "" then
-      ui.append_block("diff", string.format("```diff\n%s\n```", diff_text), lane, insert_opts)
+      local added, removed = diff_stats(diff_text)
+      local suffix = string.format(" (+%d -%d)", added, removed)
+      ui.update_tool_line(insert_row and (insert_row - 1) or nil, "edit", path, suffix, lane)
+      ui.append_diff(diff_text, lane, insert_opts)
     end
     return
   end

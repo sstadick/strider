@@ -187,6 +187,10 @@ Purpose:
 - keep the full transcript, tool activity, and stderr
 - useful for debugging and history
 - toggled via `:SherpaChat` along with compose
+- tail new output only while the log window is already at the bottom;
+  scrolling up pauses follow-mode until the user jumps back to the tail
+- keep the latest user prompt available as a small pinned preview when
+  its source block has scrolled out of view
 - not the primary pairing surface during review
 
 ### Input editor
@@ -239,25 +243,24 @@ about the current review item.
   spinner. Without handling this, the log just hangs on "Waiting for
   assistant response…".
 - `tool_execution_start`
-  - log tool usage as a `[tool] <name> <path>` header line (paths
-    highlighted in the `SherpaLogPath` accent color)
+  - log tool usage as a Codex-style `• Verb` header (paths highlighted
+    in the `SherpaLogPath` accent color)
   - track touched paths
 - `tool_execution_end`
   - output is inserted directly after the matching tool header
     (via extmark tracking) rather than appended at the end of the log,
     so parallel tool calls render header+result pairs in order
-  - for `edit`: parse `result.details.diff` and render it as a
-    `[diff]` block fenced with ` ```diff ` so treesitter's diff parser
-    handles syntax highlighting
+  - for `edit`: parse `result.details.diff`, update the tool header to
+    `• Edited <path> (+N -M)`, and render the diff rows directly under
+    that header with Sherpa-owned green/red extmark bands
   - for `read` / `write`: inline `result.content[*].text` wrapped in
     a fenced markdown code block tagged with the language derived
     from the file's extension (lua, rust, typescript, …) so
     treesitter + render-markdown syntax-highlight the body. For
     `bash` / `grep` / `ls` / `find`: render in a plain (untagged)
-    code fence. In
-    both cases only the last 15 lines are shown; when earlier lines
-    are hidden, a muted `N earlier lines…` note sits above the block
-    (never inside the fence, so code syntax never breaks). Pi's
+    code fence. In both cases only the last 15 lines are shown; when
+    earlier lines are hidden, a muted `N earlier lines…` note sits above
+    the block (never inside the fence, so code syntax never breaks). Pi's
     trailing `[N more lines in file. Use offset=X to continue.]`
     sentinel on truncated reads is stripped before fencing for the
     same reason — our own `N earlier lines…` marker conveys the
@@ -343,13 +346,13 @@ Working today:
 - live streaming: thinking and assistant text tokens render in the log
   as unformatted plain text during generation, then finalize into styled
   blocks when the stream completes
-- rich log rendering: `[diff]` blocks for edit tools (treesitter diff
-  highlighting); syntax-highlighted fenced output for read/write via
-  treesitter + render-markdown; fenced plain output for bash/grep/
-  ls/find; last-15-lines only with a `N earlier lines…` note above
-  when earlier lines are hidden; accent-colored file paths in
-  `[tool]` headers; parallel tool results inserted next to their
-  headers via extmark tracking
+- rich log rendering: inline diff rows under `• Edited <path> (+N -M)`
+  headers for edit tools; syntax-highlighted fenced output for
+  read/write via treesitter + render-markdown; fenced plain output for
+  bash/grep/ls/find; last-15-lines only with a `N earlier lines…` note
+  above when earlier lines are hidden; accent-colored file paths in
+  tool headers; parallel tool results inserted next to their headers
+  via extmark tracking
 - session management: `/new`, `/fork`, `/compact`, `/export`, `/resume`
   route to their dedicated RPC message types; session changes render
   a visual separator (`──── New session ────`) in the log
@@ -364,5 +367,6 @@ Still rough:
 ## Related docs
 
 - `docs/review-mode.md`
+- `docs/message-queue.md`
 - `docs/plan.md`
 - `tests/README.md`

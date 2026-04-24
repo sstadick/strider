@@ -21,7 +21,7 @@ These tests cover the Neovim UX layer that is hard to validate with pure unit te
 From the repo root:
 
 ```bash
-python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_plan_helpers tests.test_count_lines
+python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_tmux_log_rendering tests.test_rpc_commands tests.test_plan_helpers tests.test_count_lines
 ```
 
 These fake-backend tmux tests should stay cheap to run: seconds, not minutes.

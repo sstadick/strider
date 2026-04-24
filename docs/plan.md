@@ -27,12 +27,15 @@ Supporting UX:
   errors that used to silently hang the log
 - `<S-Tab>` in compose cycles the pi thinking level; active level
   shows in the winbar as `Model: …/… (level)`
-- rich tool rendering in the log: `[diff]` blocks on edits with
-  green/red line coloring; syntax-highlighted fenced output for
-  read/write via treesitter + render-markdown; muted plain output
-  for bash/grep/ls/find; shows the last 15 lines with a
-  `N earlier lines…` note above; accent-colored paths in `[tool]`
-  headers
+- rich tool rendering in the log: edits stay under a
+  `• Edited <path> (+N -M)` header with inline green/red diff rows;
+  syntax-highlighted fenced output for read/write via treesitter +
+  render-markdown; untagged fenced output for bash/grep/ls/find; shows
+  the last 15 lines with a `N earlier lines…` note above;
+  accent-colored paths in tool headers
+- log windows tail only while already at the bottom; scrolling up
+  pauses follow-mode, and a pinned preview keeps the latest user
+  prompt visible when it scrolls away
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests
 
@@ -85,7 +88,7 @@ Keep local for now, but preserve space for:
 Fake pi backend + tmux+nvim harness:
 
 ```bash
-python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_plan_helpers tests.test_count_lines
+python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_tmux_log_rendering tests.test_rpc_commands tests.test_plan_helpers tests.test_count_lines
 ```
 
 Goal: stay in the low-seconds range.
@@ -116,6 +119,7 @@ we decide resumption is worth the context drift.
 ## Related docs
 
 - `docs/architecture.md`
+- `docs/message-queue.md`
 - `docs/review-mode.md`
 - `docs/review-planning.md`
 - `docs/saved-sessions.md`

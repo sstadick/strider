@@ -196,16 +196,21 @@ Errors from pi (no API key, model rejected by the provider, etc.)
 render inline as red `[error]` blocks in the log rather than silent
 hangs, so failed turns are always visible.
 
-Tool calls show their results inline. `edit` operations append a
-`[diff]` block with green `+` / red `-` line colors matching the
-gutter signs on the edited file. `read` and `write` wrap their
-content in a fenced markdown code block tagged with the file's
-language (from the extension), so treesitter + render-markdown give
-you real syntax highlighting. `bash` / `grep` / `ls` / `find` render
-as plain muted text. In both cases only the last 15 lines are shown;
-when earlier lines are hidden, a muted `N earlier lines…` note sits
-above the block. File paths in `[tool]` headers get their own accent
-color so targets pop when scanning.
+Tool calls show their results inline. `edit` operations stay under a
+`• Edited <path> (+N -M)` header and render diff rows directly in the
+transcript with quiet green/red bands matching the gutter signs on the
+edited file. `read` and `write` wrap their content in a fenced markdown
+code block tagged with the file's language (from the extension), so
+treesitter + render-markdown give you real syntax highlighting. `bash` /
+`grep` / `ls` / `find` render as plain untagged fenced output. In both
+cases only the last 15 lines are shown; when earlier lines are hidden,
+a muted `N earlier lines…` note sits above the block. File paths in tool
+headers get their own accent color so targets pop when scanning.
+
+The log tails new output only while the visible log window is already at
+the bottom. Scrolling up pauses follow-mode until you jump back to the
+tail, and a small pinned preview keeps the latest user prompt visible
+when it scrolls out of view.
 
 The log's winbar shows live model, thinking level, context usage, and
 running cost, pushed by pi after every turn:
@@ -304,7 +309,7 @@ pi --mode rpc --no-extensions --extension ./pi/sherpa-stepper.ts
 Fast fake-backend tmux + nvim tests:
 
 ```bash
-python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_plan_helpers tests.test_count_lines
+python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_tmux_log_rendering tests.test_rpc_commands tests.test_plan_helpers tests.test_count_lines
 ```
 
 Optional real-pi smoke (slower, needs API access):
@@ -321,5 +326,6 @@ See `tests/README.md` for the harness.
 - `docs/review-mode.md` — review lifecycle + state shape
 - `docs/review-planning.md` — why review is pre-planned
 - `docs/clarify-plan.md` — design notes for the clarify tool
+- `docs/message-queue.md` — planned editable follow-up queue design
 - `docs/saved-sessions.md` — deferred session-resume design
 - `recordings/README.md` — how to render demos

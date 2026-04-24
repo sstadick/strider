@@ -1,4 +1,9 @@
 # Ready for work
+- Getting errrors when trying to steer:
+```
+• Error
+  Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.
+```
 
 
 # Need refinement
@@ -15,7 +20,7 @@
 - Running /compact does nothing - are we stripping commands or something?
     - fixed: /compact is a dedicated RPC type, not a prompt-routed extension command
 - multi-tool call ordering: results now insert next to their headers via extmark tracking
-- diffs use ```diff fencing and treesitter diff parser for highlighting
+- diffs use inline custom rendering with Sherpa extmark coloring
 - Stream all text back, but especially thinking
 - Make use of vim.notify for when Patch and Q are done so the user can open the chat
     - bonus, notify if chat is not open and the model hits the end of a turn.
@@ -45,7 +50,7 @@
     - every tool call gets a codeblock fence
     - multi-tool call ordering fixed via extmark tracking
     - (don't act on this yet, needs more invstigatin) there's something annoying happening "thinking" where some code-looking elements are getting highlighting
-    - diffs use ```diff fencing with treesitter parser for highlighting
+    - diffs use inline custom rendering with Sherpa extmark coloring
 - UX status/acceptance pass
     - `:SherpaStatus` summarizes lane state, pending controls, review progress, and last errors.
     - `:SherpaNext!` accepts the current review stop and advances without adding another top-level command.
@@ -55,5 +60,5 @@
 - take a pass at simplifying / speeding up each turn, I think we have quite a bit of tooling between each request, and the model, and each reply and the user
 - for the SherpaLogFlow, need some indicator that it's working. Probably need to refactor and unify the SherpaCompose header to not be ont eh compose buffer or something.
     - kind of does this when in normal mode
-- Replace the visible ```diff fenced markdown block with custom diff rendering. Diff extmark coloring works, but the fence directive still looks bad.
+- Replace the visible diff fence with custom diff rendering; edit headers now carry `(+N -M)` stats.
 - are we actually diong "steering" prompts and such?

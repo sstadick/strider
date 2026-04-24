@@ -1,5 +1,10 @@
 # Sherpa UX Improvements
 
+## Proposal
+
+- Date proposed: 2026-04-23
+- Implementation status: partial
+
 ## Priority Now
 
 1. Make `:SherpaNext` end behavior clearer with a final finish-review card before summary generation.

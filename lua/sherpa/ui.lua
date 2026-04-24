@@ -1,4 +1,5 @@
 local clipboard = require("sherpa.clipboard")
+local log_pin = require("sherpa.log_pin")
 local state = require("sherpa.state")
 local status = require("sherpa.status")
 
@@ -22,12 +23,15 @@ local log_path_hl = "SherpaLogPath"
 local log_muted_hl = "SherpaLogMuted"
 local log_tool_output_hl = "SherpaLogToolOutput"
 local log_tool_output_ellipsis_hl = "SherpaLogToolOutputEllipsis"
+local log_user_prefix = "› "
+local log_user_continuation = "  "
 local log_assistant_bg_hl = "SherpaLogAssistantBg"
 local log_user_bg_hl = "SherpaLogUserBg"
 local log_error_bg_hl = "SherpaLogErrorBg"
 local log_diff_add_hl = "SherpaLogDiffAdd"
 local log_diff_remove_hl = "SherpaLogDiffRemove"
 local log_diff_context_hl = "SherpaLogDiffContext"
+local log_diff_stats_hl = "SherpaLogDiffStats"
 local compose_working_hl = "SherpaComposeWorking"
 local compose_working_soft_hl = "SherpaComposeWorkingSoft"
 local compose_working_shine_hl = "SherpaComposeWorkingShine"
@@ -321,19 +325,165 @@ end
 
 -- Debounced log scroll. During tool-heavy turns scroll_log_windows fires
 -- many times per frame. A 30ms trailing timer coalesces rapid appends.
+-- Each log window has a window-local `sherpa_log_follow` bit: when the
+-- viewport is at the bottom, appends tail the log; scrolling up clears it
+-- so the user can inspect earlier output without Sherpa yanking them back.
 local scroll_timers = {}
 local SCROLL_DEBOUNCE_MS = 30
+local log_follow_augroup = nil
+
+local function buffer_is_log(buf)
+  for _, lane in ipairs(state.lanes()) do
+    local session = state.get_session(lane)
+    if session and session.log_buf == buf then
+      return true
+    end
+  end
+  return false
+end
+
+local function window_is_log(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return false
+  end
+  local ok, buf = pcall(vim.api.nvim_win_get_buf, win)
+  return ok and buffer_is_log(buf)
+end
+
+local function log_window_bottom_line(win)
+  if not window_is_log(win) then
+    return 0
+  end
+  local ok, line = pcall(vim.api.nvim_win_call, win, function()
+    return vim.fn.line("w$")
+  end)
+  return ok and line or 0
+end
+
+local function log_window_line_count(win)
+  if not window_is_log(win) then
+    return 1
+  end
+  local ok, buf = pcall(vim.api.nvim_win_get_buf, win)
+  if not ok or not vim.api.nvim_buf_is_valid(buf) then
+    return 1
+  end
+  return math.max(vim.api.nvim_buf_line_count(buf), 1)
+end
+
+local function log_window_at_bottom(win)
+  return log_window_bottom_line(win) >= log_window_line_count(win)
+end
+
+local function log_follow_value(win)
+  local ok, value = pcall(function()
+    return vim.w[win].sherpa_log_follow
+  end)
+  if not ok then return nil end
+  return value
+end
+
+local function log_follow_line_count(win)
+  local ok, value = pcall(function()
+    return vim.w[win].sherpa_log_follow_line_count
+  end)
+  if not ok or type(value) ~= "number" then return nil end
+  return value
+end
+
+local function set_log_follow(win, follow)
+  if not window_is_log(win) then return end
+  pcall(function()
+    vim.w[win].sherpa_log_follow = follow and true or false
+    if follow then
+      vim.w[win].sherpa_log_follow_line_count = log_window_line_count(win)
+    end
+  end)
+end
+
+local function log_window_follows(win)
+  if not window_is_log(win) then
+    return false
+  end
+  local follow = log_follow_value(win)
+  if follow == nil then
+    -- A Sherpa-created log window is initialized explicitly. If a log
+    -- buffer is shown manually before that happens, prefer tailing until
+    -- the first real scroll/cursor event records the user's intent.
+    return true
+  end
+  return follow == true or follow == 1
+end
+
+local function update_log_follow_state(win)
+  if not window_is_log(win) then return end
+  if log_window_at_bottom(win) then
+    set_log_follow(win, true)
+    log_pin.refresh_for_window(win)
+    return
+  end
+
+  -- If the buffer grew under a tailing window, the viewport is no longer
+  -- at the new `$` yet, but it is still at the old tail. Keep follow-mode
+  -- locked until the debounced scroll catches up. A real user scroll above
+  -- the old tail will clear it.
+  local follow = log_follow_value(win)
+  local previous_tail = log_follow_line_count(win)
+  if (follow == true or follow == 1) and previous_tail then
+    if log_window_bottom_line(win) >= previous_tail then
+      log_pin.refresh_for_window(win)
+      return
+    end
+  end
+  set_log_follow(win, false)
+  log_pin.refresh_for_window(win)
+end
+
+local function event_window(args)
+  local win = args and tonumber(args.match)
+  if (not win or win == 0) and vim.v.event then
+    win = tonumber(vim.v.event.winid or vim.v.event.win or vim.v.event.window)
+  end
+  if win and vim.api.nvim_win_is_valid(win) then
+    return win
+  end
+  return vim.api.nvim_get_current_win()
+end
+
+local function ensure_log_follow_autocmds()
+  if log_follow_augroup then return end
+  log_follow_augroup = vim.api.nvim_create_augroup("SherpaLogFollow", { clear = true })
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "WinScrolled", "WinResized" }, {
+    group = log_follow_augroup,
+    callback = function(args)
+      update_log_follow_state(event_window(args))
+    end,
+  })
+  vim.api.nvim_create_autocmd("WinClosed", {
+    group = log_follow_augroup,
+    callback = function(args)
+      log_pin.close_for_window(tonumber(args.match))
+    end,
+  })
+end
 
 local function scroll_log_windows_now(buf)
   local last = math.max(vim.api.nvim_buf_line_count(buf), 1)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
-      pcall(vim.api.nvim_win_set_cursor, win, { last, 0 })
+      if log_window_follows(win) then
+        local ok = pcall(vim.api.nvim_win_set_cursor, win, { last, 0 })
+        if ok then
+          set_log_follow(win, true)
+        end
+      end
+      log_pin.refresh_for_window(win)
     end
   end
 end
 
 local function scroll_log_windows(buf)
+  ensure_log_follow_autocmds()
   local timer = scroll_timers[buf]
   if timer then
     timer:stop()
@@ -385,15 +535,20 @@ end
 function M.open_log(opts, lane)
   opts = opts or {}
   lane = normalize_lane(lane)
+  ensure_log_follow_autocmds()
   local previous = opts.preserve_focus and (target_window() or vim.api.nvim_get_current_win()) or nil
   local buf = M.ensure_log_buffer(lane)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
+      if log_follow_value(win) == nil then
+        update_log_follow_state(win)
+      end
       if not opts.preserve_focus then
         vim.api.nvim_set_current_win(win)
       end
       scroll_log_windows(buf)
       M.refresh_log_winbar(lane)
+      log_pin.refresh_for_window(win)
       return
     end
   end
@@ -402,6 +557,7 @@ function M.open_log(opts, lane)
   vim.cmd("botright vsplit")
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
+  set_log_follow(win, true)
   -- conceallevel is window-local. render-markdown.nvim and markdown's
   -- built-in syntax rely on it to hide fence markers / inline markers.
   -- Set it on the log window so fenced tool output renders cleanly.
@@ -411,6 +567,7 @@ function M.open_log(opts, lane)
   end)
   scroll_log_windows(buf)
   M.refresh_log_winbar(lane)
+  log_pin.refresh_for_window(win)
   if previous and vim.api.nvim_win_is_valid(previous) then
     vim.api.nvim_set_current_win(previous)
   end
@@ -715,11 +872,25 @@ local log_label_hl = {
   ["review-comments"] = log_tool_hl,
 }
 
+local function log_turn_rule(_buf)
+  -- Markdown thematic break. render-markdown.nvim expands this to a
+  -- window-width rule, so we don't need to guess the pane width here.
+  return "---"
+end
+
+local function log_has_content(buf)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return false end
+  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if vim.trim(line) ~= "" then return true end
+  end
+  return false
+end
+
 -- Codex-style verb labels for block headers. Unlisted labels use the
 -- raw label name.
 local block_verbs = {
   assistant = "",
-  user = "> ",
+  user = log_user_prefix,
   thinking = "Thought",
   error = "Error",
   sherpa = "Sherpa",
@@ -731,23 +902,114 @@ local block_verbs = {
   ["review-comments"] = "Review comments",
 }
 
+local function diff_content_lines(text)
+  local lines = {}
+  for _, line in ipairs(vim.split(text or "", "\n", { plain = true })) do
+    if line:match("^```") then
+      -- Edit diffs used to be wrapped in ```diff fences. Keep this
+      -- renderer tolerant so old callers do not leak a visible `diff`
+      -- fence label into the log.
+    elseif line ~= "" or #lines > 0 then
+      table.insert(lines, line)
+    end
+  end
+  while #lines > 0 and lines[#lines] == "" do
+    table.remove(lines)
+  end
+  return lines
+end
+
+local function diff_line_hl(content)
+  if content:match("^%+") and not content:match("^%+%+%+") then
+    return log_diff_add_hl, true
+  end
+  if content:match("^%-") and not content:match("^%-%-%-") then
+    return log_diff_remove_hl, true
+  end
+  if content:match("^%.%.%.") or content:match("^@@") then
+    return log_diff_context_hl, false
+  end
+  return nil, false
+end
+
+local function highlight_diff_rows(buf, start_line, items)
+  for offset = 0, #items - 1 do
+    local row = start_line + offset
+    local line_text = items[offset + 1] or ""
+    local content = line_text:sub(3)
+    local hl_group, full_line = diff_line_hl(content)
+    if hl_group then
+      pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+        end_row = row + 1,
+        hl_group = hl_group,
+        hl_eol = full_line,
+        priority = 8,
+      })
+    end
+  end
+end
+
+function M.append_diff(text, lane, opts)
+  opts = opts or {}
+  ensure_chunk_style()
+  local body = diff_content_lines(text)
+  if #body == 0 then return end
+
+  local lines = {}
+  for _, line in ipairs(body) do
+    table.insert(lines, "  " .. line)
+  end
+  table.insert(lines, "")
+
+  local items = log_lines(lines)
+  if #items == 0 then return end
+
+  local buf = M.ensure_log_buffer(lane)
+  local start_line
+  if opts.insert_at then
+    start_line = opts.insert_at
+    vim.api.nvim_buf_set_lines(buf, start_line, start_line, false, items)
+  else
+    start_line = vim.api.nvim_buf_line_count(buf)
+    vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+  end
+
+  highlight_diff_rows(buf, start_line, items)
+  scroll_log_windows(buf)
+end
+
 function M.append_block(label, text, lane, opts)
   opts = opts or {}
   ensure_chunk_style()
   local buf = M.ensure_log_buffer(lane)
 
-  -- Codex-style: bullet + bold verb, no rule lines, no backgrounds.
-  -- Assistant/user text flows directly; other labels get a • header.
+  -- Codex-style: bullet + bold verb labels plus rule-separated model
+  -- turns. User/error turns get subtle panels; assistant text stays plain.
   local lines = {}
   local verb = block_verbs[label]
   if label == "assistant" then
-    -- Assistant text flows with no header, just a blank separator.
-    table.insert(lines, "")
+    -- Assistant text flows with no header. When there is already log
+    -- content, insert a Codex-style rule to separate model turns.
+    if log_has_content(buf) then
+      table.insert(lines, "")
+      table.insert(lines, log_turn_rule(buf))
+      table.insert(lines, "")
+    else
+      table.insert(lines, "")
+    end
   elseif label == "user" then
-    -- User input prefixed with "> " on each line.
+    -- User input uses a non-markdown prompt glyph. Avoid `>` so the
+    -- markdown renderer doesn't turn prompts into blockquotes/code-like
+    -- panels or wrap long @image lines strangely.
     table.insert(lines, "")
+    local first = true
     for _, l in ipairs(vim.split(text, "\n", { plain = true })) do
-      table.insert(lines, "> " .. l)
+      if l == "" then
+        table.insert(lines, "")
+      else
+        table.insert(lines, (first and log_user_prefix or log_user_continuation) .. l)
+        first = false
+      end
     end
     table.insert(lines, "")
     local items = log_lines(lines)
@@ -760,11 +1022,20 @@ function M.append_block(label, text, lane, opts)
       start_line = vim.api.nvim_buf_line_count(buf)
       vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
     end
-    -- Color the "> " user lines
+    local end_line = start_line + #items - 1
+    log_pin.record_user_message(lane, text, buf, start_line, end_line)
+    -- Give the whole user turn a subtle theme-derived panel, then
+    -- keep the quoted text foreground stronger above it.
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
+      end_row = start_line + #items,
+      hl_group = log_user_bg_hl,
+      hl_eol = true,
+      priority = 3,
+    })
     for offset = 1, #items - 1 do
       local row = start_line + offset
       local line_text = items[offset + 1] or ""
-      if line_text:sub(1, 2) == "> " then
+      if vim.trim(line_text) ~= "" then
         pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
           end_row = row + 1,
           hl_group = log_user_hl,
@@ -782,7 +1053,9 @@ function M.append_block(label, text, lane, opts)
   end
 
   if label ~= "user" then
-    for _, l in ipairs(vim.split(text, "\n", { plain = true })) do
+    local body_lines = label == "diff" and diff_content_lines(text)
+      or vim.split(text, "\n", { plain = true })
+    for _, l in ipairs(body_lines) do
       table.insert(lines, label == "assistant" and l or ("  " .. l))
     end
   end
@@ -801,6 +1074,21 @@ function M.append_block(label, text, lane, opts)
   end
 
   local end_line = start_line + #items - 1
+
+  -- Highlight any turn separator line.
+  for offset = 0, #items - 1 do
+    local line_text = items[offset + 1] or ""
+    if line_text:match("^%-%-%-+$") then
+      local row = start_line + offset
+      pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+        end_row = row + 1,
+        hl_group = log_rule_hl,
+        hl_eol = true,
+        priority = 6,
+      })
+      break
+    end
+  end
 
   -- Highlight the • header line with the label's color.
   local hl = log_label_hl[label]
@@ -842,28 +1130,7 @@ function M.append_block(label, text, lane, opts)
 
   -- Diff line coloring (inside the body, after the header).
   if label == "diff" then
-    for offset = 1, #items - 1 do
-      local row = start_line + offset
-      local line_text = items[offset + 1] or ""
-      -- Strip the 2-char indent to check the diff prefix
-      local content = line_text:sub(3)
-      local hl_group = nil
-      if content:match("^%+") then
-        hl_group = log_diff_add_hl
-      elseif content:match("^%-") then
-        hl_group = log_diff_remove_hl
-      elseif content:match("^%s") then
-        hl_group = log_diff_context_hl
-      end
-      if hl_group then
-        pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
-          end_row = row + 1,
-          hl_group = hl_group,
-          hl_eol = true,
-          priority = 8,
-        })
-      end
-    end
+    highlight_diff_rows(buf, start_line, items)
   end
 
   scroll_log_windows(buf)
@@ -885,13 +1152,57 @@ local tool_verbs = {
   subagent = "Delegated",
 }
 
-function M.append_tool_line(tool_name, path, range, lane)
+local function highlight_tool_header(buf, row, tool_name, path, suffix)
+  local verb = tool_verbs[tool_name] or "Ran"
+  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+    end_row = row + 1,
+    hl_group = log_tool_hl,
+    priority = 10,
+  })
+  if path and path ~= "" then
+    local prefix_len = #("• " .. verb .. " ")
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, prefix_len, {
+      end_row = row,
+      end_col = prefix_len + #path,
+      hl_group = log_path_hl,
+      priority = 11,
+    })
+    if suffix and suffix ~= "" then
+      pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, prefix_len + #path, {
+        end_row = row,
+        end_col = prefix_len + #path + #suffix,
+        hl_group = log_diff_stats_hl,
+        priority = 11,
+      })
+    end
+  end
+end
+
+function M.update_tool_line(row, tool_name, path, suffix, lane)
+  lane = normalize_lane(lane)
   local session = state.get_session(lane)
   local buf = session and session.log_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) or not row then return end
+  local verb = tool_verbs[tool_name] or "Ran"
+  local detail = path and path ~= "" and (" " .. path .. (suffix or "")) or ""
+  pcall(vim.api.nvim_buf_clear_namespace, buf, log_namespace, row, row + 1)
+  vim.api.nvim_buf_set_lines(buf, row, row + 1, false, { "• " .. verb .. detail })
+  highlight_tool_header(buf, row, tool_name, path, suffix)
+end
+
+function M.append_tool_line(tool_name, path, range, lane)
+  local buf = M.ensure_log_buffer(lane)
   local verb = tool_verbs[tool_name] or "Ran"
 
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     M.append({ string.format("• %s", verb), string.format("  └ %s %s%s", tool_name, path or "", range or "") }, lane)
+    return
+  end
+
+  if tool_name == "edit" and path and path ~= "" then
+    local start_row = vim.api.nvim_buf_line_count(buf)
+    M.append({ string.format("• %s %s", verb, path) }, lane)
+    highlight_tool_header(buf, start_row, tool_name, path, nil)
     return
   end
 
@@ -1554,6 +1865,7 @@ close_windows_for_buffer = function(buf)
   end
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
+      log_pin.close_for_window(win)
       pcall(vim.api.nvim_win_close, win, true)
     end
   end
@@ -1601,6 +1913,55 @@ local function clear_chunk_highlight(session)
   session.highlight_buf = nil
 end
 
+local function hl_attr(group, attr)
+  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = group, link = false })
+  if not ok or type(hl) ~= "table" then return nil end
+  local value = hl[attr]
+  return type(value) == "number" and value or nil
+end
+
+local function rgb_channels(color)
+  return {
+    r = math.floor(color / 65536) % 256,
+    g = math.floor(color / 256) % 256,
+    b = color % 256,
+  }
+end
+
+local function blend_to_hex(base, accent, amount)
+  local a = rgb_channels(base)
+  local b = rgb_channels(accent)
+  local function mix(from, to)
+    return math.floor(from + (to - from) * amount + 0.5)
+  end
+  return string.format(
+    "#%02x%02x%02x",
+    mix(a.r, b.r),
+    mix(a.g, b.g),
+    mix(a.b, b.b)
+  )
+end
+
+local function theme_user_log_bg()
+  local base = hl_attr("Normal", "bg") or hl_attr("NormalFloat", "bg")
+  if not base then return nil end
+  local candidates = {
+    { "Visual", "bg" },
+    { "PmenuSel", "bg" },
+    { "CursorLine", "bg" },
+    { "Search", "bg" },
+    { "Question", "fg" },
+    { "Identifier", "fg" },
+    { "Normal", "fg" },
+  }
+  for _, item in ipairs(candidates) do
+    local accent = hl_attr(item[1], item[2])
+    if accent and accent ~= base then
+      return blend_to_hex(base, accent, 0.10)
+    end
+  end
+end
+
 local chunk_style_done = false
 ensure_chunk_style = function()
   if chunk_style_done then return end
@@ -1626,18 +1987,24 @@ ensure_chunk_style = function()
   -- block background so the error block is hard to miss when scanning
   -- the log. Colors match the removed-chunk red already in use above.
   vim.api.nvim_set_hl(0, log_error_hl, { default = true, fg = "#F14C4C", bold = true })
-  -- Subtle background for user and error blocks; assistant blocks
-  -- blend in. Error background is a dim red in the same darkness
-  -- range as the user block's slate blue.
+  -- Subtle backgrounds for user and error blocks; assistant blocks
+  -- blend in. User bg is derived from the active colorscheme so it
+  -- reads like a theme-native panel instead of a fixed color.
   vim.api.nvim_set_hl(0, log_assistant_bg_hl, { default = true, link = "Normal" })
-  vim.api.nvim_set_hl(0, log_user_bg_hl, { default = true, bg = "#1a2536" })
+  local user_bg = theme_user_log_bg()
+  if user_bg then
+    vim.api.nvim_set_hl(0, log_user_bg_hl, { default = true, bg = user_bg })
+  else
+    vim.api.nvim_set_hl(0, log_user_bg_hl, { default = true, link = "Normal" })
+  end
   vim.api.nvim_set_hl(0, log_error_bg_hl, { default = true, bg = "#361a1a" })
-  -- Diff lines in tool-output [diff] blocks. Mirror the gutter-sign
-  -- palette so the two surfaces agree: green for added, red for
-  -- removed, dim for context.
-  vim.api.nvim_set_hl(0, log_diff_add_hl, { default = true, link = "DiffAdd" })
-  vim.api.nvim_set_hl(0, log_diff_remove_hl, { default = true, link = "DiffDelete" })
-  vim.api.nvim_set_hl(0, log_diff_context_hl, { default = true, link = "DiffChange" })
+  -- Diff rows should read like Codex's transcript diffs: changed lines
+  -- get quiet full-width red/green bands, while context stays on the
+  -- normal log background instead of inheriting noisy syntax colors.
+  vim.api.nvim_set_hl(0, log_diff_add_hl, { default = true, bg = "#1f3326" })
+  vim.api.nvim_set_hl(0, log_diff_remove_hl, { default = true, bg = "#3a2024" })
+  vim.api.nvim_set_hl(0, log_diff_context_hl, { default = true, link = "NonText" })
+  vim.api.nvim_set_hl(0, log_diff_stats_hl, { default = true, link = "NonText" })
   -- Paths in tool headers (e.g. after `[tool] read`) stand out so the
   -- eye finds the target quickly when scanning the transcript.
   vim.api.nvim_set_hl(0, log_path_hl, { default = true, fg = "#7BB5FF" })
@@ -1653,6 +2020,15 @@ ensure_chunk_style = function()
     default = true, fg = "#6B7280", italic = true,
   })
 end
+
+local highlight_augroup = vim.api.nvim_create_augroup("SherpaHighlights", { clear = true })
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = highlight_augroup,
+  callback = function()
+    chunk_style_done = false
+    ensure_chunk_style()
+  end,
+})
 
 local function get_buffer(path)
   local buf = vim.fn.bufnr(path)

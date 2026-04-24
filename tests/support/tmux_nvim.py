@@ -128,6 +128,12 @@ class TmuxNvimHarness:
     def log_lines(self):
         return self.json_expr('getbufline("sherpa://log", 1, "$")')
 
+    def flow_log_lines(self):
+        return self.json_expr('getbufline("sherpa://SherpaLogFlow", 1, "$")')
+
+    def review_log_lines(self):
+        return self.json_expr('getbufline("sherpa://SherpaLogReview", 1, "$")')
+
     def buffer_lines(self, name: str):
         return self.json_expr(f"getbufline({json.dumps(name)}, 1, '$')")
 

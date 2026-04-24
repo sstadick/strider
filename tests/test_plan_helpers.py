@@ -33,7 +33,7 @@ class PlanHelperTests(unittest.TestCase):
         h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
         h.ex("SherpaNext")
         h.wait_until(
-            lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 1,
+            lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 1,
             timeout=5.0,
         )
 
@@ -231,9 +231,9 @@ class PlanHelperTests(unittest.TestCase):
                 )
                 h.lua(lua_call)
 
-                start_line = int(h.lua("require('sherpa.state').get_session().review.items[1].startLine"))
-                end_line = int(h.lua("require('sherpa.state').get_session().review.items[1].endLine"))
-                ann_line = int(h.lua("require('sherpa.state').get_session().review.items[1].annotations[1].line"))
+                start_line = int(h.lua("require('sherpa.state').get_session('review').review.items[1].startLine"))
+                end_line = int(h.lua("require('sherpa.state').get_session('review').review.items[1].endLine"))
+                ann_line = int(h.lua("require('sherpa.state').get_session('review').review.items[1].annotations[1].line"))
             finally:
                 if target_path.exists():
                     target_path.unlink()
@@ -327,12 +327,12 @@ class PlanHelperTests(unittest.TestCase):
                 h.ex("edit wide.txt")
                 self._submit_review(h, "1,60SherpaReview walk through everything")
                 h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
-                h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2)
+                h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session('review').review.items")) >= 2)
 
-                planned = h.lua_bool("require('sherpa.state').get_session().review.planned")
-                scope = h.lua("require('sherpa.state').get_session().review.scope")
-                item_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
-                first_why = h.lua("require('sherpa.state').get_session().review.items[1].why")
+                planned = h.lua_bool("require('sherpa.state').get_session('review').review.planned")
+                scope = h.lua("require('sherpa.state').get_session('review').review.scope")
+                item_count = int(h.lua("#require('sherpa.state').get_session('review').review.items"))
+                first_why = h.lua("require('sherpa.state').get_session('review').review.items[1].why")
                 review_text = "\n".join(h.buffer_lines("sherpa://review"))
 
             self.assertTrue(planned)
@@ -360,7 +360,7 @@ class PlanHelperTests(unittest.TestCase):
             )
             self._advance_to_first_stop(h)
             # Open the active stop's buffer so we can mark a sub-range.
-            current_path_expr = "require('sherpa.state').get_session().review.items[1].path"
+            current_path_expr = "require('sherpa.state').get_session('review').review.items[1].path"
             path = h.lua(current_path_expr)
             h.ex(f"edit {path}")
             # Stash pending_question directly to simulate a ranged ask,
@@ -395,7 +395,7 @@ class PlanHelperTests(unittest.TestCase):
             h.wait_until(lambda: int(h.lua(count_expr)) >= 1, timeout=3.0)
             # pending_question should be cleared on a final (non-partial) answer.
             cleared = h.lua_bool(
-                "require('sherpa.state').get_session().review.pending_question == nil"
+                "require('sherpa.state').get_session('review').review.pending_question == nil"
             )
             self.assertTrue(cleared, "pending_question should clear on final answer")
 
@@ -412,7 +412,7 @@ class PlanHelperTests(unittest.TestCase):
                 timeout=8.0,
             )
             h.wait_until(
-                lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2,
+                lambda: int(h.lua("#require('sherpa.state').get_session('review').review.items")) >= 2,
                 timeout=8.0,
             )
             self._advance_to_first_stop(h)
@@ -462,7 +462,7 @@ class PlanHelperTests(unittest.TestCase):
                 timeout=4.0,
             )
             explanation = h.lua(
-                "require('sherpa.state').get_session().review.items[1].explanation"
+                "require('sherpa.state').get_session('review').review.items[1].explanation"
             )
 
         self.assertTrue(explanation, "stop 1 should carry a pre-computed explanation")
@@ -489,7 +489,7 @@ class PlanHelperTests(unittest.TestCase):
 
             h.ex("SherpaNext")
             h.wait_until(
-                lambda: int(h.lua("require('sherpa.state').get_session().review.current_index")) == 2,
+                lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 2,
                 timeout=5.0,
             )
             h.wait_until(lambda: "src/App.tsx" in h.current_state()["buf"], timeout=3.0)
@@ -505,13 +505,13 @@ class PlanHelperTests(unittest.TestCase):
             # Wait for the plan to land and planning to finish.
             h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
             h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
-            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session().review.items")) >= 2, timeout=8.0)
+            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session('review').review.items")) >= 2, timeout=8.0)
 
-            scope = h.lua("require('sherpa.state').get_session().review.scope")
-            planned = h.lua_bool("require('sherpa.state').get_session().review.planned")
-            item_count = int(h.lua("#require('sherpa.state').get_session().review.items"))
-            first_why = h.lua("require('sherpa.state').get_session().review.items[1].why")
-            current_index = int(h.lua("require('sherpa.state').get_session().review.current_index"))
+            scope = h.lua("require('sherpa.state').get_session('review').review.scope")
+            planned = h.lua_bool("require('sherpa.state').get_session('review').review.planned")
+            item_count = int(h.lua("#require('sherpa.state').get_session('review').review.items"))
+            first_why = h.lua("require('sherpa.state').get_session('review').review.items[1].why")
+            current_index = int(h.lua("require('sherpa.state').get_session('review').review.current_index"))
 
         self.assertTrue(planned)
         self.assertEqual("free", scope)

@@ -30,7 +30,7 @@ class TmuxTangentTests(unittest.TestCase):
 
                 h.submit_popup()
                 h.wait_until(
-                    lambda: "what does this flag do" in "\n".join(h.log_lines()),
+                    lambda: "what does this flag do" in "\n".join(h.flow_log_lines()),
                     timeout=5.0,
                 )
                 h.wait_until(
@@ -48,7 +48,7 @@ class TmuxTangentTests(unittest.TestCase):
 
                 h.submit_popup()
                 h.wait_until(
-                    lambda: "why is this bootstrapped here?" in "\n".join(h.log_lines()),
+                    lambda: "why is this bootstrapped here?" in "\n".join(h.flow_log_lines()),
                     timeout=5.0,
                 )
                 self.assertFalse(h.lua_bool("require('sherpa.ui').chat_is_visible()"))

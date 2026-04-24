@@ -21,7 +21,7 @@ class TmuxSearchTests(unittest.TestCase):
             picker_label = h.lua("(require('sherpa.search').picker_items(require('sherpa.search').last_result_set().results))[1].label")
             self.assertRegex(picker_label, r":\d+-\d+\s{4,}\S")
 
-            log_text = "\n".join(h.log_lines())
+            log_text = "\n".join(h.flow_log_lines())
             self.assertIn("Sherpa search: 1 match", log_text)
             self.assertNotIn(":6:1,4,", log_text)
 

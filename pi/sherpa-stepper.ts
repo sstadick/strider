@@ -5,7 +5,6 @@ type OperationKind = "search" | "review" | "patch" | "prompt" | "plan";
 
 type SherpaState = {
 	activeOperation?: OperationKind;
-	lastTouchedFile?: string;
 	// Budget: at most one sherpa_clarify call per user request. Reset in
 	// startOperation so the next /prompt or /patch starts fresh.
 	clarifyCount: number;
@@ -60,21 +59,8 @@ function searchRules(): string[] {
 	];
 }
 
-function clarifyGuidance(): string[] {
-	return [
-		"",
-		"If the request is genuinely ambiguous, or you've discovered the change is much larger or more nuanced than the prompt implies, you MAY call the `sherpa_clarify` tool once before proceeding.",
-		"Prefer action over questions. Only clarify when a specific ambiguity would change your approach in a non-trivial way. Do NOT clarify about preferences, style, or anything you can reasonably decide yourself.",
-		"Use `kind: 'question'` for open-ended ambiguity, `kind: 'plan_proposal'` for a large change where the user should see the shape before you act, and `kind: 'confirm'` for destructive or expensive operations.",
-		"If the user cancels the clarification, stop work and produce a short reply explaining what you were asking about — do NOT proceed with a guess.",
-	];
-}
-
 function promptRules(): string[] {
-	// Sherpa adds no mode-specific behavior here — the user's global pi
-	// system prompt (APPEND_SYSTEM.md + pi defaults) governs. Only carry
-	// the clarify tool affordance so the model knows it exists.
-	return clarifyGuidance();
+	return [];
 }
 
 function patchRules(): string[] {
@@ -84,7 +70,6 @@ function patchRules(): string[] {
 		"Prefer changing only the smallest necessary local region.",
 		"Do not expand the edit to other files unless the user explicitly requires it.",
 		"Summarize the local patch when you finish.",
-		...clarifyGuidance(),
 	];
 }
 
@@ -163,10 +148,6 @@ function isSafeReadOnlyBash(command?: string): boolean {
 export default function (pi: ExtensionAPI) {
 	let state = emptyState();
 
-	function trackPath(path: string) {
-		state.lastTouchedFile = path;
-	}
-
 	function modelLabel(model: any): string | undefined {
 		if (!model) return undefined;
 		const name = model.name ?? model.id;
@@ -217,29 +198,11 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function renderStatus(ctx: any): string[] {
-		const suffix = statusSuffix(ctx);
-		if (!state.activeOperation) {
-			const lines = ["Sherpa: idle", "Use /review, /search, /prompt, /patch, /models, or /tree."];
-			return [...lines, ...suffix];
-		}
-
-		const readOnly =
-			state.activeOperation === "review" ||
-			state.activeOperation === "search" ||
-			state.activeOperation === "plan";
-		const lines = [
-			`Sherpa operation: ${state.activeOperation}`,
-			readOnly ? "Mode: read-only" : "Mode: edits allowed",
-			"Waiting for assistant response...",
-		];
-		if (state.lastTouchedFile) lines.push(`Last file: ${state.lastTouchedFile}`);
-		return [...lines, ...suffix];
+		return statusSuffix(ctx);
 	}
 
 	function updateWidget(ctx: any) {
 		ctx.ui.setWidget("sherpa", renderStatus(ctx));
-		ctx.ui.setStatus("sherpa-kind", state.activeOperation);
-		ctx.ui.setStatus("sherpa-operation", state.activeOperation);
 		ctx.ui.setStatus("sherpa", state.activeOperation ? `${state.activeOperation} active` : "idle");
 	}
 
@@ -284,7 +247,6 @@ export default function (pi: ExtensionAPI) {
 
 	function startOperation(kind: OperationKind, ctx: any) {
 		state.activeOperation = kind;
-		state.lastAssistantSummary = undefined;
 		state.clarifyCount = 0;
 		applyOperationTools(ctx, kind);
 		updateWidget(ctx);
@@ -315,23 +277,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("before_agent_start", async (event: any, _ctx: any) => {
-		// Session-wide guidance appended to the base system prompt. Only
-		// suggestive — harmless when no subagent/task tool is available.
-		const extra = [
-			"",
-			"If a subagent, task, or agent-spawning tool is available to you, consider using it for independent read-heavy subtasks (searching multiple areas, summarizing unrelated files, pre-computing explanations for distinct code regions). Subagent work parallelizes and keeps the main turn focused.",
-			"If no such tool is available, just proceed without subagents.",
-		].join("\n");
-		return {
-			systemPrompt: (event.systemPrompt ?? "") + extra,
-		};
-	});
-
 	pi.on("tool_call", async (event: any, ctx: any) => {
-		const path = event.input?.path;
-		if (path && ["read", "edit", "write"].includes(event.toolName)) trackPath(path);
-
 		if (readOnlyOperation()) {
 			if (event.toolName === "edit" || event.toolName === "write") {
 				ctx.ui.notify(`Blocked write tool in ${state.activeOperation} mode: ${event.toolName}`, "warning");
@@ -345,8 +291,6 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 		}
-
-		updateWidget(ctx);
 		return undefined;
 	});
 
@@ -470,7 +414,7 @@ export default function (pi: ExtensionAPI) {
 		name: "sherpa_clarify",
 		label: "Sherpa clarify",
 		description:
-			"Pause the current turn and ask the user for clarification, approval of a proposed plan, or confirmation of a destructive action. Available during /prompt and /patch. Use sparingly.",
+			"Pause the current turn and ask the user for clarification, approval of a proposed plan, or confirmation of a destructive action. Available during /prompt and /patch. Use sparingly — prefer action over questions. Only clarify when a specific ambiguity would change your approach non-trivially. If the user cancels, stop work and explain what you were asking — do NOT proceed with a guess.",
 		parameters: clarifySchema,
 		promptSnippet:
 			"sherpa_clarify: pause and ask the user (question / plan_proposal / confirm) when truly ambiguous.",

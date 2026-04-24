@@ -166,6 +166,24 @@ def emit_read(path: Path, offset: int = 1, limit: int = 20) -> None:
     })
 
 
+def emit_tool_output(tool_name: str, args: dict, text: str) -> None:
+    tool_id = next_tool_id()
+    emit({
+        "type": "tool_execution_start",
+        "toolName": tool_name,
+        "toolCallId": tool_id,
+        "args": args,
+    })
+    emit({
+        "type": "tool_execution_end",
+        "toolName": tool_name,
+        "toolCallId": tool_id,
+        "result": {
+            "content": [{"type": "text", "text": text}],
+        },
+    })
+
+
 def emit_edit(path: Path, after: str) -> int:
     before = path.read_text(encoding="utf-8")
     changed_line = first_changed_line(before, after)
@@ -315,6 +333,14 @@ def prompt_thinking(_message: str) -> str:
 
 
 def prompt_response(message: str) -> str:
+    if "compact tool output" in message.lower():
+        emit_tool_output(
+            "grep",
+            {"pattern": "fixture", "path": "src"},
+            "# heading-like output\nsrc/App.tsx:1:export function App() {",
+        )
+        return "Finished compact tool output pass."
+
     if project_has("src/App.tsx"):
         path = Path.cwd() / "src" / "App.tsx"
         emit_read(path)

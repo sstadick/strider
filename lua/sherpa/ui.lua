@@ -23,6 +23,9 @@ local log_path_hl = "SherpaLogPath"
 local log_muted_hl = "SherpaLogMuted"
 local log_tool_output_hl = "SherpaLogToolOutput"
 local log_tool_output_ellipsis_hl = "SherpaLogToolOutputEllipsis"
+local log_tool_output_gutter_hl = "SherpaLogToolOutputGutter"
+local log_tool_output_meta_hl = "SherpaLogToolOutputMeta"
+local log_tool_output_error_hl = "SherpaLogToolOutputError"
 local log_user_prefix = "› "
 local log_user_continuation = "  "
 local log_assistant_bg_hl = "SherpaLogAssistantBg"
@@ -1285,28 +1288,17 @@ end
 -- When `lang` is non-nil, the shown lines are wrapped in a fenced
 -- markdown code block with that language tag. The log buffer's
 -- markdown filetype + treesitter injection + render-markdown then
--- syntax-highlight the body. When `lang` is nil, the lines render as
--- plain muted text (used by bash / grep / ls / find — heterogeneous
--- output that doesn't map to one language).
+-- syntax-highlight the body. When `lang` is nil, this still uses a
+-- plain fence, which is useful for read/write paths whose filetype is
+-- unknown. Heterogeneous command/search output uses the compact renderer
+-- below instead.
 --
 -- Empty text is skipped (not every tool produces output worth showing).
 local TOOL_OUTPUT_TAIL = 15
 
-function M.append_tool_output(text, lang, lane, opts)
-  opts = opts or {}
-  if type(text) ~= "string" then return end
-  local trimmed = vim.trim(text)
-  if trimmed == "" then return end
+local function tool_output_window(text)
+  if type(text) ~= "string" or vim.trim(text) == "" then return nil end
 
-  local session = state.get_session(lane)
-  local buf = session and session.log_buf
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then
-    return
-  end
-
-  -- Single backward pass: find the last meaningful line, stripping
-  -- trailing blanks and pi's "[N more lines in file...]" meta lines.
-  -- Then compute the tail-start index, all without intermediate tables.
   local all_lines = vim.split(text, "\n", { plain = true })
   local last_meaningful = #all_lines
   while last_meaningful > 0 do
@@ -1317,10 +1309,23 @@ function M.append_tool_output(text, lang, lane, opts)
       break
     end
   end
-  if last_meaningful == 0 then return end
+  if last_meaningful == 0 then return nil end
 
   local hidden = math.max(0, last_meaningful - TOOL_OUTPUT_TAIL)
   local tail_start = hidden > 0 and (last_meaningful - TOOL_OUTPUT_TAIL + 1) or 1
+  return all_lines, last_meaningful, hidden, tail_start
+end
+
+function M.append_tool_output(text, lang, lane, opts)
+  opts = opts or {}
+  local all_lines, last_meaningful, hidden, tail_start = tool_output_window(text)
+  if not all_lines then return end
+
+  local session = state.get_session(lane)
+  local buf = session and session.log_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
 
   -- Build output lines directly from the computed window.
   local lines = {}
@@ -1357,6 +1362,128 @@ function M.append_tool_output(text, lang, lane, opts)
       priority = 10,
     })
   end
+end
+
+local compact_output_prefix = "  │ "
+local compact_output_gutter = "  │"
+
+local function neutralize_compact_output(line)
+  local leading, rest = line:match("^(%s*)(.*)$")
+  if rest:match("^```") then
+    rest = rest:gsub("`", function() return "\\`" end)
+  elseif rest:match("^%d+%.%s") then
+    rest = rest:gsub("^(%d+)(%.)", "%1\\%2")
+  elseif rest:match("^[#>%-%*%+|]") then
+    rest = "\\" .. rest
+  end
+  return leading .. rest
+end
+
+local function compact_count_label(opts, count)
+  if not opts.count_label and not opts.count_singular and not opts.count_plural then
+    return nil
+  end
+  if count == 1 then
+    return opts.count_singular or opts.count_label or opts.count_plural
+  end
+  return opts.count_plural or opts.count_label or opts.count_singular
+end
+
+local function compact_status_line(status)
+  local code = tonumber(status)
+  if not code then return nil, nil end
+  if code == 0 then
+    return "  ✓ exited 0", "meta"
+  end
+  return string.format("  ✗ exited %d", code), "error"
+end
+
+local function add_compact_extmarks(buf, start_row, roles, items)
+  for offset, role in ipairs(roles) do
+    local row = start_row + offset - 1
+    local line = items[offset] or ""
+    if role == "row" then
+      pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, #("  "), {
+        end_row = row,
+        end_col = #compact_output_gutter,
+        hl_group = log_tool_output_gutter_hl,
+        priority = 10,
+      })
+      if #line > #compact_output_prefix then
+        pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, #compact_output_prefix, {
+          end_row = row,
+          end_col = #line,
+          hl_group = log_tool_output_hl,
+          priority = 9,
+        })
+      end
+    elseif role == "meta" or role == "error" then
+      pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+        end_row = row + 1,
+        hl_group = role == "error" and log_tool_output_error_hl or log_tool_output_meta_hl,
+        priority = 10,
+      })
+    end
+  end
+end
+
+local function compact_tool_output_lines(tool_opts, all_lines, last_meaningful, hidden, tail_start)
+  local lines = {}
+  local roles = {}
+  local count_label = compact_count_label(tool_opts, last_meaningful)
+  if count_label then
+    lines[#lines + 1] = string.format("  %d %s", last_meaningful, count_label)
+    roles[#roles + 1] = "meta"
+  end
+  if hidden > 0 then
+    lines[#lines + 1] = string.format("  %d earlier %s\u{2026}", hidden, hidden == 1 and "line" or "lines")
+    roles[#roles + 1] = "meta"
+  end
+  for i = tail_start, last_meaningful do
+    lines[#lines + 1] = compact_output_prefix .. neutralize_compact_output(all_lines[i])
+    roles[#roles + 1] = "row"
+  end
+  local status_line, status_role = compact_status_line(tool_opts.status)
+  if status_line then
+    lines[#lines + 1] = status_line
+    roles[#roles + 1] = status_role
+  end
+  lines[#lines + 1] = ""
+  roles[#roles + 1] = "blank"
+  return lines, roles
+end
+
+function M.append_compact_tool_output(text, tool_opts, lane, opts)
+  opts = opts or {}
+  tool_opts = tool_opts or {}
+  ensure_chunk_style()
+
+  local all_lines, last_meaningful, hidden, tail_start = tool_output_window(text)
+  if not all_lines then return end
+
+  local session = state.get_session(lane)
+  local buf = session and session.log_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  local lines, roles = compact_tool_output_lines(
+    tool_opts, all_lines, last_meaningful, hidden, tail_start
+  )
+
+  local items = log_lines(lines)
+  if #items == 0 then return end
+
+  local start_row
+  if opts.insert_at then
+    start_row = opts.insert_at
+    vim.api.nvim_buf_set_lines(buf, start_row, start_row, false, items)
+  else
+    start_row = vim.api.nvim_buf_line_count(buf)
+    vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+  end
+  add_compact_extmarks(buf, start_row, roles, items)
+  scroll_log_windows(buf)
 end
 
 -- Live streaming block: an unformatted region at the tail of the log
@@ -2010,8 +2137,7 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, log_path_hl, { default = true, fg = "#7BB5FF" })
   -- Muted annotations like `(+N more lines)` / `Took 0.8s`.
   vim.api.nvim_set_hl(0, log_muted_hl, { default = true, link = "NonText" })
-  -- Inlined tool output (stdout from bash, read contents, grep matches,
-  -- etc.) reads as secondary text — quieter than the thinking/rule
+  -- Tool output reads as secondary text — quieter than the thinking/rule
   -- tones but still legible. Italicize the `… N more lines …` separator
   -- so it stands out from the surrounding content at the same muted
   -- intensity.
@@ -2019,6 +2145,9 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, log_tool_output_ellipsis_hl, {
     default = true, fg = "#6B7280", italic = true,
   })
+  vim.api.nvim_set_hl(0, log_tool_output_gutter_hl, { default = true, fg = "#6B7280" })
+  vim.api.nvim_set_hl(0, log_tool_output_meta_hl, { default = true, link = "NonText" })
+  vim.api.nvim_set_hl(0, log_tool_output_error_hl, { default = true, fg = "#F14C4C" })
 end
 
 local highlight_augroup = vim.api.nvim_create_augroup("SherpaHighlights", { clear = true })

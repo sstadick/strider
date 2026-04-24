@@ -1,6 +1,6 @@
-"""Tests for rich log rendering of tool calls: [tool-output] blocks
-after bash/read/grep/ls/find/write, inline diff rows after edit, and
-accent-colored file paths in [tool] headers.
+"""Tests for rich log rendering of tool calls: fenced read/write output,
+compact bash/grep/ls/find rows, inline diff rows after edit, and
+accent-colored file paths in tool headers.
 
 These exercise the UI surface end-to-end through a real Neovim session
 with the fake pi backend. The fake already emits the event shapes these
@@ -163,6 +163,110 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 self.assertIn("use serde;", log)
                 self.assertNotIn("more lines in file", log,
                     f"pi sentinel should be stripped; got:\n{log}")
+
+    def test_compact_tool_output_has_gutter_counts_and_no_fence(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    timeout=3.0,
+                )
+                output = "lua/sherpa/ui.lua:1295:function M.append_tool_output()\n" \
+                         "lua/sherpa/rpc.lua:678:ui.append_tool_output(...)"
+                h.lua(
+                    "(function() "
+                    "  require('sherpa.ui').append_compact_tool_output("
+                    + json.dumps(output)
+                    + ", { kind = 'grep', count_singular = 'match', count_plural = 'matches' }, 'main'); "
+                    "  return true "
+                    "end)()"
+                )
+                log = "\n".join(h.log_lines())
+                self.assertIn("2 matches", log)
+                self.assertIn("│ lua/sherpa/ui.lua", log)
+                self.assertNotIn("```", log, f"compact output should not use markdown fences; got:\n{log}")
+
+                has_compact_hl = h.lua_bool(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('sherpa://log'); "
+                    "  local ns = vim.api.nvim_create_namespace('sherpa-log'); "
+                    "  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true }); "
+                    "  local seen = {}; "
+                    "  for _, m in ipairs(marks) do "
+                    "    local hl = m[4] and m[4].hl_group or ''; "
+                    "    seen[hl] = true "
+                    "  end; "
+                    "  return seen.SherpaLogToolOutputGutter and seen.SherpaLogToolOutputMeta "
+                    "    and seen.SherpaLogToolOutput "
+                    "end)()"
+                )
+                self.assertTrue(has_compact_hl, "expected compact output gutter/body/meta extmarks")
+
+    def test_rpc_routes_grep_output_to_compact_renderer(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat show compact tool output")
+                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.send("C-s", pause=0.3)
+                h.wait_until(lambda: "2 matches" in "\n".join(h.log_lines()), timeout=5.0)
+                log = "\n".join(h.log_lines())
+                self.assertIn("• Explored", log)
+                self.assertIn("2 matches", log)
+                self.assertIn("│ \\# heading-like output", log)
+                self.assertIn("│ src/App.tsx:1:export function App() {", log)
+                self.assertNotIn("```", log, f"grep output should not use markdown fences; got:\n{log}")
+
+    def test_compact_tool_output_truncates_above_rows(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    timeout=3.0,
+                )
+                output = "\n".join(f"entry {i}" for i in range(1, 21))
+                h.lua(
+                    "(function() "
+                    "  require('sherpa.ui').append_compact_tool_output("
+                    + json.dumps(output)
+                    + ", { kind = 'ls', count_singular = 'entry', count_plural = 'entries' }, 'main'); "
+                    "  return true "
+                    "end)()"
+                )
+                log = "\n".join(h.log_lines())
+                self.assertIn("20 entries", log)
+                self.assertIn("5 earlier lines…", log)
+                self.assertNotIn("entry 1\n", log)
+                self.assertIn("│ entry 6", log)
+                self.assertIn("│ entry 20", log)
+                self.assertLess(log.find("5 earlier lines…"), log.find("│ entry 6"))
+
+    def test_compact_tool_output_escapes_markdown_leaders(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    timeout=3.0,
+                )
+                output = "# heading\n- item\n> quote\n1. ordered\n```md\n| table |"
+                h.lua(
+                    "(function() "
+                    "  require('sherpa.ui').append_compact_tool_output("
+                    + json.dumps(output)
+                    + ", { kind = 'bash' }, 'main'); "
+                    "  return true "
+                    "end)()"
+                )
+                log = "\n".join(h.log_lines())
+                self.assertIn("│ \\# heading", log)
+                self.assertIn("│ \\- item", log)
+                self.assertIn("│ \\> quote", log)
+                self.assertIn("│ 1\\. ordered", log)
+                self.assertIn("│ \\`\\`\\`md", log)
+                self.assertIn("│ \\| table |", log)
+                self.assertNotIn("```md", log)
 
     def test_tool_header_path_has_extmark(self) -> None:
         with FixtureProject(self.project_root) as project_root:

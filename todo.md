@@ -1,10 +1,5 @@
 # Ready for work
-- Getting errrors when trying to steer:
-```
-• Error
-  Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.
-```
-
+- move the timer to the left side  next to Working like: `Working (<time>)`
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on
@@ -12,6 +7,12 @@
 - Some pi TUI commands (/session, /copy, /share, /hotkeys, /changelog, /settings) have no RPC equivalent
 
 # Done
+- Guard same-lane sends while pi is busy so extension commands do not trigger:
+    ```
+    Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.
+    ```
+    - Lua rejects new prompt-style work when that lane has a pending request.
+    - The pi extension also refuses `sendUserMessage` while its process is busy.
 - The "sherpa_clarify" blocks so I can't see the plan that I'm asked to provide a response on
     - fixed: force vim.cmd("redraw") before vim.ui.select in plan proposal picker
 - Add a way to hard reset the agent
@@ -46,8 +47,9 @@
 - Running /compact does nothing - are we stripping commands or something?
     - fixed: dedicated RPC type, not a prompt-routed command
 - Render reads nicely / fence them even when they are given back as line ranges
-    - just codeblock fence them.
-    - every tool call gets a codeblock fence
+    - read/write use code fences for syntax highlighting.
+    - bash/grep/find/ls use compact gutter rows so mixed command output
+      does not get fake syntax highlighting or accidental markdown rendering.
     - multi-tool call ordering fixed via extmark tracking
     - (don't act on this yet, needs more invstigatin) there's something annoying happening "thinking" where some code-looking elements are getting highlighting
     - diffs use inline custom rendering with Sherpa extmark coloring

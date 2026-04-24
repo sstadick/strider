@@ -3,7 +3,7 @@
 ## Proposal
 
 - Date proposed: 2026-04-24
-- Implementation status: not implemented
+- Implementation status: done
 
 ## Goal
 
@@ -137,6 +137,15 @@ syntax highlighting is valuable.
    - Output extmarks include gutter/body/meta highlight groups.
    - Markdown-looking output remains literal. Include cases such as
      `# heading`, `- item`, `> quote`, `1. item`, and ```` ``` ````.
+
+## Implementation Notes
+
+- Implemented on 2026-04-24.
+- `read` and `write` still use fenced output for syntax highlighting.
+- `bash`, `grep`, `find`, and `ls` now use compact gutter rows.
+- Compact rows escape markdown-leading content before insertion into the log.
+- Exit status is still intentionally omitted until pi exposes reliable status
+  metadata.
 
 ## Open Questions
 

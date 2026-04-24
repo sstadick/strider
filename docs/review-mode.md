@@ -85,6 +85,15 @@ the original range or the diff. Gaps are auto-filled or surfaced as
 - The **log buffer** (`sherpa://log`) is secondary — transcript and tool
   activity for debugging.
 
+Implementation boundary:
+- `lua/sherpa/review.lua` owns state changes: starting reviews, ingesting
+  plans, advancing stops, comments, summaries, and prompts.
+- `lua/sherpa/review/render.lua` owns the review pane markdown. It is
+  intentionally state-free: callers pass a review table and cwd, and it
+  returns the lines to write to `sherpa://review`.
+- `lua/sherpa/ui.lua` owns the Neovim buffer/window mechanics for showing
+  those lines and rendering code-buffer annotations.
+
 ## State shape
 
 ```lua

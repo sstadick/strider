@@ -63,6 +63,34 @@ class TmuxTangentTests(unittest.TestCase):
                     timeout=5.0,
                 )
 
+    def test_flow_lane_rejects_new_request_while_busy(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.lua(
+                    "(function() "
+                    "  local state = require('sherpa.state'); "
+                    "  state.ensure_session('flow', vim.fn.getcwd()); "
+                    "  state.set_pending_request('q', {}, 'flow'); "
+                    "  return true "
+                    "end)()"
+                )
+                h.ex("SherpaSearch where is the main entrypoint?")
+
+                pending = h.lua(
+                    "(function() "
+                    "  local pending = require('sherpa.state').peek_pending_request('flow'); "
+                    "  return pending and pending.operation or '' "
+                    "end)()"
+                )
+                job_id = h.lua(
+                    "(function() "
+                    "  local session = require('sherpa.state').get_session('flow'); "
+                    "  return session and tostring(session.job_id or '') or '' "
+                    "end)()"
+                )
+                self.assertEqual("q", pending)
+                self.assertEqual("", job_id)
+
 
 if __name__ == "__main__":
     unittest.main()

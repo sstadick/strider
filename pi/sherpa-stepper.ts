@@ -258,6 +258,21 @@ export default function (pi: ExtensionAPI) {
 		updateWidget(ctx);
 	}
 
+	function agentIsIdle(ctx: any): boolean {
+		if (state.activeOperation) return false;
+		return typeof ctx.isIdle !== "function" || ctx.isIdle();
+	}
+
+	function sendOperationMessage(kind: OperationKind, ctx: any, message: string) {
+		if (!agentIsIdle(ctx)) {
+			const active = state.activeOperation ? ` (${state.activeOperation})` : "";
+			ctx.ui.notify(`Sherpa is already running${active}; wait for it to finish.`, "warning");
+			return;
+		}
+		startOperation(kind, ctx);
+		pi.sendUserMessage(message);
+	}
+
 	function readOnlyOperation(): boolean {
 		return (
 			state.activeOperation === "review" ||
@@ -467,8 +482,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Usage: /plan <request>", "warning");
 				return;
 			}
-			startOperation("plan", ctx);
-			pi.sendUserMessage(planPrompt(request));
+			sendOperationMessage("plan", ctx, planPrompt(request));
 		},
 	});
 
@@ -480,8 +494,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Usage: /review <request>", "warning");
 				return;
 			}
-			startOperation("review", ctx);
-			pi.sendUserMessage(explicitReviewPrompt(request));
+			sendOperationMessage("review", ctx, explicitReviewPrompt(request));
 		},
 	});
 
@@ -493,8 +506,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Usage: /search <request>", "warning");
 				return;
 			}
-			startOperation("search", ctx);
-			pi.sendUserMessage(searchPrompt(request));
+			sendOperationMessage("search", ctx, searchPrompt(request));
 		},
 	});
 
@@ -506,8 +518,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Usage: /prompt <request>", "warning");
 				return;
 			}
-			startOperation("prompt", ctx);
-			pi.sendUserMessage(promptPrompt(request));
+			sendOperationMessage("prompt", ctx, promptPrompt(request));
 		},
 	});
 
@@ -519,8 +530,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Usage: /patch <request>", "warning");
 				return;
 			}
-			startOperation("patch", ctx);
-			pi.sendUserMessage(patchPrompt(request));
+			sendOperationMessage("patch", ctx, patchPrompt(request));
 		},
 	});
 

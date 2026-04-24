@@ -39,6 +39,13 @@ Owns:
 - floating `sherpa://prompt` / `sherpa://comment` input editors
 - local review/session state
 
+Review code is split by responsibility:
+- `lua/sherpa/review.lua` owns review state transitions, planning,
+  navigation, comments, and prompts.
+- `lua/sherpa/review/render.lua` owns the markdown rendered into the
+  `sherpa://review` pane, including status text, item summaries, excerpts,
+  comments, and the review plan table of contents.
+
 ### 2. pi extension
 
 Lives in `pi/sherpa-stepper.ts`.
@@ -256,16 +263,17 @@ about the current review item.
   - for `read` / `write`: inline `result.content[*].text` wrapped in
     a fenced markdown code block tagged with the language derived
     from the file's extension (lua, rust, typescript, …) so
-    treesitter + render-markdown syntax-highlight the body. For
-    `bash` / `grep` / `ls` / `find`: render in a plain (untagged)
-    code fence. In both cases only the last 15 lines are shown; when
-    earlier lines are hidden, a muted `N earlier lines…` note sits above
-    the block (never inside the fence, so code syntax never breaks). Pi's
-    trailing `[N more lines in file. Use offset=X to continue.]`
-    sentinel on truncated reads is stripped before fencing for the
-    same reason — our own `N earlier lines…` marker conveys the
-    "there's more you're not seeing" signal without embedding prose
-    in a code block
+    treesitter + render-markdown syntax-highlight the body. Pi's trailing
+    `[N more lines in file. Use offset=X to continue.]` sentinel on
+    truncated reads is stripped before fencing so prose never lands
+    inside the language parser.
+  - for `bash` / `grep` / `ls` / `find`: render compact transcript rows
+    with a muted `│` gutter instead of a code fence. `grep`, `ls`, and
+    `find` get cheap line-count metadata (`N matches`, `N entries`,
+    `N paths`). Compact output uses the same last-15-lines tail window
+    and `N earlier lines…` marker, and escapes markdown-leading text
+    before insertion so command output cannot render as headings, lists,
+    blockquotes, tables, or fences.
   - highlight read/edit/write ranges on the edited file
 - `extension_ui_request`
   - `notify` / `setStatus` / `setWidget` / `setTitle` — fire-and-forget
@@ -348,7 +356,7 @@ Working today:
   blocks when the stream completes
 - rich log rendering: inline diff rows under `• Edited <path> (+N -M)`
   headers for edit tools; syntax-highlighted fenced output for
-  read/write via treesitter + render-markdown; fenced plain output for
+  read/write via treesitter + render-markdown; compact gutter output for
   bash/grep/ls/find; last-15-lines only with a `N earlier lines…` note
   above when earlier lines are hidden; accent-colored file paths in
   tool headers; parallel tool results inserted next to their headers
@@ -367,6 +375,7 @@ Still rough:
 ## Related docs
 
 - `docs/review-mode.md`
+- `docs/usage.md`
 - `docs/message-queue.md`
 - `docs/plan.md`
 - `tests/README.md`

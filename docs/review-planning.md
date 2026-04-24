@@ -273,7 +273,9 @@ so the widget flashes "Planning…" briefly then becomes
 
 ## Sidebar changes
 
-`panel_lines` in `review.lua` already handles most of this — mostly pruning:
+Review pane markdown is now built in `lua/sherpa/review/render.lua`; the
+stateful review workflow in `review.lua` calls into that renderer. The
+sidebar work from this plan mostly meant:
 
 - Remove `dynamic` / `expecting_next_item` / `complete_suggested` branches.
 - Always render the TOC: `plan[i].title` with `→` marker on `current_index`.
@@ -313,7 +315,8 @@ New:
 
 | File | Change |
 |---|---|
-| `lua/sherpa/review.lua` | new state shape; `plan_from_range`; `plan_from_diff`; `set_plan`; `append_stops`; prune old flags; rewrite `panel_lines`; keep comments/summary logic |
+| `lua/sherpa/review.lua` | new state shape; `plan_from_range`; `plan_from_diff`; `set_plan`; `append_stops`; prune old flags; keep comments/summary logic |
+| `lua/sherpa/review/render.lua` | render review pane markdown: status, item details, excerpts, comments, controls, and TOC |
 | `lua/sherpa/init.lua` | unify `M.review` scope dispatch; rewrite `M.next_step` / `M.prev_step` to single path; add `diff` arg |
 | `lua/sherpa/rpc.lua` | handle `sherpa_plan` / `sherpa_append_stops` in `handle_tool_end`; drop the `review.note_read` call on read-tool-end (keep `state.record_file`) |
 | `lua/sherpa/ui.lua` | `update_activity(title)` if missing; TOC rendering helper if useful |

@@ -1,7 +1,5 @@
-# Sherpa tangent demo — :SherpaQ opens a tangent that branches off the
-# active session tree, answers in the main chat surfaces, and on end
-# drops from the active path so follow-up main-chat turns don't carry it
-# as context.
+# Sherpa tangent demo — :SherpaQ opens a one-shot flow-lane question and
+# answers in the flow log so the main chat surfaces stay out of the way.
 # Run:   vhs recordings/vhs/tangent.tape
 
 Output recordings/tangent.gif
@@ -40,9 +38,7 @@ Enter
 # appear in the compose winbar.
 Sleep 3500ms
 
-# End the tangent by re-invoking :SherpaQ with no args. This navigates
-# pi's session tree back to the anchor captured at tangent start, so
-# subsequent main-chat turns branch from before the tangent.
+# Hide the tangent by re-invoking :SherpaQ with no args.
 Type ":SherpaQ"
 Sleep 2200ms
 Enter

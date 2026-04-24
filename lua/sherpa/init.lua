@@ -69,9 +69,33 @@ local function activity_target(operation, lane)
   return "log"
 end
 
+local function lane_title(lane)
+  if lane == FLOW_LANE then
+    return "Sherpa flow"
+  end
+  if lane == REVIEW_LANE then
+    return "Sherpa review"
+  end
+  return "Sherpa chat"
+end
+
+local function warn_if_lane_busy(lane)
+  lane = state.normalize_lane(lane)
+  local pending = state.peek_pending_request(lane)
+  if not pending then
+    return false
+  end
+  local suffix = pending.operation and string.format(" (%s)", pending.operation) or ""
+  ui.notify(string.format("%s is already running%s; wait for it to finish.", lane_title(lane), suffix), vim.log.levels.WARN)
+  return true
+end
+
 local function send(command, user_text, opts)
   opts = opts or {}
   local lane = state.normalize_lane(opts.lane)
+  if warn_if_lane_busy(lane) then
+    return false
+  end
   if not ensure_backend(lane) then
     return false
   end
@@ -215,6 +239,9 @@ local function start_selection_review(opts)
   if not ensure_backend(REVIEW_LANE) then
     return false
   end
+  if warn_if_lane_busy(REVIEW_LANE) then
+    return false
+  end
   local item = review.start_planned("selection", opts)
   if not item then
     ui.notify("No review items found for the selected range", vim.log.levels.WARN)
@@ -235,6 +262,9 @@ local function start_free_review(focus)
     return false
   end
   if not ensure_backend(REVIEW_LANE) then
+    return false
+  end
+  if warn_if_lane_busy(REVIEW_LANE) then
     return false
   end
   if not review.start_planning(text) then
@@ -590,6 +620,9 @@ end
 local function submit_review_request(text, range)
   text = trimmed(text)
   if text == "" then
+    return
+  end
+  if warn_if_lane_busy(REVIEW_LANE) then
     return
   end
 

@@ -35,8 +35,8 @@ Output gif lands next to the tape name, e.g. `recordings/patch.gif`.
 - `review-popup.gif` — `:SherpaReview` with no args opens the floating editor; first word picks the scope, then a follow-up shows the in-review question editor
 - `patch.gif` — `:SherpaPatch` on a visual-line selection
 - `chat-review.gif` — `:SherpaChat` followed by reviewing the resulting diff
-- `reasoning-log.gif` — a chat turn showing faint reasoning text in the log before tools and the final answer
-- `tangent.gif` — `:SherpaQ` opens a tangent, asks an unrelated question, then ends so the branch drops from the active path
+- `reasoning-log.gif` — a chat turn showing faint reasoning text, compact tool output, inline diff rows, and the final answer
+- `tangent.gif` — `:SherpaQ` opens a flow-lane tangent, asks an unrelated question, and keeps the main chat surfaces out of the way
 
 ## How it works
 

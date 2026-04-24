@@ -608,13 +608,16 @@ end
 -- as noise). edit is deliberately excluded — its inline diff rows below
 -- already capture the change, and the raw text result for edit tends
 -- to be a redundant "OK" string.
-local TOOL_OUTPUT_WHITELIST = {
-  bash = true,
+local FENCED_TOOL_OUTPUT = {
   read = true,
-  grep = true,
-  ls = true,
-  find = true,
   write = true,
+}
+
+local COMPACT_TOOL_OUTPUT = {
+  bash = {},
+  grep = { count_singular = "match", count_plural = "matches" },
+  ls = { count_singular = "entry", count_plural = "entries" },
+  find = { count_singular = "path", count_plural = "paths" },
 }
 
 -- Filename extension → markdown code-fence language tag. Used for
@@ -663,19 +666,19 @@ local function handle_tool_end(event, lane)
   -- rows below, and Sherpa's internal planning tools which carry structured
   -- payloads rather than user-facing text). For read/write we pass a
   -- language tag so the content is fenced and treesitter +
-  -- render-markdown can syntax-highlight it; other tools render as
-  -- plain muted text.
-  if TOOL_OUTPUT_WHITELIST[event.toolName] then
+  -- render-markdown can syntax-highlight it; bash/grep/find/ls render
+  -- as compact transcript rows so markdown-looking output stays inert.
+  if FENCED_TOOL_OUTPUT[event.toolName] or COMPACT_TOOL_OUTPUT[event.toolName] then
     local text = tool_result_text(event)
     if text then
-      local lang = nil
-      if event.toolName == "read" or event.toolName == "write" then
+      if FENCED_TOOL_OUTPUT[event.toolName] then
         -- Peek the stashed path without consuming — finish_tool_path
         -- below does the actual consume for the edit/highlight flow.
         local stashed = event.toolCallId and session.tool_paths[event.toolCallId] or nil
-        lang = language_for_path(stashed)
+        ui.append_tool_output(text, language_for_path(stashed), lane, insert_opts)
+      else
+        ui.append_compact_tool_output(text, COMPACT_TOOL_OUTPUT[event.toolName], lane, insert_opts)
       end
-      ui.append_tool_output(text, lang, lane, insert_opts)
     end
   end
 

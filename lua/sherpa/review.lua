@@ -1,4 +1,5 @@
 local picker = require("sherpa.picker")
+local render = require("sherpa.review.render")
 local state = require("sherpa.state")
 local ui = require("sherpa.ui")
 
@@ -68,148 +69,6 @@ local function excerpt(path, start_line, end_line)
   return table.concat(lines, "\n")
 end
 
-local function truncate(text, width)
-  width = width or 72
-  if #text <= width then
-    return text
-  end
-  return text:sub(1, width - 1) .. "…"
-end
-
-local function first_meaningful_line(text)
-  for _, raw in ipairs(vim.split(text or "", "\n", { plain = true })) do
-    local line = vim.trim(raw)
-    if line ~= ""
-      and not line:match("^#")
-      and not line:match("^//")
-      and not line:match("^%-%-")
-      and not line:match("^/%*")
-      and not line:match("^%*")
-      and line ~= "{" and line ~= "}" and line ~= "end" then
-      return line
-    end
-  end
-  return nil
-end
-
-local function excerpt_synopsis(text)
-  local line = first_meaningful_line(text)
-  if not line then
-    return nil
-  end
-
-  if line:match("^import%s") or line:match("^from%s") or line:match("^require%(") or line:match("^use%s") then
-    return "Imports and setup"
-  end
-
-  for _, pattern in ipairs({
-    "^local%s+function%s+([%w_]+)",
-    "^function%s+([%w_%.:]+)",
-    "^export%s+function%s+([%w_]+)",
-    "^async%s+function%s+([%w_]+)",
-    "^def%s+([%w_]+)",
-    "^class%s+([%w_]+)",
-    "^interface%s+([%w_]+)",
-    "^type%s+([%w_]+)",
-    "^const%s+([%w_]+)%s*=",
-    "^let%s+([%w_]+)%s*=",
-    "^var%s+([%w_]+)%s*=",
-    "^fn%s+([%w_]+)",
-    "^struct%s+([%w_]+)",
-    "^enum%s+([%w_]+)",
-  }) do
-    local name = line:match(pattern)
-    if name then
-      return "Defines " .. name
-    end
-  end
-
-  return truncate(line)
-end
-
-local function chunk_title(path, fallback_title, excerpt_text)
-  return excerpt_synopsis(excerpt_text) or fallback_title
-end
-
-local fence_languages = {
-  bash = "bash",
-  c = "c",
-  cpp = "cpp",
-  csharp = "csharp",
-  css = "css",
-  dart = "dart",
-  dockerfile = "dockerfile",
-  elixir = "elixir",
-  go = "go",
-  html = "html",
-  java = "java",
-  javascript = "js",
-  javascriptreact = "jsx",
-  json = "json",
-  kotlin = "kotlin",
-  lua = "lua",
-  make = "makefile",
-  markdown = "markdown",
-  php = "php",
-  python = "python",
-  ruby = "ruby",
-  rust = "rust",
-  sass = "sass",
-  scala = "scala",
-  scss = "scss",
-  sh = "bash",
-  sql = "sql",
-  swift = "swift",
-  toml = "toml",
-  typescript = "ts",
-  typescriptreact = "tsx",
-  vim = "vim",
-  xml = "xml",
-  yaml = "yaml",
-  zsh = "bash",
-}
-
-local function excerpt_fence(path)
-  if not path or path == "" then
-    return "```"
-  end
-
-  local filetype = nil
-  local buf = vim.fn.bufnr(path)
-  if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
-    filetype = vim.bo[buf].filetype
-  end
-  if not filetype or filetype == "" then
-    filetype = vim.filetype.match({ filename = path })
-  end
-
-  local language = filetype and fence_languages[filetype] or nil
-  if not language or language == "" then
-    return "```"
-  end
-  -- Review pane itself is markdown. Rendering markdown excerpts as
-  -- ```markdown makes README-style content look like sidebar structure
-  -- instead of literal source, so force plain text for markdown files.
-  if language == "markdown" then
-    return "```text"
-  end
-  return "```" .. language
-end
-
-local function item_label(item, index, total)
-  local status_text = item.status == "accepted" and " [accepted]" or ""
-  return string.format(
-    "[%d/%d] %s:%d-%d%s %s",
-    index,
-    total,
-    vim.fn.fnamemodify(item.path, ":."),
-    item.startLine,
-    item.endLine,
-    status_text,
-    item.title or ""
-  )
-end
-
 git_run = function(cwd, args)
   local cmd = string.format("git -C %s %s", vim.fn.shellescape(cwd), args)
   local output = vim.fn.systemlist(cmd)
@@ -263,204 +122,6 @@ relative_path = function(path)
   return path
 end
 
-local function comments_for_item(review, item)
-  local items = {}
-  for _, comment in ipairs((review and review.comments) or {}) do
-    if item and comment.itemId == item.id then
-      table.insert(items, comment)
-    end
-  end
-  return items
-end
-
-local function append_section(lines, title, content)
-  table.insert(lines, "## " .. title)
-  if type(content) == "string" then
-    vim.list_extend(lines, vim.split(content, "\n", { plain = true }))
-  else
-    vim.list_extend(lines, content)
-  end
-  table.insert(lines, "")
-end
-
-local function accepted_count(review)
-  local count = 0
-  for _, item in ipairs((review and review.items) or {}) do
-    if item.status == "accepted" then
-      count = count + 1
-    end
-  end
-  return count
-end
-
-local function review_status_lines(review, item)
-  local status_text = "active"
-  if review.planning then
-    status_text = "planning"
-  elseif review.awaiting_summary then
-    status_text = "waiting for summary"
-  elseif review.pending_question then
-    status_text = "answering ranged question"
-  elseif not review.active then
-    status_text = "complete"
-  end
-
-  local lines = {
-    string.format("- state: `%s`", status_text),
-    string.format("- accepted: `%d/%d`", accepted_count(review), #review.items),
-  }
-  if item and item.status then
-    table.insert(lines, string.format("- current stop: `%s`", item.status))
-  end
-  if review.pending_question then
-    table.insert(lines, "- waiting: ranged answer is streaming inline; moving stops will clear it")
-  end
-  return lines
-end
-
-local function panel_lines(review)
-  if not review then
-    return {
-      "# Sherpa Review",
-      "",
-      "No active review session.",
-    }
-  end
-
-  local item = current_item(review)
-  local lines = {
-    "# Sherpa Review",
-    "",
-    string.format("- source: `%s`", review.source),
-    review.goal and ("- goal: `" .. review.goal .. "`") or nil,
-  }
-
-  local has_msg0 = review.plan_message and review.plan_message ~= ""
-  if review.planning then
-    table.insert(lines, "- stop: `planning...`")
-  elseif has_msg0 and review.current_index == 0 then
-    table.insert(lines, string.format("- stop: `0/%d`", #review.items))
-  else
-    local display_index = has_msg0 and review.current_index or (review.current_index or 1)
-    table.insert(lines, string.format("- stop: `%d/%d`", display_index, #review.items))
-  end
-  if review.scope then
-    table.insert(lines, string.format("- scope: `%s`", review.scope))
-  end
-  if review.coverage_ok == false then
-    table.insert(lines, "- coverage: `incomplete`")
-  end
-  table.insert(lines, "")
-
-  lines = vim.tbl_filter(function(line)
-    return line ~= nil and line ~= ""
-  end, lines)
-
-  local on_msg0 = has_msg0 and review.current_index == 0
-
-  append_section(lines, "Status", review_status_lines(review, item))
-
-  if on_msg0 then
-    table.insert(lines, "**Synopsis**")
-    table.insert(lines, "")
-  elseif item then
-    table.insert(lines, string.format("**%s**", item.title or "Review item"))
-    table.insert(lines, string.format("`%s:%d-%d`", relative_path(item.path), item.startLine, item.endLine))
-    if item.status == "accepted" then
-      table.insert(lines, "Status: accepted")
-    end
-    if item.summary and item.summary ~= "" then
-      table.insert(lines, string.format("Synopsis: %s", item.summary))
-    end
-    if item.why and item.why ~= "" and item.why ~= item.summary then
-      table.insert(lines, string.format("Why: %s", item.why))
-    end
-    table.insert(lines, "")
-  elseif review.planning then
-    table.insert(lines, "Sherpa is planning the review. The first stop will open here.")
-    table.insert(lines, "")
-  end
-
-  -- Sidebar Explanation shows the shorter `summary`. The longer
-  -- `explanation` is rendered as a virtual-line block in the code buffer
-  -- instead, so we don't duplicate it here.
-  local explanation = item and (item.summary or item.why or item.explanation)
-  local explanation_title = "Explanation"
-  if review.awaiting_summary then
-    explanation_title = "End of review"
-    explanation = "Waiting for the end-of-review summary from the agent..."
-  elseif review.summary and review.summary ~= "" then
-    explanation_title = "Review summary"
-    explanation = review.summary
-  elseif on_msg0 then
-    explanation_title = "Synopsis"
-    explanation = review.plan_message
-  elseif review.planning then
-    explanation = "Sherpa is planning the review..."
-  elseif not explanation or explanation == "" then
-    explanation = review.active and "Waiting for the explanation for this review item..." or "Review complete."
-  end
-  if explanation_title == "Explanation" then
-    append_section(lines, explanation_title, {
-      "Synopsis of the current stop (full explanation is shown inline in the code):",
-      "",
-      explanation,
-    })
-  else
-    append_section(lines, explanation_title, explanation)
-  end
-
-  if item and item.excerpt and item.excerpt ~= "" then
-    append_section(lines, "Excerpt", {
-      excerpt_fence(item.path),
-      item.excerpt,
-      "```",
-    })
-  end
-
-  -- Comments and TOC are not shown on message 0.
-  if not on_msg0 then
-    local item_comments = comments_for_item(review, item)
-    if #item_comments == 0 then
-      append_section(lines, "Comments on this item", "No comments on this item yet.")
-    else
-      local comment_lines = {}
-      for index, comment in ipairs(item_comments) do
-        table.insert(comment_lines, string.format("%d. lines %d-%d — %s", index, comment.startLine, comment.endLine, comment.text))
-      end
-      append_section(lines, "Comments on this item", comment_lines)
-    end
-  end
-
-  if #review.items > 1 or has_msg0 then
-    local toc = {}
-    if has_msg0 then
-      local marker = review.current_index == 0 and "→" or " "
-      table.insert(toc, string.format("%s [0] Synopsis", marker))
-    end
-    for index, stop in ipairs(review.items) do
-      local marker = (index == review.current_index) and "→" or " "
-      local stop_status = stop.status == "accepted" and " [accepted]" or ""
-      table.insert(toc, string.format("%s [%d] `%s:%d-%d`%s %s",
-        marker, index, relative_path(stop.path), stop.startLine, stop.endLine, stop_status, stop.title or ""))
-    end
-    append_section(lines, "Review plan", toc)
-  end
-
-  append_section(lines, "Controls", {
-    "- `:SherpaNext` / `:SherpaPrev` move between review items",
-    "- `:SherpaNext!` accepts the current stop and moves on",
-    "- `:SherpaReview <question>` asks about the current review item",
-    "- `:'<,'>SherpaReview <question>` asks about a selected range",
-    "- `:SherpaChat` toggles the chat surfaces (log + compose)",
-    "- `:SherpaComment` opens the multiline comment editor",
-    "- `:'<,'>SherpaComment [text]` opens the multiline editor for a selected range",
-    "- `:'<,'>SherpaPatch <prompt>` patches the selected range",
-  })
-
-  return lines
-end
-
 -- Deduplicates render calls within the same event loop tick. Multiple
 -- mutations in a single synchronous chain (e.g. focus_item + ingest_plan)
 -- only rebuild the sidebar once.
@@ -483,7 +144,8 @@ function M.render()
       ui.hide_review()
       return
     end
-    ui.set_review_lines(panel_lines(r))
+    local session = review_session()
+    ui.set_review_lines(render.panel_lines(r, { cwd = session and session.cwd }))
   end)
   return true
 end
@@ -632,7 +294,7 @@ end
 
 local function make_plan_stop(path, start_line, end_line, kind, why)
   local stop_excerpt = excerpt(path, start_line, end_line)
-  local title = chunk_title(path, kind, stop_excerpt) or relative_path(path)
+  local title = render.chunk_title(path, kind, stop_excerpt) or relative_path(path)
   return {
     id = string.format("%s:%d-%d", path, start_line, end_line),
     path = path,
@@ -1322,7 +984,7 @@ function M.item_picker()
   end
   for index, item in ipairs(review.items) do
     table.insert(items, {
-      label = item_label(item, index, #review.items),
+      label = render.item_label(item, index, #review.items),
       value = { index = index, item = item },
     })
   end

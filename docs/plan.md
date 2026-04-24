@@ -30,7 +30,7 @@ Supporting UX:
 - rich tool rendering in the log: edits stay under a
   `• Edited <path> (+N -M)` header with inline green/red diff rows;
   syntax-highlighted fenced output for read/write via treesitter +
-  render-markdown; untagged fenced output for bash/grep/ls/find; shows
+  render-markdown; compact gutter output for bash/grep/ls/find; shows
   the last 15 lines with a `N earlier lines…` note above;
   accent-colored paths in tool headers
 - log windows tail only while already at the bottom; scrolling up
@@ -119,6 +119,7 @@ we decide resumption is worth the context drift.
 ## Related docs
 
 - `docs/architecture.md`
+- `docs/usage.md`
 - `docs/message-queue.md`
 - `docs/review-mode.md`
 - `docs/review-planning.md`

@@ -33,108 +33,6 @@ local target_window
 -- Forward declaration — defined later, referenced by append_block.
 local ensure_chunk_style
 
-local spin_labels = {
-  default = {
-    "Sherpa is climbing...",
-    "Sherpa is scouting the route...",
-    "Sherpa is checking the map...",
-    "Sherpa is crossing the ridge...",
-    "Sherpa is setting the ropes...",
-    "Sherpa is almost there...",
-    "Sherpa is gaining altitude...",
-    "Sherpa is navigating the crevasse...",
-    "Sherpa is reading the terrain...",
-    "Sherpa is securing the belay...",
-    "Sherpa is traversing the glacier...",
-    "Sherpa is finding a foothold...",
-  },
-  plan = {
-    "Sherpa is scouting the route...",
-    "Sherpa is checking the map...",
-    "Sherpa is marking the next stop...",
-    "Sherpa is laying out the route...",
-    "Sherpa is plotting waypoints...",
-    "Sherpa is measuring the distance...",
-    "Sherpa is charting the ascent...",
-    "Sherpa is surveying base camp...",
-    "Sherpa is calculating the grade...",
-    "Sherpa is penciling in the camps...",
-    "Sherpa is sketching the approach...",
-    "Sherpa is noting the hazards...",
-  },
-  patch = {
-    "Sherpa is placing the pitons...",
-    "Sherpa is trimming the route...",
-    "Sherpa is tightening the seam...",
-    "Sherpa is making a careful local move...",
-    "Sherpa is adjusting the anchor...",
-    "Sherpa is threading the rope...",
-    "Sherpa is resetting the cam...",
-    "Sherpa is fine-tuning the stance...",
-    "Sherpa is clipping the quickdraw...",
-    "Sherpa is cinching the knot...",
-    "Sherpa is repositioning the gear...",
-    "Sherpa is patching the fixed line...",
-  },
-  search = {
-    "Sherpa is scanning the trail...",
-    "Sherpa is checking the landmarks...",
-    "Sherpa is tracing the path...",
-    "Sherpa is spotting likely matches...",
-    "Sherpa is looking for cairns...",
-    "Sherpa is glassing the ridge...",
-    "Sherpa is following the bootpack...",
-    "Sherpa is sweeping the valley...",
-    "Sherpa is tracking the markers...",
-    "Sherpa is peering through the fog...",
-    "Sherpa is checking each switchback...",
-    "Sherpa is hunting for the blaze...",
-  },
-  review = {
-    "Sherpa is walking the route...",
-    "Sherpa is pointing out the key ledges...",
-    "Sherpa is explaining the terrain...",
-    "Sherpa is highlighting the tricky bit...",
-    "Sherpa is narrating the ascent...",
-    "Sherpa is describing the crux...",
-    "Sherpa is reviewing the beta...",
-    "Sherpa is recapping the sequence...",
-    "Sherpa is stepping through the moves...",
-    "Sherpa is showing the holds...",
-    "Sherpa is annotating the topo...",
-    "Sherpa is guiding you through...",
-  },
-  prompt = {
-    "Sherpa is thinking...",
-    "Sherpa is tracing the code...",
-    "Sherpa is drafting a reply...",
-    "Sherpa is lining up the next move...",
-    "Sherpa is pondering the approach...",
-    "Sherpa is considering options...",
-    "Sherpa is gathering thoughts...",
-    "Sherpa is working it out...",
-    "Sherpa is reading the wall...",
-    "Sherpa is planning the sequence...",
-    "Sherpa is mapping the logic...",
-    "Sherpa is studying the problem...",
-  },
-  q = {
-    "Sherpa is tracing the tangent...",
-    "Sherpa is checking the side trail...",
-    "Sherpa is working through the tangent...",
-    "Sherpa is following the detour...",
-    "Sherpa is inspecting the side path...",
-    "Sherpa is mapping the tangent...",
-  },
-}
-local activity_prefixes = {
-  plan = "Plan",
-  patch = "Patch",
-  prompt = "Chat",
-  q = "Q",
-  review = "Review",
-  search = "Search",
-}
 local spin_states = {}
 
 local function normalize_lane(lane)
@@ -153,10 +51,6 @@ end
 
 local function activity_echo(message)
   return pcall(vim.api.nvim_echo, { { "sherpa: " .. message } }, false, {})
-end
-
-local function activity_labels(operation)
-  return spin_labels[operation] or spin_labels.default
 end
 
 local function stop_spin(lane)
@@ -192,9 +86,6 @@ local function compose_status_line(progress, lane)
   local session = state.get_session(lane)
   local statuses = session and session.status or {}
   local clarify_badge = statuses["sherpa-clarify"]
-  -- Clarify takes visual precedence — the model is actively waiting on
-  -- an answer, which blocks everything else. Tangent badge still shows
-  -- when no clarify is pending.
   local prefix = ""
   local idle_msg = nil
   if clarify_badge and clarify_badge ~= "" then
@@ -205,22 +96,25 @@ local function compose_status_line(progress, lane)
     if idle_msg then return prefix .. idle_msg end
     local action = status.pending_action(lane)
     if action then
-      return "Chat: " .. action
+      return action
     end
-    return "Chat: Sherpa is ready."
+    -- Idle: show model + cwd like codex's bottom bar.
+    local widget = session and session.widget or {}
+    local parts = {}
+    for _, line in ipairs(widget) do
+      local trimmed = vim.trim(line or "")
+      if trimmed ~= "" then table.insert(parts, trimmed) end
+    end
+    if #parts > 0 then
+      return table.concat(parts, " · ")
+    end
+    return "Sherpa is ready."
   end
-  local op_prefix = activity_prefixes[progress.operation] or "Sherpa"
-  local label = progress.spin_label or activity_labels(progress.operation)[1]
-  local elapsed = format_elapsed(progress.started_at)
-  local left = string.format("%s%s: %s", prefix, op_prefix, label)
-  local action = lane == "main" and status.pending_action(lane) or nil
-  if action then
-    left = left .. " (" .. action .. ")"
-  end
-  if elapsed then
-    return left, elapsed
-  end
-  return left
+  -- Active: "Working (Ns · :SherpaStop to interrupt)"
+  local elapsed = format_elapsed(progress.started_at) or "0s"
+  local left = string.format("%sWorking", prefix)
+  local right = string.format("%s · :SherpaStop to interrupt", elapsed)
+  return left, right
 end
 
 function M.refresh_compose_winbar(lane)
@@ -240,12 +134,9 @@ function M.refresh_compose_winbar(lane)
   end
 end
 
--- Ticks run every SPIN_INTERVAL_MS; every Nth tick rotates the spin
--- label to the next one. Between rotations, the winbar still refreshes
--- (so the elapsed-time suffix updates smoothly) but the label stays
--- put. That keeps the label readable while the timer feels alive.
+-- Ticks run every SPIN_INTERVAL_MS. No label rotation — just refresh
+-- the compose winbar so the elapsed-time suffix updates smoothly.
 local SPIN_INTERVAL_MS = 1000
-local SPIN_ROTATE_EVERY = 2   -- 2 * 1000ms = 2s per label
 
 local function spin_tick(lane)
   local spin = spin_state(lane)
@@ -255,35 +146,17 @@ local function spin_tick(lane)
     stop_spin(lane)
     return
   end
-  -- Skip the refresh entirely when the compose buffer has no visible
-  -- windows — no point formatting + setting the winbar string nobody
-  -- can see. Avoids win_findbuf + pcall overhead for background lanes.
   local cbuf = session.compose_buf
   if not cbuf or not vim.api.nvim_buf_is_valid(cbuf) or #vim.fn.win_findbuf(cbuf) == 0 then
-    spin.tick_count = spin.tick_count + 1
     return
   end
-  spin.tick_count = spin.tick_count + 1
-  if spin.tick_count % SPIN_ROTATE_EVERY ~= 0 then
-    M.refresh_compose_winbar(lane)
-    return
-  end
-  local labels = activity_labels(progress.operation)
-  spin.index = (spin.index % #labels) + 1
-  progress.spin_label = labels[spin.index]
   M.refresh_compose_winbar(lane)
 end
 
 local function start_spin(progress, lane)
   local spin = spin_state(lane)
   stop_spin(lane)
-  local labels = activity_labels(progress and progress.operation)
-  spin.index = 1
-  if progress then
-    progress.spin_label = labels[spin.index]
-  end
   M.refresh_compose_winbar(lane)
-  spin.tick_count = 0
   spin.timer = vim.uv.new_timer()
   spin.timer:start(SPIN_INTERVAL_MS, SPIN_INTERVAL_MS, vim.schedule_wrap(function()
     spin_tick(lane)
@@ -805,27 +678,81 @@ local log_label_hl = {
   ["review-comments"] = log_tool_hl,
 }
 
+-- Codex-style verb labels for block headers. Unlisted labels use the
+-- raw label name.
+local block_verbs = {
+  assistant = "",
+  user = "> ",
+  thinking = "Thought",
+  error = "Error",
+  sherpa = "Sherpa",
+  tool = "Ran",
+  plan = "Plan",
+  clarify = "Clarify",
+  diff = "Diff",
+  ["review-prompt"] = "Review prompt",
+  ["review-comments"] = "Review comments",
+}
+
 function M.append_block(label, text, lane, opts)
   opts = opts or {}
   ensure_chunk_style()
   local buf = M.ensure_log_buffer(lane)
 
-  -- Thin rule above every block makes it easy to scan past tool-call
-  -- noise when looking for the most recent assistant answer. Match pi's
-  -- visual rhythm (color-distinct block heads, quiet separators).
-  local rule = string.rep("─", 60)
-  local header = string.format("── [%s] %s", label, string.rep("─", math.max(60 - 5 - #label, 1)))
-  local lines = { rule ~= header and "" or "" }
-  -- Use only one rule-styled header line rather than a separate rule +
-  -- header. Keeps the log tight.
-  lines = { header }
-  vim.list_extend(lines, vim.split(text, "\n", { plain = true }))
+  -- Codex-style: bullet + bold verb, no rule lines, no backgrounds.
+  -- Assistant/user text flows directly; other labels get a • header.
+  local lines = {}
+  local verb = block_verbs[label]
+  if label == "assistant" then
+    -- Assistant text flows with no header, just a blank separator.
+    table.insert(lines, "")
+  elseif label == "user" then
+    -- User input prefixed with "> " on each line.
+    table.insert(lines, "")
+    for _, l in ipairs(vim.split(text, "\n", { plain = true })) do
+      table.insert(lines, "> " .. l)
+    end
+    table.insert(lines, "")
+    local items = log_lines(lines)
+    if #items == 0 then return end
+    local start_line
+    if opts.insert_at then
+      start_line = opts.insert_at
+      vim.api.nvim_buf_set_lines(buf, start_line, start_line, false, items)
+    else
+      start_line = vim.api.nvim_buf_line_count(buf)
+      vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+    end
+    -- Color the "> " user lines
+    for offset = 1, #items - 1 do
+      local row = start_line + offset
+      local line_text = items[offset + 1] or ""
+      if line_text:sub(1, 2) == "> " then
+        pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+          end_row = row + 1,
+          hl_group = log_user_hl,
+          priority = 10,
+        })
+      end
+    end
+    scroll_log_windows(buf)
+    return
+  else
+    -- Everything else: • Verb header, body indented below.
+    local header = verb and verb ~= "" and ("• " .. verb) or ("• " .. label)
+    table.insert(lines, "")
+    table.insert(lines, header)
+  end
+
+  if label ~= "user" then
+    for _, l in ipairs(vim.split(text, "\n", { plain = true })) do
+      table.insert(lines, label == "assistant" and l or ("  " .. l))
+    end
+  end
   table.insert(lines, "")
 
   local items = log_lines(lines)
-  if #items == 0 then
-    return
-  end
+  if #items == 0 then return end
 
   local start_line
   if opts.insert_at then
@@ -833,31 +760,31 @@ function M.append_block(label, text, lane, opts)
     vim.api.nvim_buf_set_lines(buf, start_line, start_line, false, items)
   else
     start_line = vim.api.nvim_buf_line_count(buf)
-    -- ensure_log_buffer keeps the buffer non-empty with a trailing blank,
-    -- but we always append — so start_line is where the header lands.
     vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
   end
 
-  -- Block-wide styling. User/assistant get subtle backgrounds; thinking gets
-  -- a faint foreground treatment across the whole block so it reads as
-  -- secondary/internal text rather than another full-strength answer.
   local end_line = start_line + #items - 1
-  if label == "assistant" or label == "user" then
-    local bg_hl = label == "user" and log_user_bg_hl or log_assistant_bg_hl
-    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
-      end_row = end_line + 1,
-      hl_group = bg_hl,
-      hl_eol = true,
-      priority = 5,
-    })
-  elseif label == "error" then
-    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
-      end_row = end_line + 1,
-      hl_group = log_error_bg_hl,
-      hl_eol = true,
-      priority = 5,
-    })
-  elseif label == "thinking" then
+
+  -- Highlight the • header line with the label's color.
+  local hl = log_label_hl[label]
+  if label ~= "assistant" and label ~= "user" then
+    -- Find the header row (first non-blank line after start_line)
+    for offset = 0, #items - 1 do
+      local line_text = items[offset + 1] or ""
+      if line_text:sub(1, 3) == "• " then
+        local row = start_line + offset
+        pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+          end_row = row + 1,
+          hl_group = hl or log_tool_hl,
+          priority = 10,
+        })
+        break
+      end
+    end
+  end
+
+  -- Thinking gets faint italic on the whole block.
+  if label == "thinking" then
     pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
       end_row = end_line + 1,
       hl_group = log_thinking_hl,
@@ -866,34 +793,29 @@ function M.append_block(label, text, lane, opts)
     })
   end
 
-  -- Header foreground (higher priority than background)
-  local hl = log_label_hl[label]
-  if hl then
+  -- Error gets a dim red background so it's unmissable.
+  if label == "error" then
     pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
-      end_row = start_line + 1,
-      hl_group = hl,
-      priority = 10,
+      end_row = end_line + 1,
+      hl_group = log_error_bg_hl,
+      hl_eol = true,
+      priority = 5,
     })
   end
-  -- Rule characters (anything after the label in the header line) get
-  -- their own dim color so the header visually "trails off".
-  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
-    end_row = start_line,
-    end_col = 0,
-    hl_group = log_rule_hl,
-    priority = 5,
-  })
 
+  -- Diff line coloring (inside the body, after the header).
   if label == "diff" then
     for offset = 1, #items - 1 do
       local row = start_line + offset
-      local line = items[offset + 1] or ""
+      local line_text = items[offset + 1] or ""
+      -- Strip the 2-char indent to check the diff prefix
+      local content = line_text:sub(3)
       local hl_group = nil
-      if line:match("^%+") then
+      if content:match("^%+") then
         hl_group = log_diff_add_hl
-      elseif line:match("^%-") then
+      elseif content:match("^%-") then
         hl_group = log_diff_remove_hl
-      elseif line:match("^%s") then
+      elseif content:match("^%s") then
         hl_group = log_diff_context_hl
       end
       if hl_group then
@@ -914,35 +836,57 @@ end
 -- path + range range substring highlighted distinctly. `range` is an
 -- already-formatted suffix like ":1-40" or nil. The tool name keeps
 -- the default tool color; only the path/range pops visually.
+-- Codex-style verb mapping for tool names.
+local tool_verbs = {
+  read = "Explored",
+  edit = "Edited",
+  write = "Wrote",
+  bash = "Ran",
+  grep = "Explored",
+  find = "Explored",
+  ls = "Explored",
+  subagent = "Delegated",
+}
+
 function M.append_tool_line(tool_name, path, range, lane)
   local session = state.get_session(lane)
   local buf = session and session.log_buf
+  local verb = tool_verbs[tool_name] or "Ran"
+
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
-    -- Fall back to plain append so we don't silently lose the line;
-    -- the log buffer may not exist yet during very early dispatches.
-    local line = string.format("[tool] %s %s%s", tool_name, path or "",
-      range or "")
-    M.append({ line }, lane)
+    M.append({ string.format("• %s", verb), string.format("  └ %s %s%s", tool_name, path or "", range or "") }, lane)
     return
   end
 
-  local prefix = string.format("[tool] %s ", tool_name)
-  local path_text = path or ""
-  local range_text = range or ""
-  local full_line = prefix .. path_text .. range_text
+  local header = string.format("• %s", verb)
+  local detail = string.format("  └ %s %s%s", tool_name, path or "", range or "")
 
   local start_row = vim.api.nvim_buf_line_count(buf)
-  M.append({ full_line }, lane)
+  M.append({ header, detail }, lane)
 
-  -- The line we just appended sits one above the trailing blank that
-  -- `M.append` keeps at end-of-buffer; its row is start_row.
-  local path_start_col = #prefix
-  local path_end_col = path_start_col + #path_text + #range_text
-  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_row, path_start_col, {
-    end_row = start_row,
-    end_col = path_end_col,
-    hl_group = log_path_hl,
+  -- Bold verb header
+  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_row, 0, {
+    end_row = start_row + 1,
+    hl_group = log_tool_hl,
     priority = 10,
+  })
+  -- Highlight the path portion of the detail line
+  local path_text = (path or "") .. (range or "")
+  if path_text ~= "" then
+    local prefix_len = #("  └ " .. tool_name .. " ")
+    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_row + 1, prefix_len, {
+      end_row = start_row + 1,
+      end_col = prefix_len + #path_text,
+      hl_group = log_path_hl,
+      priority = 10,
+    })
+  end
+  -- Mute the tree connector
+  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_row + 1, 0, {
+    end_row = start_row + 1,
+    end_col = #"  └ ",
+    hl_group = log_muted_hl,
+    priority = 8,
   })
 end
 

@@ -20,58 +20,75 @@ class TmuxLogRenderingTests(unittest.TestCase):
         self.project_root = self.repo_root / "tests" / "fixtures" / "app"
 
     def test_edit_tool_emits_diff_block(self) -> None:
-        # `:SherpaChat update the fixture app` drives fake_pi through
-        # prompt_response which emits read + edit tool events. The edit
-        # carries result.details.diff, which Sherpa should render as a
-        # [diff] block with at least one +/- line.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat update the fixture app")
                 h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
-                    lambda: "[diff]" in "\n".join(h.log_lines()),
+                    lambda: "• Diff" in "\n".join(h.log_lines()),
                     timeout=5.0,
                 )
                 log = "\n".join(h.log_lines())
-                self.assertIn("[diff]", log)
-                # Pi's diff format uses "+ NUM content" / "- NUM content".
-                # fake_pi emits `+ <line> edited` as the diff stub, so we
-                # should see at least one line starting with `+`.
+                self.assertIn("• Diff", log)
+                # Diff lines are indented with 2 spaces under the bullet.
+                # fake_pi emits `+ <line> edited` as the diff stub.
                 diff_lines = [
                     line for line in h.log_lines()
-                    if line.startswith("+") or line.startswith("-")
+                    if line.lstrip().startswith("+") or line.lstrip().startswith("-")
                 ]
                 self.assertTrue(
                     len(diff_lines) >= 1,
                     f"expected at least one +/- diff line, got log:\n{log}",
                 )
 
-    def test_read_tool_renders_fenced_output(self) -> None:
-        # prompt_response in fake_pi emits a `read` on src/App.tsx
-        # before the edit. The content lands in the log wrapped in a
-        # tsx-tagged fence so treesitter + render-markdown highlight it.
+    def test_diff_block_has_line_highlighting_extmarks(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat update the fixture app")
                 h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
-                    lambda: "[tool] read" in "\n".join(h.log_lines()),
+                    lambda: "• Diff" in "\n".join(h.log_lines()),
+                    timeout=5.0,
+                )
+
+                has_diff_hl = h.lua_bool(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('sherpa://log'); "
+                    "  if buf <= 0 then return false end; "
+                    "  local ns = vim.api.nvim_create_namespace('sherpa-log'); "
+                    "  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {details=true}); "
+                    "  for _, m in ipairs(marks) do "
+                    "    local hl = m[4] and m[4].hl_group or ''; "
+                    "    if hl == 'SherpaLogDiffAdd' or hl == 'SherpaLogDiffRemove' or hl == 'SherpaLogDiffContext' then "
+                    "      return true "
+                    "    end "
+                    "  end; "
+                    "  return false "
+                    "end)()"
+                )
+                self.assertTrue(has_diff_hl, "expected diff line highlighting extmarks in the log")
+
+    def test_read_tool_renders_fenced_output(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaChat update the fixture app")
+                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.send("C-s", pause=0.3)
+                h.wait_until(
+                    lambda: "• Explored" in "\n".join(h.log_lines()),
                     timeout=5.0,
                 )
                 h.wait_until(
-                    lambda: "[assistant]" in "\n".join(h.log_lines()),
+                    lambda: "Finished a broader work pass" in "\n".join(h.log_lines()),
                     timeout=5.0,
                 )
                 log = "\n".join(h.log_lines())
-                # Body content is present.
                 self.assertIn("export function App", log,
                     f"expected read content in log; got:\n{log}")
-                # Fence open + close are both present.
                 self.assertIn("```tsx", log,
                     f"expected tsx-tagged fence open; got:\n{log}")
-                # There should be at least two ``` in total (open + close).
                 self.assertGreaterEqual(log.count("```"), 2,
                     f"expected open+close fence; got:\n{log}")
 
@@ -142,18 +159,13 @@ class TmuxLogRenderingTests(unittest.TestCase):
                     f"pi sentinel should be stripped; got:\n{log}")
 
     def test_tool_header_path_has_extmark(self) -> None:
-        # The [tool] <name> <path> header line should carry a
-        # SherpaLogPath extmark covering the path substring. We query
-        # extmarks directly via nvim_buf_get_extmarks since log_lines()
-        # strips styling. Any extmark with hl_group SherpaLogPath on the
-        # log buffer is evidence path-highlighting is wired.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("SherpaChat update the fixture app")
                 h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
-                    lambda: "[tool]" in "\n".join(h.log_lines()),
+                    lambda: "• Explored" in "\n".join(h.log_lines()),
                     timeout=5.0,
                 )
 
@@ -169,7 +181,7 @@ class TmuxLogRenderingTests(unittest.TestCase):
                     "  return false "
                     "end)()"
                 )
-                self.assertTrue(has_path_hl, "expected SherpaLogPath extmark on a [tool] header")
+                self.assertTrue(has_path_hl, "expected SherpaLogPath extmark on a tool header")
 
 
 if __name__ == "__main__":

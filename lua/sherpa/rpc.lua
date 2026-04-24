@@ -81,19 +81,17 @@ local function append_tool(tool_name, args, lane)
   end
 
   if tool_name == "bash" and args and args.command then
-    ui.append_block("tool", string.format("```bash\n%s\n```", args.command), lane)
+    ui.append({ string.format("• Ran command"), string.format("  └ %s", args.command) }, lane)
     return
   end
 
-  -- Tools with a pattern/glob argument (grep, find, ls, etc.): show
-  -- the key args inline so the log is scannable without expanding output.
   local summary = format_tool_args(tool_name, args)
   if summary then
-    ui.append({ string.format("[tool] %s %s", tool_name, summary) }, lane)
+    ui.append({ string.format("• Explored"), string.format("  └ %s %s", tool_name, summary) }, lane)
     return
   end
 
-  ui.append({ string.format("[tool] %s", tool_name) }, lane)
+  ui.append({ string.format("• Ran %s", tool_name) }, lane)
 end
 
 local function text_content(message)
@@ -684,7 +682,7 @@ local function handle_tool_end(event, lane)
     end
     local item = review.ingest_plan(args)
     if item then
-      ui.append({ string.format("[sherpa] plan: %d stop(s), scope=%s",
+      ui.append({ string.format("• Planned %d stop(s), scope=%s",
         #(args.stops or {}),
         args.scope or "?") }, lane)
     else
@@ -696,7 +694,7 @@ local function handle_tool_end(event, lane)
     local args = consume_tool_args(session, event) or {}
     local added = review.ingest_append_stops(args)
     if added > 0 then
-      ui.append({ string.format("[sherpa] appended %d stop(s)", added) }, lane)
+      ui.append({ string.format("• Appended %d stop(s)", added) }, lane)
     end
     return
   end

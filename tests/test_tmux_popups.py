@@ -131,14 +131,14 @@ class TmuxPopupTests(unittest.TestCase):
                 self.assertIn("add a banner", "\n".join(h.buffer_lines("sherpa://compose")))
                 h.send("C-s", pause=0.3)
                 h.wait_until(
-                    lambda: "[thinking]" in "\n".join(h.log_lines())
-                    and "[assistant]" in "\n".join(h.log_lines()),
+                    lambda: "• Thought" in "\n".join(h.log_lines())
+                    and "Finished a broader work pass" in "\n".join(h.log_lines()),
                     timeout=4.0,
                 )
 
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("Checking the relevant files first", log_text)
-                self.assertLess(log_text.index("[thinking]"), log_text.index("[assistant]"))
+                self.assertLess(log_text.index("• Thought"), log_text.index("Finished a broader work pass"))
 
     def test_compose_steers_when_request_is_in_flight(self) -> None:
         # While a request is pending, compose <C-s> dispatches via
@@ -245,7 +245,7 @@ class TmuxPopupTests(unittest.TestCase):
                     timeout=3.0,
                 )
                 h.wait_until(
-                    lambda: _winbar_for_buffer(h, "sherpa://compose") == "Chat: Sherpa is ready.",
+                    lambda: "Sherpa is ready" in _winbar_for_buffer(h, "sherpa://compose"),
                     timeout=3.0,
                 )
 
@@ -308,10 +308,12 @@ class TmuxPopupTests(unittest.TestCase):
                     "end)()"
                 )
                 h.wait_until(
-                    lambda: _winbar_for_buffer(h, "sherpa://compose").startswith("Review: Sherpa is "),
+                    lambda: "Working" in _winbar_for_buffer(h, "sherpa://compose"),
                     timeout=3.0,
                 )
                 first = _winbar_for_buffer(h, "sherpa://compose")
+                # Elapsed time updates every second; wait for at least
+                # one tick so the winbar changes.
                 h.wait_until(
                     lambda: _winbar_for_buffer(h, "sherpa://compose") != first,
                     timeout=4.5,
@@ -321,7 +323,7 @@ class TmuxPopupTests(unittest.TestCase):
                     "(function() require('sherpa.ui').finish_activity('done', 'success', 'main'); return true end)()"
                 )
                 h.wait_until(
-                    lambda: _winbar_for_buffer(h, "sherpa://compose") == "Chat: Sherpa is ready.",
+                    lambda: "Working" not in _winbar_for_buffer(h, "sherpa://compose"),
                     timeout=3.0,
                 )
 

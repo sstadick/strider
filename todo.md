@@ -1,5 +1,7 @@
 # Ready for work
 - move the timer to the left side  next to Working like: `Working (<time>)`
+- Paste clipboard images at the cursor instead of the end of the compose
+  buffer; insert a newline after the `@image <path>` marker.
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on

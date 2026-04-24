@@ -1,4 +1,5 @@
 local clipboard = require("sherpa.clipboard")
+local log_diff = require("sherpa.log.diff")
 local log_pin = require("sherpa.log_pin")
 local state = require("sherpa.state")
 local status = require("sherpa.status")
@@ -35,6 +36,10 @@ local log_diff_add_hl = "SherpaLogDiffAdd"
 local log_diff_remove_hl = "SherpaLogDiffRemove"
 local log_diff_context_hl = "SherpaLogDiffContext"
 local log_diff_stats_hl = "SherpaLogDiffStats"
+local log_diff_add_sign_hl = "SherpaLogDiffAddSign"
+local log_diff_remove_sign_hl = "SherpaLogDiffRemoveSign"
+local log_diff_line_number_hl = "SherpaLogDiffLineNumber"
+local log_diff_gutter_hl = "SherpaLogDiffGutter"
 local compose_working_hl = "SherpaComposeWorking"
 local compose_working_soft_hl = "SherpaComposeWorkingSoft"
 local compose_working_shine_hl = "SherpaComposeWorkingShine"
@@ -906,20 +911,7 @@ local block_verbs = {
 }
 
 local function diff_content_lines(text)
-  local lines = {}
-  for _, line in ipairs(vim.split(text or "", "\n", { plain = true })) do
-    if line:match("^```") then
-      -- Edit diffs used to be wrapped in ```diff fences. Keep this
-      -- renderer tolerant so old callers do not leak a visible `diff`
-      -- fence label into the log.
-    elseif line ~= "" or #lines > 0 then
-      table.insert(lines, line)
-    end
-  end
-  while #lines > 0 and lines[#lines] == "" do
-    table.remove(lines)
-  end
-  return lines
+  return log_diff.content_lines(text)
 end
 
 local function diff_line_hl(content)
@@ -955,14 +947,8 @@ end
 function M.append_diff(text, lane, opts)
   opts = opts or {}
   ensure_chunk_style()
-  local body = diff_content_lines(text)
-  if #body == 0 then return end
-
-  local lines = {}
-  for _, line in ipairs(body) do
-    table.insert(lines, "  " .. line)
-  end
-  table.insert(lines, "")
+  local lines, rows = log_diff.render(text)
+  if #rows == 0 then return end
 
   local items = log_lines(lines)
   if #items == 0 then return end
@@ -977,7 +963,16 @@ function M.append_diff(text, lane, opts)
     vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
   end
 
-  highlight_diff_rows(buf, start_line, items)
+  log_diff.highlight_rows(buf, log_namespace, start_line, rows, {
+    add = log_diff_add_hl,
+    remove = log_diff_remove_hl,
+    context = log_diff_context_hl,
+    add_sign = log_diff_add_sign_hl,
+    remove_sign = log_diff_remove_sign_hl,
+    line_number = log_diff_line_number_hl,
+    gutter = log_diff_gutter_hl,
+  })
+  log_diff.highlight_syntax(buf, log_namespace, start_line, rows, opts.lang)
   scroll_log_windows(buf)
 end
 
@@ -2132,6 +2127,10 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, log_diff_remove_hl, { default = true, bg = "#3a2024" })
   vim.api.nvim_set_hl(0, log_diff_context_hl, { default = true, link = "NonText" })
   vim.api.nvim_set_hl(0, log_diff_stats_hl, { default = true, link = "NonText" })
+  vim.api.nvim_set_hl(0, log_diff_add_sign_hl, { default = true, fg = "#73C991", bold = true })
+  vim.api.nvim_set_hl(0, log_diff_remove_sign_hl, { default = true, fg = "#F14C4C", bold = true })
+  vim.api.nvim_set_hl(0, log_diff_line_number_hl, { default = true, link = "LineNr" })
+  vim.api.nvim_set_hl(0, log_diff_gutter_hl, { default = true, link = "NonText" })
   -- Paths in tool headers (e.g. after `[tool] read`) stand out so the
   -- eye finds the target quickly when scanning the transcript.
   vim.api.nvim_set_hl(0, log_path_hl, { default = true, fg = "#7BB5FF" })

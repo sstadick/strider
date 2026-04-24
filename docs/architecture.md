@@ -259,7 +259,8 @@ about the current review item.
     so parallel tool calls render header+result pairs in order
   - for `edit`: parse `result.details.diff`, update the tool header to
     `• Edited <path> (+N -M)`, and render the diff rows directly under
-    that header with Sherpa-owned green/red extmark bands
+    that header with Sherpa-owned green/red extmark bands, a line-number
+    gutter, and treesitter source highlighting on the changed code
   - for `read` / `write`: inline `result.content[*].text` wrapped in
     a fenced markdown code block tagged with the language derived
     from the file's extension (lua, rust, typescript, …) so

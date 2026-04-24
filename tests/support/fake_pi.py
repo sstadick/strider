@@ -114,8 +114,17 @@ def first_changed_line(before: str, after: str) -> int:
     return limit + 1
 
 
-def diff_stub(line: int) -> str:
-    return f"+ {line} edited" if line > 0 else "+ 1 edited"
+def diff_stub(before: str, after: str, line: int) -> str:
+    before_lines = before.splitlines()
+    after_lines = after.splitlines()
+    index = max(line - 1, 0)
+    old = before_lines[index] if index < len(before_lines) else ""
+    new = after_lines[index] if index < len(after_lines) else ""
+    if old and new:
+        return f"-{line} {old}\n+{line} {new}"
+    if new:
+        return f"+{line} {new}"
+    return f"-{line} {old}"
 
 
 def emit_sherpa_plan(stops: list, scope: str = "free", base=None) -> None:
@@ -204,7 +213,7 @@ def emit_edit(path: Path, after: str) -> int:
         "result": {
             "details": {
                 "firstChangedLine": changed_line,
-                "diff": diff_stub(changed_line),
+                "diff": diff_stub(before, after, changed_line),
             },
         },
     })

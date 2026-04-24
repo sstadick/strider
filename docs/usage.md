@@ -90,7 +90,8 @@ when the review ends. No external sync is performed.
 Tool calls show their results inline.
 
 - `edit` operations render under `* Edited <path> (+N -M)` with inline diff
-  rows.
+  rows, a line-number gutter, green/red change markers, and source syntax
+  highlighting for the changed code.
 - `read` and `write` output stays in fenced markdown code blocks tagged with
   the file language for treesitter highlighting.
 - `bash`, `grep`, `ls`, and `find` output renders as compact transcript rows

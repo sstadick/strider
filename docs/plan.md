@@ -28,7 +28,8 @@ Supporting UX:
 - `<S-Tab>` in compose cycles the pi thinking level; active level
   shows in the winbar as `Model: …/… (level)`
 - rich tool rendering in the log: edits stay under a
-  `• Edited <path> (+N -M)` header with inline green/red diff rows;
+  `• Edited <path> (+N -M)` header with inline green/red diff rows,
+  line numbers, and source syntax highlighting;
   syntax-highlighted fenced output for read/write via treesitter +
   render-markdown; compact gutter output for bash/grep/ls/find; shows
   the last 15 lines with a `N earlier lines…` note above;

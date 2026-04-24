@@ -33,12 +33,13 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 )
                 log = "\n".join(h.log_lines())
                 self.assertIn("• Edited", log)
-                self.assertRegex(log, r"• Edited .+\(\+1 -0\)")
+                self.assertRegex(log, r"• Edited .+\(\+1 -1\)")
                 self.assertNotIn("• Diff", log)
                 self.assertNotIn("```diff", log)
                 self.assertNotIn("└ edit ", log)
+                self.assertIn("-2 │   return <main>Hello from fixture app</main>", log)
+                self.assertIn("+2 │   return <main>Loading fixture app</main>", log)
                 # Diff lines are indented with 2 spaces under the edit line.
-                # fake_pi emits `+ <line> edited` as the diff stub.
                 diff_lines = [
                     line for line in h.log_lines()
                     if line.lstrip().startswith("+") or line.lstrip().startswith("-")
@@ -65,16 +66,35 @@ class TmuxLogRenderingTests(unittest.TestCase):
                     "  if buf <= 0 then return false end; "
                     "  local ns = vim.api.nvim_create_namespace('sherpa-log'); "
                     "  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {details=true}); "
+                    "  local seen = {}; "
                     "  for _, m in ipairs(marks) do "
                     "    local hl = m[4] and m[4].hl_group or ''; "
-                    "    if hl == 'SherpaLogDiffAdd' or hl == 'SherpaLogDiffRemove' or hl == 'SherpaLogDiffContext' then "
-                    "      return true "
+                    "    if type(hl) == 'table' then "
+                    "      for _, item in ipairs(hl) do seen[item] = true end "
+                    "    else "
+                    "      seen[hl] = true "
                     "    end "
+                    "  end; "
+                    "  return seen.SherpaLogDiffAdd and seen.SherpaLogDiffRemove "
+                    "    and seen.SherpaLogDiffLineNumber and seen.SherpaLogDiffGutter "
+                    "end)()"
+                )
+                self.assertTrue(has_diff_hl, "expected diff line/gutter highlighting extmarks in the log")
+
+                has_syntax_hl = h.lua_bool(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('sherpa://log'); "
+                    "  if buf <= 0 then return false end; "
+                    "  local ns = vim.api.nvim_create_namespace('sherpa-log'); "
+                    "  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {details=true}); "
+                    "  for _, m in ipairs(marks) do "
+                    "    local hl = m[4] and m[4].hl_group or ''; "
+                    "    if type(hl) == 'string' and vim.startswith(hl, '@') then return true end "
                     "  end; "
                     "  return false "
                     "end)()"
                 )
-                self.assertTrue(has_diff_hl, "expected diff line highlighting extmarks in the log")
+                self.assertTrue(has_syntax_hl, "expected treesitter capture extmarks on diff content")
 
     def test_read_tool_renders_fenced_output(self) -> None:
         with FixtureProject(self.project_root) as project_root:

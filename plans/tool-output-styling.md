@@ -142,6 +142,8 @@ syntax highlighting is valuable.
 
 - Implemented on 2026-04-24.
 - `read` and `write` still use fenced output for syntax highlighting.
+- `edit` diffs now render with a dedicated line-number gutter, stronger
+  add/remove markers, and treesitter highlighting on the changed source.
 - `bash`, `grep`, `find`, and `ls` now use compact gutter rows.
 - `grep`, `find`, and `ls` headers include their pi arguments instead of
   collapsing to the path alone.

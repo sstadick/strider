@@ -803,7 +803,11 @@ local function handle_tool_end(event, lane)
       local added, removed = diff_stats(diff_text)
       local suffix = string.format(" (+%d -%d)", added, removed)
       ui.update_tool_line(insert_row and (insert_row - 1) or nil, "edit", path, suffix, lane)
-      ui.append_diff(diff_text, lane, insert_opts)
+      local diff_opts = vim.tbl_extend("force", insert_opts, {
+        lang = language_for_path(path),
+        path = path,
+      })
+      ui.append_diff(diff_text, lane, diff_opts)
     end
     return
   end

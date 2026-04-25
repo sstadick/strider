@@ -220,13 +220,16 @@ local function handle_response(event, lane)
   end
 
   if event.success then
-    -- Pure commands (operation = "command") don't trigger LLM turns,
-    -- so no message_end will follow. Consume the pending request now
-    -- to clear the activity spinner and unblock the next send.
+    -- Raw RPC commands (new_session, compact, export_html, etc.) don't
+    -- trigger LLM turns, so no message_end will follow. Consume the
+    -- pending request now to clear the activity spinner and unblock the
+    -- next send. Prompt-routed extension commands may also use operation
+    -- "command"; they get the generic completion label.
     local pending = state.peek_pending_request(lane)
     if pending and pending.operation == "command" then
       state.consume_pending_request(lane)
-      ui.finish_activity("", "ok", lane)
+      local metadata = pending.metadata or {}
+      ui.finish_activity(metadata.activity_done or "Strider command complete", "ok", lane)
     end
     return
   end

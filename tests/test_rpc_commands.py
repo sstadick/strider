@@ -13,6 +13,24 @@ from tests.support.project_copy import FixtureProject
 from tests.support.tmux_nvim import TmuxNvimHarness
 
 
+def _winbar_for_buffer(h: TmuxNvimHarness, name: str) -> str:
+    return h.lua(
+        "(function() "
+        f"  local buf = vim.fn.bufnr('{name}'); "
+        "  if buf <= 0 then return '' end; "
+        "  for _, win in ipairs(vim.fn.win_findbuf(buf)) do "
+        "    if vim.api.nvim_win_is_valid(win) then "
+        "      local value = vim.wo[win].winbar or ''; "
+        "      local ok, evaluated = pcall(vim.api.nvim_eval_statusline, value, { winid = win, maxwidth = 10000 }); "
+        "      if ok and evaluated and evaluated.str then return evaluated.str end; "
+        "      return value "
+        "    end "
+        "  end "
+        "  return '' "
+        "end)()"
+    )
+
+
 class RpcCommandTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[1]
@@ -148,6 +166,32 @@ class RpcCommandTests(unittest.TestCase):
                 h.send("/compact focus on the API layer", "C-s", pause=0.5)
                 alive = h.expr("1+1")
                 self.assertEqual("2", alive)
+
+    def test_compact_command_shows_activity_until_response(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
+                    timeout=3.0,
+                )
+                h.send("/compact __strider_delay__", "C-s", pause=0.05)
+                h.wait_until(
+                    lambda: h.lua_bool("require('strider.state').peek_pending_request() ~= nil"),
+                    timeout=2.0,
+                )
+                active = _winbar_for_buffer(h, "strider://compose")
+                self.assertIn("Working (", active)
+                self.assertIn(":StriderStop to interrupt", active)
+                self.assertIn("/compact __strider_delay__", "\n".join(h.log_lines()))
+                h.wait_until(
+                    lambda: h.lua_bool("require('strider.state').peek_pending_request() == nil"),
+                    timeout=3.0,
+                )
+                h.wait_until(
+                    lambda: "Working" not in _winbar_for_buffer(h, "strider://compose"),
+                    timeout=3.0,
+                )
 
     # ---- session extension command routing ------------------------------
 

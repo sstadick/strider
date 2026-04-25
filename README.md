@@ -86,7 +86,9 @@ prefills compose so you can edit before sending.
   output keeps syntax-highlighted code fences; command/search output uses
   compact rows that do not accidentally render as markdown.
 - pi controls in compose: `/models`, `/tree`, `/thinking`, `/compact`, `/new`,
-  `/fork`, `/export`, `/sessions`, `/resume`, and `/switch_session`.
+  `/fork`, `/export`, `/sessions`, `/resume`, and `/switch_session`; raw RPC
+  commands like `/compact` show the compose `Working` indicator until pi
+  replies.
 - Status and control surfaces: `:StriderStatus` summarizes lane state, context,
   cost, review progress, pending controls, and recent errors.
 

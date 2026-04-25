@@ -57,6 +57,7 @@ local function activity_title(operation)
     review = "Strider review running...",
     search = "Strider search running...",
     prompt = "Strider prompt running...",
+    command = "Strider command running...",
   }
   return titles[operation] or "Strider running..."
 end
@@ -391,11 +392,9 @@ local strider_prompt_commands = {
   prompt = true, patch = true, review = true, search = true, plan = true,
 }
 
--- Pure extension commands — run a handler, may open UI, but never
--- dispatch an LLM turn. No pending request, no activity spinner. The
--- list is intentionally conservative; anything not listed that starts
--- with `/` is also treated as a pure command (safer to leave spinner
--- off than leave it hanging).
+-- Recognize Strider slash-commands that intentionally start model-backed
+-- prompt turns. Other slash-commands are routed as extension/built-in
+-- commands and use command-style pending/activity handling.
 local function is_prompt_slash(text)
   local name = text:match("^/([%w%-_:]+)")
   return name and strider_prompt_commands[name] or false
@@ -406,10 +405,53 @@ end
 -- /resume, /switch_session) stay on the prompt path so the Strider pi
 -- extension can resolve ids and paths before switching.
 local rpc_commands = {
-  new     = { type = "new_session" },
-  compact = { type = "compact", args_key = "customInstructions" },
-  export  = { type = "export_html", args_key = "outputPath" },
+  new = {
+    type = "new_session",
+    activity_title = "Starting new Strider session...",
+    activity_done = "New Strider session started",
+  },
+  compact = {
+    type = "compact",
+    args_key = "customInstructions",
+    activity_title = "Compacting Strider context...",
+    activity_done = "Strider context compacted",
+  },
+  export = {
+    type = "export_html",
+    args_key = "outputPath",
+    activity_title = "Exporting Strider session...",
+    activity_done = "Strider session exported",
+  },
 }
+
+local function send_rpc_command(text, rpc_def, extra)
+  local lane = MAIN_LANE
+  if warn_if_lane_busy(lane) then
+    return false
+  end
+  if not ensure_backend(lane) then
+    return false
+  end
+  ui.open_log({ preserve_focus = true }, lane)
+  state.clear_error(lane)
+  state.set_pending_request("command", {
+    activity_done = rpc_def.activity_done,
+    command_text = text,
+    command_type = rpc_def.type,
+  }, lane)
+  ui.start_activity(rpc_def.activity_title or activity_title("command"), "log", "command", lane)
+  ui.refresh_compose_winbar(lane)
+  ui.refresh_compose_hint()
+  local ok = rpc.send_command(rpc_def.type, extra, lane)
+  if not ok then
+    state.set_pending_request(nil, nil, lane)
+    ui.finish_activity("Strider command failed to start", "error", lane)
+    ui.refresh_compose_hint()
+    return false
+  end
+  ui.append_block("user", text, lane)
+  return true
+end
 
 -- Aliases: common short-hands that map to the canonical command name
 -- used by the extension or RPC layer. Checked early in dispatch_prompt
@@ -472,7 +514,7 @@ local function dispatch_prompt(text)
       if rpc_def.args_key and rest and rest ~= "" then
         extra[rpc_def.args_key] = rest
       end
-      rpc.send_command(rpc_def.type, extra)
+      send_rpc_command(text, rpc_def, extra)
       return
     end
     if is_prompt_slash(text) then

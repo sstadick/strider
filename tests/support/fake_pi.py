@@ -2,6 +2,7 @@
 import json
 import re
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -463,6 +464,8 @@ def handle_command(payload: dict) -> None:
         return
 
     if cmd_type == "compact":
+        if payload.get("customInstructions") == "__strider_delay__":
+            time.sleep(0.8)
         emit(response_with_data(req_id, {
             "summary": "Compacted.",
             "firstKeptEntryId": None,

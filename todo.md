@@ -1,6 +1,5 @@
 # Ready for work
 - Generally speed up the review process. Unsure how to do this. But for small reviews maybe steal some context from... somewhere?
-- When we run commands like /compact - show something to indicate that things are happening
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on
@@ -8,6 +7,8 @@
 - Some pi TUI commands (/session, /copy, /share, /hotkeys, /changelog, /settings) have no RPC equivalent
 
 # Done
+- When we run commands like /compact - show something to indicate that things are happening
+    - raw RPC commands now set a pending command request and show the compose `Working` indicator until their response arrives.
 - Guard same-lane sends while pi is busy so extension commands do not trigger:
     ```
     Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.

@@ -312,6 +312,11 @@ about the current review item.
 - `fork` — fork the current session from an entry (`/fork [entryId]`)
 - `compact` — compact context (`/compact [instructions]`)
 - `export_html` — export session to HTML (`/export [path]`)
+
+Compose-dispatched raw RPC commands create a main-lane pending `command`
+request and start the compose `Working` indicator until the `response` event
+arrives, even though no assistant `message_end` follows.
+
 - `switch_session` — raw RPC session switch remains available internally;
   Strider's `/resume` and `/switch_session` slash commands go through the
   prompt/extension path first so ids and paths can be resolved.
@@ -365,7 +370,8 @@ Working today:
   tool headers; parallel tool results inserted next to their headers
   via extmark tracking
 - session management: `/new`, `/fork`, `/compact`, and `/export` route to
-  dedicated RPC message types; `/sessions`, `/resume`, and `/switch_session`
+  dedicated RPC message types and show the compose `Working` indicator while
+  their RPC response is pending; `/sessions`, `/resume`, and `/switch_session`
   route to Strider extension commands that browse/resolve sessions before
   switching. Session changes render a visual separator
   (`──── New session ────`) in the log

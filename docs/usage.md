@@ -66,8 +66,10 @@ Strider.
 
 Compose clears on successful send and survives across turns. Empty compose
 ghost text and the winbar show whether `<C-s>` will send, steer, or answer a
-clarify. Sending while a reply is streaming steers the running turn via pi's
-`steer` command. Slash commands are rejected mid-turn.
+clarify. Commands that use dedicated RPC messages, such as `/compact`, `/new`,
+and `/export`, also set the main lane busy and show the animated `Working`
+indicator until pi replies. Sending while a reply is streaming steers the
+running turn via pi's `steer` command. Slash commands are rejected mid-turn.
 
 `:StriderStop` aborts the in-flight turn. `:StriderStatus` opens a compact
 summary of lane state, pending controls, review progress, model/context widget

@@ -13,8 +13,13 @@ brew install vhs
 ## Render all demos
 
 ```bash
-for tape in recordings/vhs/*.tape; do vhs "$tape"; done
+recordings/vhs/render-all.sh
 ```
+
+The script validates every tape, renders each GIF, then prints `ffprobe`
+metadata when `ffprobe` is available. Run it from the repo root after UI
+changes that affect command names, layouts, fake pi responses, or fixture
+content.
 
 ## Render one demo
 
@@ -23,6 +28,15 @@ vhs recordings/vhs/patch.tape
 ```
 
 Output gif lands next to the tape name, e.g. `recordings/patch.gif`.
+
+## Update a demo
+
+1. Edit the matching `recordings/vhs/*.tape` file.
+2. Run `vhs validate recordings/vhs/*.tape`.
+3. Render the changed tape with `vhs recordings/vhs/<name>.tape`.
+4. Open the GIF and check that it starts after setup, has no error prompts,
+   and ends on the intended Strider surface.
+5. Run `recordings/vhs/render-all.sh` before committing a full refresh.
 
 ## Demos
 
@@ -50,3 +64,7 @@ Each tape:
 
 The prep + launch steps run inside a `Hide` block so the rendered gif opens
 directly on Neovim. Fake pi responses keep the demos fast and deterministic.
+
+VHS starts a local terminal server while rendering. If it fails before opening
+Neovim with a localhost bind or `randomPort` error, rerun the render from a
+normal local shell rather than a sandboxed environment.

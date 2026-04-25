@@ -5,6 +5,8 @@ import sys
 import uuid
 from pathlib import Path
 
+from fake_sessions import SessionSwitchingFake
+
 
 def emit(payload: dict) -> None:
     sys.stdout.write(json.dumps(payload) + "\n")
@@ -404,6 +406,7 @@ def prompt_response(message: str) -> str:
 # Simulated user messages available for forking.
 _fork_messages = []
 _fork_seq = 0
+_session_switching = SessionSwitchingFake(emit, emit_session_start)
 
 
 def record_user_message(message: str) -> str:
@@ -512,7 +515,7 @@ def handle_prompt(payload: dict) -> None:
     elif message.startswith("/patch "):
         emit(assistant_message(patch_response(message)))
     elif message.startswith(("/sessions", "/resume", "/switch_session")):
-        emit_session_start("resume")
+        _session_switching.handle_prompt(message)
     elif message.startswith("/prompt "):
         emit_streaming_thinking(prompt_thinking(message))
         emit(assistant_message(prompt_response(message)))
@@ -529,6 +532,8 @@ def main() -> int:
         cmd_type = payload.get("type", "")
         if cmd_type == "prompt":
             handle_prompt(payload)
+        elif cmd_type == "extension_ui_response":
+            _session_switching.handle_ui_response(payload)
         elif cmd_type in ("steer", "follow_up"):
             # Steering / follow-up: ack and echo.
             emit(response_ok(payload.get("id"), cmd_type))

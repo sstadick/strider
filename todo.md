@@ -1,6 +1,7 @@
 # Ready for work
 - Generally speed up the review process. Unsure how to do this. But for small reviews maybe steal some context from... somewhere?
 - When we run commands like /compact - show something to indicate that things are happening
+- sessions switching, see the plans
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on

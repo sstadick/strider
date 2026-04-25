@@ -34,8 +34,11 @@ README.
 
 `:SherpaChat` keeps the persistent main log and compose buffers.
 `:SherpaQ`, `:SherpaSearch`, and `:SherpaPatch` run on a separate flow lane
-whose transcript lives in `:SherpaLogFlow`. `:SherpaReview` runs on a dedicated
-review lane whose transcript lives in `:SherpaLogReview`.
+whose transcript lives in `:SherpaLogFlow`. When those flow-lane operations
+finish, Sherpa always leaves a bottom-left green-dot completion cue; if the
+flow log is hidden, it also sends a notification. `:SherpaReview` runs on a
+dedicated review lane whose transcript lives in `:SherpaLogReview`; that review
+log is manual/diagnostic and does not open on review start or review end.
 
 ## Chat Compose
 

@@ -184,6 +184,16 @@ local function accepted_count(review)
   return count
 end
 
+local function unresolved_comment_count(review)
+  local count = 0
+  for _, comment in ipairs((review and review.comments) or {}) do
+    if not comment.resolved then
+      count = count + 1
+    end
+  end
+  return count
+end
+
 local function relative_path(path, cwd)
   if cwd and vim.startswith(path, cwd .. "/") then
     return path:sub(#cwd + 2)
@@ -210,6 +220,16 @@ local function review_status_lines(review, item)
   if item and item.status then
     table.insert(lines, string.format("- current stop: `%s`", item.status))
   end
+  if not review.active or unresolved_comment_count(review) > 0 then
+    table.insert(lines, string.format("- unresolved comments: `%d`", unresolved_comment_count(review)))
+  end
+  if review.summary_forwarded then
+    table.insert(lines, "- summary: `forwarded to main chat`")
+  elseif review.awaiting_summary then
+    table.insert(lines, "- summary: `waiting for agent`")
+  elseif not review.active and review.summary and review.summary ~= "" then
+    table.insert(lines, "- summary: `ready`")
+  end
   if review.pending_question then
     table.insert(lines, "- waiting: ranged answer is streaming inline; moving stops will clear it")
   end
@@ -219,6 +239,10 @@ end
 local function stop_line(review, has_msg0)
   if review.planning then
     return "- stop: `planning...`"
+  end
+  if not review.active then
+    local done_index = math.min(#review.items, math.max(review.current_index or #review.items, 0))
+    return string.format("- stop: `complete (%d/%d)`", done_index, #review.items)
   end
   if has_msg0 and review.current_index == 0 then
     return string.format("- stop: `0/%d`", #review.items)
@@ -230,8 +254,9 @@ end
 
 local function header_lines(review)
   local has_msg0 = review.plan_message and review.plan_message ~= ""
+  local title = (not review.active and not review.planning) and "# Sherpa Review Complete" or "# Sherpa Review"
   local lines = {
-    "# Sherpa Review",
+    title,
     "",
     string.format("- source: `%s`", review.source),
     review.goal and ("- goal: `" .. review.goal .. "`") or nil,
@@ -356,7 +381,23 @@ local function append_review_plan(lines, review, cwd, has_msg0)
   end
 end
 
-local function append_controls(lines)
+local function append_controls(lines, review)
+  if review and not review.active then
+    local actions = {
+      "- Review is complete; start another `:SherpaReview <prompt>` when ready.",
+      "- `:SherpaLogReview` opens the diagnostic transcript if you need it.",
+    }
+    if review.summary_forwarded then
+      table.insert(actions, 2, "- `:SherpaChat` opens the main chat with the forwarded review summary.")
+    elseif review.awaiting_summary then
+      table.insert(actions, 2, "- Waiting for the agent to summarize unresolved comments before forwarding.")
+    elseif review.summary and review.summary ~= "" then
+      table.insert(actions, 2, "- Summary is ready in this pane.")
+    end
+    append_section(lines, "Next actions", actions)
+    return
+  end
+
   append_section(lines, "Controls", {
     "- `:SherpaNext` / `:SherpaPrev` move between review items",
     "- `:SherpaNext!` accepts the current stop and moves on",
@@ -391,7 +432,7 @@ function M.panel_lines(review, opts)
   append_excerpt(lines, item)
   append_item_comments(lines, review, item, on_msg0)
   append_review_plan(lines, review, cwd, has_msg0)
-  append_controls(lines)
+  append_controls(lines, review)
 
   return lines
 end

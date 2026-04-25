@@ -67,6 +67,14 @@ local function activity_echo(message)
   return pcall(vim.api.nvim_echo, { { "sherpa: " .. message } }, false, {})
 end
 
+local function flow_done_echo(message)
+  return pcall(vim.api.nvim_echo, {
+    { "sherpa: ", "Comment" },
+    { "● ", "MoreMsg" },
+    { message or "Sherpa flow complete" },
+  }, true, {})
+end
+
 local function stop_spin(lane)
   local spin = spin_state(lane)
   if spin.timer then
@@ -2408,6 +2416,17 @@ end
 
 function M.notify(message, level)
   notify(message, level)
+end
+
+function M.notify_flow_done(message, opts)
+  opts = opts or {}
+  local text = message or "Sherpa flow complete"
+  if opts.notify ~= false then
+    notify("🟢 " .. text, vim.log.levels.INFO)
+  end
+  vim.defer_fn(function()
+    flow_done_echo(text)
+  end, opts.delay_ms or 20)
 end
 
 return M

@@ -76,6 +76,7 @@ session.review = {
   comments      = {},
   summary       = nil,
   awaiting_summary = false,
+  summary_forwarded = false,
 }
 ```
 

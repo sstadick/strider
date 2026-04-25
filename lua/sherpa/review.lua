@@ -577,7 +577,6 @@ function M.start_planning(focus, opts)
 
   ui.clear_comment_markers()
   ui.clear_stop_annotations()
-  ui.open_log({ preserve_focus = true }, REVIEW_LANE)
   session.review = {
     active = true,
     accepted_stops = {},
@@ -717,7 +716,6 @@ function M.start_planned(scope, opts)
 
   ui.clear_comment_markers()
   ui.clear_stop_annotations()
-  ui.open_log({ preserve_focus = true }, REVIEW_LANE)
   local source = opts.resolved_source or scope
   session.review = {
     active = true,
@@ -887,6 +885,21 @@ function M.pending_comment_lines()
     return nil
   end
   return review.pending_comments
+end
+
+function M.mark_summary_forwarded(summary)
+  local review = review_state()
+  if not review then
+    return false
+  end
+  local text = vim.trim(summary or "")
+  if text ~= "" and (not review.summary or review.summary == "") then
+    review.summary = text
+  end
+  review.awaiting_summary = false
+  review.summary_forwarded = true
+  M.render()
+  return true
 end
 
 function M.add_comment(text, range)

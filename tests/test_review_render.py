@@ -117,6 +117,45 @@ class ReviewRenderTests(unittest.TestCase):
         self.assertNotIn("Comments on this item", text)
         self.assertNotIn("## Excerpt", text)
 
+    def test_completed_review_renders_final_next_actions(self) -> None:
+        lines = self.run_lua_json(
+            """
+            local render = require("sherpa.review.render")
+            local review = {
+              active = false,
+              source = "review",
+              goal = "Find issues",
+              current_index = 1,
+              scope = "free",
+              summary = "Review complete. No unresolved comments.",
+              summary_forwarded = true,
+              items = {
+                {
+                  id = "one",
+                  path = "/tmp/sherpa-render/src/app.lua",
+                  startLine = 10,
+                  endLine = 20,
+                  title = "Defines run",
+                  summary = "Short summary.",
+                  why = "Detailed reason.",
+                  status = "accepted",
+                },
+              },
+              comments = {},
+            }
+            print(vim.fn.json_encode(render.panel_lines(review, { cwd = "/tmp/sherpa-render" })))
+            """
+        )
+
+        text = "\n".join(lines)
+        self.assertIn("# Sherpa Review Complete", text)
+        self.assertIn("- state: `complete`", text)
+        self.assertIn("- summary: `forwarded to main chat`", text)
+        self.assertIn("## Review summary", text)
+        self.assertIn("## Next actions", text)
+        self.assertIn(":SherpaLogReview", text)
+        self.assertNotIn("## Controls", text)
+
     def test_chunk_title_and_item_label_are_exposed_for_review_state(self) -> None:
         result = self.run_lua_json(
             """

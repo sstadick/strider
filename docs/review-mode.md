@@ -60,9 +60,12 @@ the original range or the diff. Gaps are auto-filled or surfaced as
 8. **Mid-review plan growth (free scope only).** The model may call
    `sherpa_append_stops` during a `/review` turn to add more stops.
    Append-only — no reorder, no deletion. Selection/diff plans are fixed.
-9. **End of review.** Walking past the last stop ends the review; if any
-   comments are unresolved, Sherpa sends a final `/review` that feeds the
-   comments back to the agent for summary/follow-up.
+9. **End of review.** Walking past the last stop ends the review in the
+   `sherpa://review` pane. The review log is not opened automatically. If any
+   comments are unresolved, Sherpa sends a final `/review` in the background
+   that feeds the comments back to the agent for summary/follow-up; the final
+   summary renders in the review pane and is forwarded into the main chat
+   transcript.
 
 ## Tools (extension)
 
@@ -82,8 +85,10 @@ the original range or the diff. Gaps are auto-filled or surfaced as
   `read` / `bash` / etc. tool calls during `/plan` or `/review` do **not**
   auto-jump the buffer. Jumps happen only on stop changes (`:SherpaNext`,
   `:SherpaPrev`, picker selection).
-- The **log buffer** (`sherpa://log`) is secondary — transcript and tool
-  activity for debugging.
+- The **review log buffer** (`sherpa://SherpaLogReview`) is secondary —
+  transcript and tool activity for debugging. Review start and review end do
+  not open it automatically; users can toggle it explicitly with
+  `:SherpaLogReview`.
 
 Implementation boundary:
 - `lua/sherpa/review.lua` owns state changes: starting reviews, ingesting
@@ -114,6 +119,7 @@ session.review = {
   accepted_stops = {},                 -- stop ids accepted via :SherpaNext!
   awaiting_summary = bool,
   summary       = string | nil,
+  summary_forwarded = bool,
 }
 ```
 

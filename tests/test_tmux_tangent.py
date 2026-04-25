@@ -63,6 +63,22 @@ class TmuxTangentTests(unittest.TestCase):
                     timeout=5.0,
                 )
 
+    def test_q_completion_echoes_green_dot_even_when_flow_log_visible(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("SherpaLogFlow")
+                h.wait_until(
+                    lambda: "sherpa://SherpaLogFlow" in h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})'),
+                    timeout=3.0,
+                )
+
+                h.ex("SherpaQ what does this flag do")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: "SherpaQ answer is ready" in h.expr("execute('messages')"),
+                    timeout=5.0,
+                )
+
     def test_flow_lane_rejects_new_request_while_busy(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

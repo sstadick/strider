@@ -399,16 +399,18 @@ end
 local function notify_turn_done(pending, lane)
   if not pending then return end
   local op = pending.operation
-  -- Flow-lane operations: notify when SherpaLogFlow isn't visible.
+  -- Flow-lane operations: always leave a bottom-left completion cue.
+  -- The popup-style notify is still skipped when SherpaLogFlow is visible,
+  -- but the command-line green dot remains so completion is not silent.
   if state.is_flow_operation(op) then
-    if ui.log_is_visible("flow") then return end
     local messages = {
       q = "SherpaQ answer is ready",
       search = "SherpaSearch complete",
       patch = "SherpaPatch complete",
     }
-    local icon = "🟢 "
-    ui.notify(icon .. (messages[op] or "Sherpa flow complete"), vim.log.levels.INFO)
+    ui.notify_flow_done(messages[op] or "Sherpa flow complete", {
+      notify = not ui.log_is_visible("flow"),
+    })
     return
   end
   -- Chat (main lane): notify when SherpaLog isn't visible.

@@ -23,6 +23,12 @@ class TmuxReviewTests(unittest.TestCase):
         h.ex(command)
         h.submit_popup()
 
+    def _visible_buffers(self, h: TmuxNvimHarness):
+        return h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})')
+
+    def assertReviewLogHidden(self, h: TmuxNvimHarness) -> None:
+        self.assertNotIn("sherpa://SherpaLogReview", self._visible_buffers(h))
+
     def test_expected_commands_are_registered(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             self.assertEqual("0", h.expr("exists(':SherpaTeach')"))
@@ -42,6 +48,7 @@ class TmuxReviewTests(unittest.TestCase):
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
             self.assertIn("## Explanation", review_text)
             self.assertIn("src/main.tsx", review_text)
+            self.assertReviewLogHidden(h)
 
     def test_file_review_populates_current_explanation(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
@@ -134,9 +141,46 @@ class TmuxReviewTests(unittest.TestCase):
                 and "I found unresolved review comments" in "\n".join(h.buffer_lines("sherpa://review"))
             )
 
+            self.assertReviewLogHidden(h)
+            review_text = "\n".join(h.buffer_lines("sherpa://review"))
+            self.assertIn("# Sherpa Review Complete", review_text)
+            self.assertIn("forwarded to main chat", review_text)
+
             log_text = "\n".join(h.review_log_lines())
             self.assertIn("Summarize unresolved review comments", log_text)
             self.assertIn("I found unresolved review comments", log_text)
+
+    def test_review_end_without_comments_stays_in_review_pane(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.ex("edit src/main.tsx")
+            self._submit_review(h, "1,2SherpaReview why does this block matter?")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.state').peek_pending_request('review') == nil"), timeout=5.0)
+
+            h.ex("SherpaNext")
+            h.wait_until(
+                lambda: (not h.lua_bool("require('sherpa.review').has_active_review()"))
+                and "# Sherpa Review Complete" in "\n".join(h.buffer_lines("sherpa://review"))
+                and "No unresolved comments" in "\n".join(h.buffer_lines("sherpa://review")),
+                timeout=5.0,
+            )
+
+            review_text = "\n".join(h.buffer_lines("sherpa://review"))
+            self.assertIn("forwarded to main chat", review_text)
+            self.assertIn("## Next actions", review_text)
+            self.assertReviewLogHidden(h)
+
+    def test_manually_opened_review_log_survives_review_completion(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.ex("edit src/main.tsx")
+            self._submit_review(h, "1,2SherpaReview why does this block matter?")
+            h.wait_until(lambda: h.lua_bool("require('sherpa.state').peek_pending_request('review') == nil"), timeout=5.0)
+
+            h.ex("SherpaLogReview")
+            h.wait_until(lambda: "sherpa://SherpaLogReview" in self._visible_buffers(h), timeout=3.0)
+            h.ex("SherpaNext")
+            h.wait_until(lambda: not h.lua_bool("require('sherpa.review').has_active_review()"), timeout=5.0)
+
+            self.assertIn("sherpa://SherpaLogReview", self._visible_buffers(h))
 
     def test_review_items_include_chunk_synopsis(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
@@ -158,12 +202,13 @@ class TmuxReviewTests(unittest.TestCase):
 
             review_text = "\n".join(h.buffer_lines("sherpa://review"))
             current_index = int(h.lua("require('sherpa.state').get_session('review').review.current_index"))
-            open_buffers = h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})')
+            open_buffers = self._visible_buffers(h)
             self.assertIn("- source: `review`", review_text)
             self.assertIn("## Synopsis", review_text)
             self.assertIn("[0] Synopsis", review_text)
             self.assertNotIn("sherpa://log", review_text)
             self.assertNotIn("sherpa://log", open_buffers)
+            self.assertNotIn("sherpa://SherpaLogReview", open_buffers)
             self.assertEqual(0, current_index)
 
     def test_planned_review_next_advances_through_fixed_plan(self) -> None:

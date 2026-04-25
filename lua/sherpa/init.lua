@@ -194,12 +194,17 @@ local function read_excerpt(path, start_line, end_line)
   return table.concat(lines, "\n")
 end
 
-local function send_review_prompt(prompt, label)
+local function send_review_prompt(prompt, label, opts)
+  opts = opts or {}
+  local open_log = opts.open_log
+  if open_log == nil then
+    open_log = true
+  end
   return send("/review " .. prompt, label, {
     lane = REVIEW_LANE,
     operation = "review",
     debug_prompt = prompt,
-    open_log = true,
+    open_log = open_log,
   })
 end
 
@@ -229,10 +234,12 @@ function M.complete_review_summary(summary)
   if summary == "" then
     return false
   end
-  append_review_summary_to_main(summary)
-  ui.hide_log(REVIEW_LANE)
+  local forwarded = append_review_summary_to_main(summary)
+  if forwarded then
+    review.mark_summary_forwarded(summary)
+  end
   rpc.stop(REVIEW_LANE)
-  return true
+  return forwarded
 end
 
 local function start_selection_review(opts)
@@ -252,7 +259,7 @@ local function start_selection_review(opts)
     return false
   end
   local label = opts and opts.focus ~= "" and opts.focus or "Review selection"
-  return send_review_prompt(prompt, label)
+  return send_review_prompt(prompt, label, { open_log = false })
 end
 
 local function start_free_review(focus)
@@ -274,7 +281,7 @@ local function start_free_review(focus)
     lane = REVIEW_LANE,
     operation = "plan",
     debug_prompt = text,
-    open_log = true,
+    open_log = false,
   })
 end
 
@@ -318,7 +325,7 @@ function M.retry()
       lane = REVIEW_LANE,
       operation = "plan",
       debug_prompt = goal,
-      open_log = true,
+      open_log = false,
     })
   end
   ui.notify("Nothing to retry — explanations are pre-computed.", vim.log.levels.INFO)
@@ -817,12 +824,11 @@ function M.next_step(accept_current)
   if finished then
     local prompt = review.finish()
     if prompt then
-      ui.open_log({ preserve_focus = true }, REVIEW_LANE)
       local comment_lines = review.pending_comment_lines()
       if comment_lines then
         ui.append_block("review-comments", table.concat(comment_lines, "\n"), REVIEW_LANE)
       end
-      send_review_prompt(prompt, "Summarize unresolved review comments")
+      send_review_prompt(prompt, "Summarize unresolved review comments", { open_log = false })
     else
       M.complete_review_summary("Review complete. No unresolved comments.")
       ui.notify("Sherpa review complete", vim.log.levels.INFO)

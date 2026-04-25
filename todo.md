@@ -8,7 +8,7 @@
 
 # Done
 - When we run commands like /compact - show something to indicate that things are happening
-    - raw RPC commands now set a pending command request and show the compose `Working` indicator until their response arrives.
+    - raw RPC commands now set a pending command request and show `Working` in the compose/log winbars until their response arrives.
 - Guard same-lane sends while pi is busy so extension commands do not trigger:
     ```
     Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.

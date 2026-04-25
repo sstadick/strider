@@ -203,10 +203,10 @@ local function spin_tick(lane)
   end
   spin.index = (spin.index + 1) % (#WORKING_LABEL + WORKING_SHINE_PADDING * 2)
   local cbuf = session.compose_buf
-  if not cbuf or not vim.api.nvim_buf_is_valid(cbuf) or #vim.fn.win_findbuf(cbuf) == 0 then
-    return
+  if cbuf and vim.api.nvim_buf_is_valid(cbuf) and #vim.fn.win_findbuf(cbuf) > 0 then
+    M.refresh_compose_winbar(lane)
   end
-  M.refresh_compose_winbar(lane)
+  M.refresh_log_winbar(lane)
 end
 
 local function start_spin(progress, lane)
@@ -214,6 +214,7 @@ local function start_spin(progress, lane)
   stop_spin(lane)
   spin.index = 0
   M.refresh_compose_winbar(lane)
+  M.refresh_log_winbar(lane)
   spin.timer = vim.uv.new_timer()
   spin.timer:start(SPIN_INTERVAL_MS, SPIN_INTERVAL_MS, vim.schedule_wrap(function()
     spin_tick(lane)
@@ -528,10 +529,15 @@ local function format_log_winbar(lane)
       table.insert(parts, trimmed)
     end
   end
+  if session and session.progress then
+    local elapsed = format_elapsed(session.progress.started_at) or "0s"
+    local title = session.progress.title or "Strider running..."
+    return escape_status_text(string.format("Working (%s) · %s · :StriderStop to interrupt", elapsed, title))
+  end
   if #parts == 0 then
     return "Strider"
   end
-  return table.concat(parts, " · "):gsub("%%", "%%%%")
+  return escape_status_text(table.concat(parts, " · "))
 end
 
 -- Apply the winbar to every window currently showing the log buffer.
@@ -1726,6 +1732,7 @@ function M.finish_activity(message, status, lane)
   session.progress = nil
   stop_spin(lane)
   M.refresh_compose_winbar(lane)
+  M.refresh_log_winbar(lane)
   M.refresh_compose_hint()
 end
 

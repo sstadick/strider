@@ -183,6 +183,10 @@ class RpcCommandTests(unittest.TestCase):
                 active = _winbar_for_buffer(h, "strider://compose")
                 self.assertIn("Working (", active)
                 self.assertIn(":StriderStop to interrupt", active)
+                log_active = _winbar_for_buffer(h, "strider://log")
+                self.assertIn("Working (", log_active)
+                self.assertIn("Compacting Strider context", log_active)
+                self.assertIn(":StriderStop to interrupt", log_active)
                 self.assertIn("/compact __strider_delay__", "\n".join(h.log_lines()))
                 h.wait_until(
                     lambda: h.lua_bool("require('strider.state').peek_pending_request() == nil"),
@@ -190,6 +194,10 @@ class RpcCommandTests(unittest.TestCase):
                 )
                 h.wait_until(
                     lambda: "Working" not in _winbar_for_buffer(h, "strider://compose"),
+                    timeout=3.0,
+                )
+                h.wait_until(
+                    lambda: "Working" not in _winbar_for_buffer(h, "strider://log"),
                     timeout=3.0,
                 )
 

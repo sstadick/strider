@@ -254,7 +254,7 @@ end
 
 local function header_lines(review)
   local has_msg0 = review.plan_message and review.plan_message ~= ""
-  local title = (not review.active and not review.planning) and "# Sherpa Review Complete" or "# Sherpa Review"
+  local title = (not review.active and not review.planning) and "# Strider Review Complete" or "# Strider Review"
   local lines = {
     title,
     "",
@@ -294,7 +294,7 @@ local function append_item_summary(lines, review, item, cwd, on_msg0)
   end
 
   if review.planning then
-    table.insert(lines, "Sherpa is planning the review. The first stop will open here.")
+    table.insert(lines, "Strider is planning the review. The first stop will open here.")
     table.insert(lines, "")
   end
 end
@@ -309,7 +309,7 @@ local function explanation_for(review, item, on_msg0)
   elseif on_msg0 then
     return "Synopsis", review.plan_message
   elseif review.planning then
-    return title, "Sherpa is planning the review..."
+    return title, "Strider is planning the review..."
   elseif not explanation or explanation == "" then
     return title, review.active and "Waiting for the explanation for this review item..." or "Review complete."
   end
@@ -384,11 +384,11 @@ end
 local function append_controls(lines, review)
   if review and not review.active then
     local actions = {
-      "- Review is complete; start another `:SherpaReview <prompt>` when ready.",
-      "- `:SherpaLogReview` opens the diagnostic transcript if you need it.",
+      "- Review is complete; start another `:StriderReview <prompt>` when ready.",
+      "- `:StriderLogReview` opens the diagnostic transcript if you need it.",
     }
     if review.summary_forwarded then
-      table.insert(actions, 2, "- `:SherpaChat` opens the main chat with the forwarded review summary.")
+      table.insert(actions, 2, "- `:StriderChat` opens the main chat with the forwarded review summary.")
     elseif review.awaiting_summary then
       table.insert(actions, 2, "- Waiting for the agent to summarize unresolved comments before forwarding.")
     elseif review.summary and review.summary ~= "" then
@@ -399,14 +399,14 @@ local function append_controls(lines, review)
   end
 
   append_section(lines, "Controls", {
-    "- `:SherpaNext` / `:SherpaPrev` move between review items",
-    "- `:SherpaNext!` accepts the current stop and moves on",
-    "- `:SherpaReview <question>` asks about the current review item",
-    "- `:'<,'>SherpaReview <question>` asks about a selected range",
-    "- `:SherpaChat` toggles the chat surfaces (log + compose)",
-    "- `:SherpaComment` opens the multiline comment editor",
-    "- `:'<,'>SherpaComment [text]` opens the multiline editor for a selected range",
-    "- `:'<,'>SherpaPatch <prompt>` patches the selected range",
+    "- `:StriderNext` / `:StriderPrev` move between review items",
+    "- `:StriderNext!` accepts the current stop and moves on",
+    "- `:StriderReview <question>` asks about the current review item",
+    "- `:'<,'>StriderReview <question>` asks about a selected range",
+    "- `:StriderChat` toggles the chat surfaces (log + compose)",
+    "- `:StriderComment` opens the multiline comment editor",
+    "- `:'<,'>StriderComment [text]` opens the multiline editor for a selected range",
+    "- `:'<,'>StriderPatch <prompt>` patches the selected range",
   })
 end
 
@@ -414,7 +414,7 @@ function M.panel_lines(review, opts)
   opts = opts or {}
   if not review then
     return {
-      "# Sherpa Review",
+      "# Strider Review",
       "",
       "No active review session.",
     }

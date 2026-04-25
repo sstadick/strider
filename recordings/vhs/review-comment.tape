@@ -1,4 +1,4 @@
-# Sherpa review-comment demo — leave a multi-line comment on a review range.
+# Strider review-comment demo — leave a multi-line comment on a review range.
 # Run:   vhs recordings/vhs/review-comment.tape
 
 Output recordings/review-comment.gif
@@ -22,7 +22,7 @@ Show
 Sleep 2500ms
 
 # Start a file review.
-Type ":SherpaReview file"
+Type ":StriderReview file"
 Sleep 2200ms
 Enter
 Sleep 3500ms
@@ -36,7 +36,7 @@ Type "Vj"
 Sleep 1800ms
 
 # Open the multi-line comment editor on the selection.
-Type ":SherpaComment"
+Type ":StriderComment"
 Sleep 2200ms
 Enter
 

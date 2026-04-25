@@ -9,8 +9,8 @@ file="${2-}"
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 
-export SHERPA_TEST_ROOT="$repo_root"
-export SHERPA_TEST_REAL_PI="0"
+export STRIDER_TEST_ROOT="$repo_root"
+export STRIDER_TEST_REAL_PI="0"
 
 cd "$workspace"
 if [[ -n "$file" ]]; then

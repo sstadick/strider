@@ -1,4 +1,4 @@
-# Sherpa review-selection demo — inside a review, ask about a visual range.
+# Strider review-selection demo — inside a review, ask about a visual range.
 # Run:   vhs recordings/vhs/review-selection.tape
 
 Output recordings/review-selection.gif
@@ -22,7 +22,7 @@ Show
 Sleep 2500ms
 
 # Start a file review so the review panel is visible.
-Type ":SherpaReview file"
+Type ":StriderReview file"
 Sleep 2200ms
 Enter
 Sleep 3500ms
@@ -38,7 +38,7 @@ Type "Vj"
 Sleep 2000ms
 
 # Ask a focused question about just that range.
-Type ":SherpaReview why does this block matter?"
+Type ":StriderReview why does this block matter?"
 Sleep 2800ms
 Enter
 

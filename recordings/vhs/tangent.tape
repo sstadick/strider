@@ -1,4 +1,4 @@
-# Sherpa tangent demo — :SherpaQ opens a one-shot flow-lane question and
+# Strider tangent demo — :StriderQ opens a one-shot flow-lane question and
 # answers in the flow log so the main chat surfaces stay out of the way.
 # Run:   vhs recordings/vhs/tangent.tape
 
@@ -23,14 +23,14 @@ Show
 Sleep 2000ms
 
 # Kick off a regular chat turn so there is a leaf to branch from.
-Type ":SherpaChat add loading states to the lobby flow"
+Type ":StriderChat add loading states to the lobby flow"
 Sleep 2400ms
 Enter
 Sleep 3500ms
 
 # Now the tangent — a question unrelated to the running thread that we
 # do not want polluting the main session's history.
-Type ":SherpaQ what does the App component even do here?"
+Type ":StriderQ what does the App component even do here?"
 Sleep 2600ms
 Enter
 
@@ -38,8 +38,8 @@ Enter
 # appear in the compose winbar.
 Sleep 3500ms
 
-# Hide the tangent by re-invoking :SherpaQ with no args.
-Type ":SherpaQ"
+# Hide the tangent by re-invoking :StriderQ with no args.
+Type ":StriderQ"
 Sleep 2200ms
 Enter
 Sleep 2000ms

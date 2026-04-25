@@ -1,4 +1,4 @@
-# Sherpa review-file demo — start a file walkthrough, accept a stop, and step back.
+# Strider review-file demo — start a file walkthrough, accept a stop, and step back.
 # Run:   vhs recordings/vhs/review-file.tape
 
 Output recordings/review-file.gif
@@ -22,7 +22,7 @@ Show
 Sleep 2500ms
 
 # Start a file-scoped review.
-Type ":SherpaReview file"
+Type ":StriderReview file"
 Sleep 2200ms
 Enter
 
@@ -30,19 +30,19 @@ Enter
 Sleep 4000ms
 
 # Accept the current stop and advance to the next review item.
-Type ":SherpaNext!"
+Type ":StriderNext!"
 Sleep 1800ms
 Enter
 Sleep 3500ms
 
 # Check the compact lane/status surface.
-Type ":SherpaStatus"
+Type ":StriderStatus"
 Sleep 1800ms
 Enter
 Sleep 3000ms
 
 # Step back to the previous item.
-Type ":SherpaPrev"
+Type ":StriderPrev"
 Sleep 1800ms
 Enter
 Sleep 3500ms

@@ -13,7 +13,7 @@ class TmuxNvimHarness:
         self.repo_root = repo_root.resolve()
         self.project_root = project_root.resolve()
         self.real_pi = real_pi
-        self.session_name = f"sherpa-test-{uuid.uuid4().hex[:8]}"
+        self.session_name = f"strider-test-{uuid.uuid4().hex[:8]}"
         self.socket_path = Path(tempfile.gettempdir()) / f"{self.session_name}.sock"
         self.init_path = self.repo_root / "tests" / "support" / "minimal_init.lua"
         self.nvim_data_home = self.repo_root / "tests" / ".nvim-data"
@@ -28,8 +28,8 @@ class TmuxNvimHarness:
         self.nvim_cache_home.mkdir(parents=True, exist_ok=True)
         self.nvim_state_home.mkdir(parents=True, exist_ok=True)
         env_parts = [
-            f"SHERPA_TEST_ROOT={shlex.quote(str(self.repo_root))}",
-            f"SHERPA_TEST_REAL_PI={'1' if self.real_pi else '0'}",
+            f"STRIDER_TEST_ROOT={shlex.quote(str(self.repo_root))}",
+            f"STRIDER_TEST_REAL_PI={'1' if self.real_pi else '0'}",
             f"XDG_DATA_HOME={shlex.quote(str(self.nvim_data_home))}",
             f"XDG_CACHE_HOME={shlex.quote(str(self.nvim_cache_home))}",
             f"XDG_STATE_HOME={shlex.quote(str(self.nvim_state_home))}",
@@ -45,7 +45,7 @@ class TmuxNvimHarness:
         self._run("tmux", "new-session", "-d", "-s", self.session_name, "-c", str(self.project_root), cmd)
         self.wait_for_server()
         self.wait_until(
-            lambda: self.lua_bool("select(1, pcall(require, 'telescope')) and select(1, pcall(require, 'sherpa'))"),
+            lambda: self.lua_bool("select(1, pcall(require, 'telescope')) and select(1, pcall(require, 'strider'))"),
             timeout=20.0,
         )
 
@@ -126,21 +126,21 @@ class TmuxNvimHarness:
         return self.json_expr('{"buf": bufname("%"), "line": line("."), "qf": getqflist({"title": 1, "items": 1}), "wins": winnr("$")}')
 
     def log_lines(self):
-        return self.json_expr('getbufline("sherpa://log", 1, "$")')
+        return self.json_expr('getbufline("strider://log", 1, "$")')
 
     def flow_log_lines(self):
-        return self.json_expr('getbufline("sherpa://SherpaLogFlow", 1, "$")')
+        return self.json_expr('getbufline("strider://StriderLogFlow", 1, "$")')
 
     def review_log_lines(self):
-        return self.json_expr('getbufline("sherpa://SherpaLogReview", 1, "$")')
+        return self.json_expr('getbufline("strider://StriderLogReview", 1, "$")')
 
     def buffer_lines(self, name: str):
         return self.json_expr(f"getbufline({json.dumps(name)}, 1, '$')")
 
-    def popup_open(self, name: str = "sherpa://prompt") -> bool:
+    def popup_open(self, name: str = "strider://prompt") -> bool:
         return self.expr(f"bufexists('{name}')") == "1"
 
-    def submit_popup(self, text: Optional[str] = None, name: str = "sherpa://prompt",
+    def submit_popup(self, text: Optional[str] = None, name: str = "strider://prompt",
                      timeout: float = 3.0, pause: float = 0.3) -> None:
         self.wait_until(lambda: self.popup_open(name), timeout=timeout)
         if text is None:

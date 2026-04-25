@@ -1,9 +1,9 @@
 # Clarify plan
 
-Design rationale for the `sherpa_clarify` tool, which lets the model
+Design rationale for the `strider_clarify` tool, which lets the model
 pause mid-turn to ask a clarifying question, propose a plan, or confirm
 a destructive action before proceeding. Shipped and wired into
-`:SherpaChat` and `:SherpaPatch` today; this doc captures the shape and
+`:StriderChat` and `:StriderPatch` today; this doc captures the shape and
 trade-offs.
 
 > **Status update:** the UX described below has since been simplified.
@@ -17,8 +17,8 @@ trade-offs.
 
 ## Why
 
-Before clarify existed, `:SherpaChat`, `:SherpaPatch`, and
-`:SherpaReview` (for questions) went straight from user prompt → model
+Before clarify existed, `:StriderChat`, `:StriderPatch`, and
+`:StriderReview` (for questions) went straight from user prompt → model
 action. There was no handshake. When the user's request was ambiguous,
 or the model realized the change was bigger than it looked, the options
 were: guess, or bail with text. Both were bad.
@@ -60,7 +60,7 @@ So clarification is really two layers of work:
 
 ### Layer 1 — Lua-side extension-UI dialog handlers
 
-One-time plumbing in `lua/sherpa/rpc.lua::handle_extension_ui`:
+One-time plumbing in `lua/strider/rpc.lua::handle_extension_ui`:
 
 - `method == "editor"` — open a floating scratch editor (reuse
   `ui.open_prompt_editor` shape), submit via `<C-s>`, cancel via
@@ -79,9 +79,9 @@ This plumbing is orthogonal to the clarify tool — once shipped, any
 extension-side `ctx.ui.*` dialog works. The clarify tool is the first
 consumer.
 
-### Layer 2 — `sherpa_clarify` tool + prompt guidance
+### Layer 2 — `strider_clarify` tool + prompt guidance
 
-Register in `pi/sherpa-stepper.ts`:
+Register in `pi/strider-stepper.ts`:
 
 ```ts
 {
@@ -97,7 +97,7 @@ Execute:
 - `question` → `const reply = await ctx.ui.editor(title, "")` →
   return `{ output: reply ?? "[cancelled]", details: {cancelled: !reply} }`.
 - `plan_proposal` → extension tags the title with a
-  `[sherpa-plan-proposal]` sentinel and calls `ctx.ui.editor`. Lua
+  `[strider-plan-proposal]` sentinel and calls `ctx.ui.editor`. Lua
   strips the sentinel and routes to a three-step flow:
   1. Read-only floating preview of the proposal.
   2. `vim.ui.select({"Accept", "Modify", "Reject"})`.
@@ -150,7 +150,7 @@ Append to `promptRules()` and `patchRules()`:
 ```
 If the request is genuinely ambiguous, or you've discovered the change
 is much larger or more nuanced than the prompt implies, you MAY call
-the `sherpa_clarify` tool once before proceeding.
+the `strider_clarify` tool once before proceeding.
 
 Prefer action over questions. Only clarify when a specific ambiguity
 would change your approach in a non-trivial way. Do NOT clarify about
@@ -163,9 +163,9 @@ for a large change where the user should see the shape before you act,
 
 ## Lifecycle
 
-1. User: `:SherpaChat add session revocation to the auth middleware`.
+1. User: `:StriderChat add session revocation to the auth middleware`.
 2. Plugin sends `/prompt ...`; pi starts the prompt turn.
-3. Model reads some files, then calls `sherpa_clarify`:
+3. Model reads some files, then calls `strider_clarify`:
    ```json
    {
      "kind": "question",
@@ -190,18 +190,18 @@ On cancellation (user `<Esc><Esc>`):
 
 ## Logging
 
-Every clarify round-trip should leave breadcrumbs in `sherpa://log`:
+Every clarify round-trip should leave breadcrumbs in `strider://log`:
 
-- On tool start: `[sherpa] clarify (question): Clarify session revocation scope` (in addition to the standard `[tool] sherpa_clarify`).
+- On tool start: `[strider] clarify (question): Clarify session revocation scope` (in addition to the standard `[tool] strider_clarify`).
 - On user submit: `[user]` block with the response text.
-- On cancel: `[sherpa] clarify cancelled`.
+- On cancel: `[strider] clarify cancelled`.
 
 This keeps the session transcript coherent with what the user actually
 saw/typed.
 
 ## Open questions
 
-1. **Opt-out per request.** Flag like `:SherpaChat --no-ask <prompt>`
+1. **Opt-out per request.** Flag like `:StriderChat --no-ask <prompt>`
    or config `allow_clarification = false`. Worth adding if the model
    clarifies annoyingly often in practice. v1: skip, just rely on the
    budget + prompt.
@@ -222,8 +222,8 @@ saw/typed.
 ## Alternative: plan-first-work
 
 Instead of a generic clarify tool, make planning the default for
-`:SherpaChat`. Every work request goes:
-`:SherpaChat` → `/plan-work` → `sherpa_work_plan` tool → user approves
+`:StriderChat`. Every work request goes:
+`:StriderChat` → `/plan-work` → `strider_work_plan` tool → user approves
 or edits → model executes the approved plan.
 
 Pros:
@@ -233,17 +233,17 @@ Pros:
 
 Cons:
 - Heavier. Small changes get ceremony they don't need.
-- Duplicates `sherpa_plan` conceptually — two plan tools for two modes.
+- Duplicates `strider_plan` conceptually — two plan tools for two modes.
 - Works against small-patch ergonomics.
 
 ## Recommended v1 scope
 
 **Do:**
 1. Implement Lua-side handlers for `editor` and `confirm` UI methods.
-2. Register `sherpa_clarify` with `kind: question | plan_proposal | confirm`.
+2. Register `strider_clarify` with `kind: question | plan_proposal | confirm`.
 3. One-call budget per turn, reset on `message_end`.
 4. Prompt guidance in `promptRules` and `patchRules`.
-5. Log the round-trip to `sherpa://log`.
+5. Log the round-trip to `strider://log`.
 6. Tests: fake_pi can emit a clarify call; plugin opens the editor;
    test harness submits a canned response; assert model "sees" it.
 

@@ -1,4 +1,4 @@
-# Sherpa chat+review demo — send a message via :SherpaChat, then review the
+# Strider chat+review demo — send a message via :StriderChat, then review the
 # resulting diff.
 # Run:   vhs recordings/vhs/chat-review.tape
 
@@ -23,7 +23,7 @@ Show
 Sleep 2500ms
 
 # Send a broader request through the chat command.
-Type ":SherpaChat add loading states to the lobby flow"
+Type ":StriderChat add loading states to the lobby flow"
 Sleep 2800ms
 Enter
 
@@ -31,7 +31,7 @@ Enter
 Sleep 3500ms
 
 # Review the resulting working-tree diff.
-Type ":SherpaReview walk me through the diff on this branch"
+Type ":StriderReview walk me through the diff on this branch"
 Sleep 2200ms
 Enter
 Sleep 3500ms
@@ -43,13 +43,13 @@ Type "j"
 Sleep 700ms
 Type "Vj"
 Sleep 1600ms
-Type ":SherpaComment this branch needs a clearer empty state"
+Type ":StriderComment this branch needs a clearer empty state"
 Sleep 2600ms
 Enter
 Sleep 2500ms
 
 # Advance past the remaining review items to trigger the summary.
-Type ":SherpaNext"
+Type ":StriderNext"
 Sleep 1800ms
 Enter
 Sleep 3500ms

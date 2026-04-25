@@ -1,4 +1,4 @@
-# Sherpa search demo — :SherpaSearch jumps to the entrypoint.
+# Strider search demo — :StriderSearch jumps to the entrypoint.
 # Run:   vhs recordings/vhs/search.tape
 
 Output recordings/search.gif
@@ -22,13 +22,15 @@ Show
 # Let the viewer read the file.
 Sleep 2500ms
 
-# Ask Sherpa where the entrypoint is.
-Type ":SherpaSearch where is the main entrypoint?"
+# Ask Strider where the entrypoint is.
+Type ":StriderSearch where is the main entrypoint?"
 Sleep 2800ms
 Enter
 
 # Wait for the jump and settle on the result.
 Sleep 4500ms
+Enter
+Sleep 1500ms
 
 Type ":qall!"
 Enter

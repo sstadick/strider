@@ -1,4 +1,4 @@
-local state = require("sherpa.state")
+local state = require("strider.state")
 
 local M = {}
 
@@ -52,10 +52,10 @@ function M.pending_action(lane)
     if pending.operation == "command" then
       return "wait for the command to finish before sending another slash-command"
     end
-    return "type to steer this turn; :SherpaStop cancels it"
+    return "type to steer this turn; :StriderStop cancels it"
   end
   if pending then
-    return ":SherpaStop cancels the main chat turn; wait for this lane to finish"
+    return ":StriderStop cancels the main chat turn; wait for this lane to finish"
   end
   return nil
 end
@@ -93,7 +93,7 @@ local function review_lines(session)
 end
 
 function M.lines()
-  local lines = { "# Sherpa Status", "" }
+  local lines = { "# Strider Status", "" }
   for _, lane in ipairs(state.lanes()) do
     local session = state.get_session(lane)
     table.insert(lines, string.format("## %s", lane))
@@ -127,10 +127,10 @@ function M.lines()
   end
 
   table.insert(lines, "## Controls")
-  table.insert(lines, "- `:SherpaStop` aborts the main in-flight turn.")
+  table.insert(lines, "- `:StriderStop` aborts the main in-flight turn.")
   table.insert(lines, "- Empty compose text shows whether `<C-s>` will send, steer, or answer clarify.")
-  table.insert(lines, "- `:SherpaNext!` accepts the current review stop and advances.")
-  table.insert(lines, "- `:SherpaRetry` retries a stalled review plan.")
+  table.insert(lines, "- `:StriderNext!` accepts the current review stop and advances.")
+  table.insert(lines, "- `:StriderRetry` retries a stalled review plan.")
   return lines
 end
 

@@ -1,11 +1,11 @@
-local state = require("sherpa.state")
+local state = require("strider.state")
 
 local M = {}
 
-local pin_namespace = vim.api.nvim_create_namespace("sherpa-log-pin")
-local source_namespace = vim.api.nvim_create_namespace("sherpa-log-pin-source")
-local pin_bg_hl = "SherpaLogUserBg"
-local pin_text_hl = "SherpaLogUser"
+local pin_namespace = vim.api.nvim_create_namespace("strider-log-pin")
+local source_namespace = vim.api.nvim_create_namespace("strider-log-pin-source")
+local pin_bg_hl = "StriderLogUserBg"
+local pin_text_hl = "StriderLogUser"
 local pin_user_prefix = "› "
 local pin_user_continuation = "  "
 local pin_windows_by_base = {}
@@ -44,15 +44,15 @@ end
 local function close_pin(win)
   if not win then return end
   local valid = vim.api.nvim_win_is_valid(win)
-  local pin_win = valid and win_var(win, "sherpa_log_pin_win") or nil
+  local pin_win = valid and win_var(win, "strider_log_pin_win") or nil
   pin_win = pin_win or pin_windows_by_base[win]
   if pin_win and vim.api.nvim_win_is_valid(pin_win) then
     pcall(vim.api.nvim_win_close, pin_win, true)
   end
   pin_windows_by_base[win] = nil
   if valid then
-    set_win_var(win, "sherpa_log_pin_win", nil)
-    set_win_var(win, "sherpa_log_pin_buf", nil)
+    set_win_var(win, "strider_log_pin_win", nil)
+    set_win_var(win, "strider_log_pin_buf", nil)
   end
 end
 
@@ -152,15 +152,15 @@ local function source_is_visible(win, buf, message)
 end
 
 local function ensure_pin_buf(win)
-  local buf = win_var(win, "sherpa_log_pin_buf")
+  local buf = win_var(win, "strider_log_pin_buf")
   if buf and vim.api.nvim_buf_is_valid(buf) then return buf end
   buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = true
-  vim.b[buf].sherpa_log_pin = true
-  set_win_var(win, "sherpa_log_pin_buf", buf)
+  vim.b[buf].strider_log_pin = true
+  set_win_var(win, "strider_log_pin_buf", buf)
   return buf
 end
 
@@ -211,12 +211,12 @@ local function upsert_pin(win, lines, width)
   local buf = ensure_pin_buf(win)
   set_pin_lines(buf, lines)
   local height = #lines
-  local pin_win = win_var(win, "sherpa_log_pin_win")
+  local pin_win = win_var(win, "strider_log_pin_win")
   if pin_win and vim.api.nvim_win_is_valid(pin_win) then
     vim.api.nvim_win_set_config(pin_win, pin_config(win, width, height))
   else
     pin_win = vim.api.nvim_open_win(buf, false, pin_config(win, width, height))
-    set_win_var(win, "sherpa_log_pin_win", pin_win)
+    set_win_var(win, "strider_log_pin_win", pin_win)
   end
   pin_windows_by_base[win] = pin_win
   configure_pin_window(pin_win)

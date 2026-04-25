@@ -1,9 +1,9 @@
-local review = require("sherpa.review")
-local rpc = require("sherpa.rpc")
-local search = require("sherpa.search")
-local state = require("sherpa.state")
-local status = require("sherpa.status")
-local ui = require("sherpa.ui")
+local review = require("strider.review")
+local rpc = require("strider.rpc")
+local search = require("strider.search")
+local state = require("strider.state")
+local status = require("strider.status")
+local ui = require("strider.ui")
 
 local M = {}
 
@@ -51,14 +51,14 @@ end
 
 local function activity_title(operation)
   local titles = {
-    patch = "Sherpa patch running...",
-    plan = "Sherpa planning review...",
-    q = "Sherpa Q running...",
-    review = "Sherpa review running...",
-    search = "Sherpa search running...",
-    prompt = "Sherpa prompt running...",
+    patch = "Strider patch running...",
+    plan = "Strider planning review...",
+    q = "Strider Q running...",
+    review = "Strider review running...",
+    search = "Strider search running...",
+    prompt = "Strider prompt running...",
   }
-  return titles[operation] or "Sherpa running..."
+  return titles[operation] or "Strider running..."
 end
 
 local function activity_target(operation, lane)
@@ -71,12 +71,12 @@ end
 
 local function lane_title(lane)
   if lane == FLOW_LANE then
-    return "Sherpa flow"
+    return "Strider flow"
   end
   if lane == REVIEW_LANE then
-    return "Sherpa review"
+    return "Strider review"
   end
-  return "Sherpa chat"
+  return "Strider chat"
 end
 
 local function warn_if_lane_busy(lane)
@@ -101,7 +101,7 @@ local function send(command, user_text, opts)
   end
   if opts.open_log then
     -- Don't steal focus from whatever the user is currently doing (e.g.
-    -- composing in sherpa://compose). If the log isn't visible yet,
+    -- composing in strider://compose). If the log isn't visible yet,
     -- opening it should be silent.
     ui.open_log({ preserve_focus = true }, lane)
   end
@@ -116,7 +116,7 @@ local function send(command, user_text, opts)
   local ok = rpc.send_prompt(command, lane)
   if not ok then
     state.set_pending_request(nil, nil, lane)
-    ui.finish_activity("Sherpa request failed to start", "error", lane)
+    ui.finish_activity("Strider request failed to start", "error", lane)
     ui.refresh_compose_hint()
     return false
   end
@@ -265,7 +265,7 @@ end
 local function start_free_review(focus)
   local text = trimmed(focus)
   if text == "" then
-    ui.notify("SherpaReview requires input", vim.log.levels.WARN)
+    ui.notify("StriderReview requires input", vim.log.levels.WARN)
     return false
   end
   if not ensure_backend(REVIEW_LANE) then
@@ -311,7 +311,7 @@ end
 -- there is nothing to retry mid-review.
 function M.retry()
   if not review.has_active_review() then
-    ui.notify("No active Sherpa review to retry", vim.log.levels.WARN)
+    ui.notify("No active Strider review to retry", vim.log.levels.WARN)
     return false
   end
   if review.is_planning() then
@@ -350,7 +350,7 @@ function M.cycle_thinking()
   rpc.send_prompt(MAIN_LANE, "/thinking")
 end
 
--- :SherpaStop — cancel the current in-flight turn via pi's abort RPC.
+-- :StriderStop — cancel the current in-flight turn via pi's abort RPC.
 -- The actual "[error] Turn aborted" block in the log and spinner reset
 -- happen when pi emits the final message_end (see handle_message_end's
 -- stopReason == "aborted" branch). We just fire the abort and give the
@@ -358,18 +358,18 @@ end
 -- doesn't feel like nothing happened.
 function M.stop()
   if not state.peek_pending_request(MAIN_LANE) then
-    ui.notify("Sherpa is idle — nothing to stop", vim.log.levels.INFO)
+    ui.notify("Strider is idle — nothing to stop", vim.log.levels.INFO)
     return
   end
   if rpc.abort(MAIN_LANE) then
-    ui.notify("Stopping Sherpa…", vim.log.levels.INFO)
+    ui.notify("Stopping Strider…", vim.log.levels.INFO)
   end
 end
 
 -- Slash-commands that pi routes to our /prompt etc. handlers which DO
 -- send a user message to the model — treat these as normal prompt turns
 -- (they produce message_end and need pending-request tracking).
-local sherpa_prompt_commands = {
+local strider_prompt_commands = {
   prompt = true, patch = true, review = true, search = true, plan = true,
 }
 
@@ -380,7 +380,7 @@ local sherpa_prompt_commands = {
 -- off than leave it hanging).
 local function is_prompt_slash(text)
   local name = text:match("^/([%w%-_:]+)")
-  return name and sherpa_prompt_commands[name] or false
+  return name and strider_prompt_commands[name] or false
 end
 
 -- Session-management and built-in commands that are dedicated RPC
@@ -519,11 +519,11 @@ end
 function M.cancel_pending_clarify_if_any()
   local pending = state.consume_pending_clarify(MAIN_LANE)
   if not pending then return false end
-  state.set_status("sherpa-clarify", nil, MAIN_LANE)
+  state.set_status("strider-clarify", nil, MAIN_LANE)
   ui.refresh_compose_winbar(MAIN_LANE)
   ui.refresh_compose_hint()
   cancel_clarify(pending)
-  ui.append({ "[sherpa] clarify cancelled" }, MAIN_LANE)
+  ui.append({ "[strider] clarify cancelled" }, MAIN_LANE)
   return true
 end
 
@@ -539,7 +539,7 @@ function dispatch_compose(text)
   local pending_clarify = state.peek_pending_clarify(MAIN_LANE)
   if pending_clarify then
     state.consume_pending_clarify(MAIN_LANE)
-    state.set_status("sherpa-clarify", nil, MAIN_LANE)
+    state.set_status("strider-clarify", nil, MAIN_LANE)
     ui.refresh_compose_winbar(MAIN_LANE)
     ui.refresh_compose_hint()
     ui.append_block("user", text, MAIN_LANE)
@@ -608,11 +608,11 @@ end
 function M.search(prompt)
   prompt = trimmed(prompt)
   if prompt == "" then
-    ui.open_prompt_editor("Sherpa search", function(text)
+    ui.open_prompt_editor("Strider search", function(text)
       M.search(text)
     end, {
       "Structured code search. e.g. \"websocket entrypoints\".",
-      "Use :SherpaSearches to browse previous searches.",
+      "Use :StriderSearches to browse previous searches.",
     })
     return
   end
@@ -643,7 +643,7 @@ local function submit_review_request(text, range)
   if review.has_active_review() then
     local prompt = review.build_prompt(text)
     if not prompt then
-      ui.notify("No active Sherpa review item", vim.log.levels.WARN)
+      ui.notify("No active Strider review item", vim.log.levels.WARN)
       return
     end
     send_review_prompt(prompt, text)
@@ -666,7 +666,7 @@ end
 function M.review(args, opts)
   local range = range_from_opts(opts)
   local text = trimmed(args)
-  local title = "Sherpa review context"
+  local title = "Strider review context"
   local hint_lines
 
   if review.has_active_review() and range then
@@ -765,14 +765,14 @@ function M.q(prompt, opts)
   local range = range_from_opts(opts)
   local hint_lines = {
     "Ask a side question without opening chat.",
-    "Answers land in SherpaLogFlow.",
+    "Answers land in StriderLogFlow.",
   }
   local pointer = range_pointer(range)
   if pointer then
     table.insert(hint_lines, string.format("Range: %s", pointer))
   end
 
-  ui.open_prompt_editor("Sherpa Q", function(text)
+  ui.open_prompt_editor("Strider Q", function(text)
     submit_q_request(text, range)
   end, {
     hint_lines = hint_lines,
@@ -785,11 +785,11 @@ function M.patch(prompt, opts)
 
   local range = resolve_patch_range(opts)
   if not range then
-    ui.notify("SherpaPatch needs a visual range or an active review item", vim.log.levels.WARN)
+    ui.notify("StriderPatch needs a visual range or an active review item", vim.log.levels.WARN)
     return
   end
 
-  ui.open_prompt_editor("Sherpa patch request", function(text)
+  ui.open_prompt_editor("Strider patch request", function(text)
     text = trimmed(text)
     if text == "" then
       return
@@ -806,7 +806,7 @@ end
 
 function M.next_step(accept_current)
   if not review.has_active_review() then
-    ui.notify("No active Sherpa review session", vim.log.levels.WARN)
+    ui.notify("No active Strider review session", vim.log.levels.WARN)
     return
   end
 
@@ -831,14 +831,14 @@ function M.next_step(accept_current)
       send_review_prompt(prompt, "Summarize unresolved review comments", { open_log = false })
     else
       M.complete_review_summary("Review complete. No unresolved comments.")
-      ui.notify("Sherpa review complete", vim.log.levels.INFO)
+      ui.notify("Strider review complete", vim.log.levels.INFO)
     end
   end
 end
 
 function M.prev_step()
   if not review.has_active_review() then
-    ui.notify("No active Sherpa review session", vim.log.levels.WARN)
+    ui.notify("No active Strider review session", vim.log.levels.WARN)
     return
   end
   local _item, past_end, moved = review.advance(-1)

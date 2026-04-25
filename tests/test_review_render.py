@@ -37,8 +37,8 @@ class ReviewRenderTests(unittest.TestCase):
     def test_panel_lines_render_current_stop_without_review_state(self) -> None:
         lines = self.run_lua_json(
             """
-            local render = require("sherpa.review.render")
-            local cwd = "/tmp/sherpa-render"
+            local render = require("strider.review.render")
+            local cwd = "/tmp/strider-render"
             local path = cwd .. "/src/app.lua"
             local review = {
               active = true,
@@ -85,7 +85,7 @@ class ReviewRenderTests(unittest.TestCase):
     def test_panel_lines_message_zero_hides_item_only_sections(self) -> None:
         lines = self.run_lua_json(
             """
-            local render = require("sherpa.review.render")
+            local render = require("strider.review.render")
             local review = {
               active = true,
               source = "review",
@@ -94,7 +94,7 @@ class ReviewRenderTests(unittest.TestCase):
               items = {
                 {
                   id = "one",
-                  path = "/tmp/sherpa-render/src/app.lua",
+                  path = "/tmp/strider-render/src/app.lua",
                   startLine = 1,
                   endLine = 4,
                   title = "Entry point",
@@ -120,7 +120,7 @@ class ReviewRenderTests(unittest.TestCase):
     def test_completed_review_renders_final_next_actions(self) -> None:
         lines = self.run_lua_json(
             """
-            local render = require("sherpa.review.render")
+            local render = require("strider.review.render")
             local review = {
               active = false,
               source = "review",
@@ -132,7 +132,7 @@ class ReviewRenderTests(unittest.TestCase):
               items = {
                 {
                   id = "one",
-                  path = "/tmp/sherpa-render/src/app.lua",
+                  path = "/tmp/strider-render/src/app.lua",
                   startLine = 10,
                   endLine = 20,
                   title = "Defines run",
@@ -143,25 +143,25 @@ class ReviewRenderTests(unittest.TestCase):
               },
               comments = {},
             }
-            print(vim.fn.json_encode(render.panel_lines(review, { cwd = "/tmp/sherpa-render" })))
+            print(vim.fn.json_encode(render.panel_lines(review, { cwd = "/tmp/strider-render" })))
             """
         )
 
         text = "\n".join(lines)
-        self.assertIn("# Sherpa Review Complete", text)
+        self.assertIn("# Strider Review Complete", text)
         self.assertIn("- state: `complete`", text)
         self.assertIn("- summary: `forwarded to main chat`", text)
         self.assertIn("## Review summary", text)
         self.assertIn("## Next actions", text)
-        self.assertIn(":SherpaLogReview", text)
+        self.assertIn(":StriderLogReview", text)
         self.assertNotIn("## Controls", text)
 
     def test_chunk_title_and_item_label_are_exposed_for_review_state(self) -> None:
         result = self.run_lua_json(
             """
-            local render = require("sherpa.review.render")
+            local render = require("strider.review.render")
             local item = {
-              path = "/tmp/sherpa-render/src/app.lua",
+              path = "/tmp/strider-render/src/app.lua",
               startLine = 2,
               endLine = 8,
               title = "Entry point",

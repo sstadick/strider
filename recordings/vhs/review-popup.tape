@@ -1,4 +1,4 @@
-# Sherpa review-popup demo — :SherpaReview with no args opens a floating
+# Strider review-popup demo — :StriderReview with no args opens a floating
 # editor whose ghost text explains that the first word picks the scope.
 # Run:   vhs recordings/vhs/review-popup.tape
 
@@ -23,7 +23,7 @@ Show
 Sleep 2500ms
 
 # Open the review popup with no args. The ghost text shows the scope menu.
-Type ":SherpaReview"
+Type ":StriderReview"
 Sleep 1500ms
 Enter
 Sleep 2200ms
@@ -36,8 +36,8 @@ Ctrl+S
 # Wait for the file review to start and the explanation to settle.
 Sleep 3500ms
 
-# With a review active, :SherpaReview opens a question editor instead.
-Type ":SherpaReview"
+# With a review active, :StriderReview opens a question editor instead.
+Type ":StriderReview"
 Sleep 1500ms
 Enter
 Sleep 1800ms

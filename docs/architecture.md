@@ -2,22 +2,22 @@
 
 ## Current product model
 
-Sherpa is built around five primary user flows:
+Strider is built around five primary user flows:
 
-- `:SherpaSearch {prompt}`
-- `:SherpaReview [scope] [prompt]`
-- `:'<,'>SherpaPatch {prompt}`
-- `:SherpaQ [prompt]` — tangent that branches off the session tree
-- `:SherpaChat [prompt]`
+- `:StriderSearch {prompt}`
+- `:StriderReview [scope] [prompt]`
+- `:'<,'>StriderPatch {prompt}`
+- `:StriderQ [prompt]` — tangent that branches off the session tree
+- `:StriderChat [prompt]`
 
 Supporting navigation and control:
 
-- `:SherpaNext`
-- `:SherpaPrev`
-- `:SherpaComment {text}`
-- `:SherpaComments`
-- `:SherpaReviewItems`
-- `:SherpaStop` — abort the in-flight turn (maps to pi's `abort` RPC)
+- `:StriderNext`
+- `:StriderPrev`
+- `:StriderComment {text}`
+- `:StriderComments`
+- `:StriderReviewItems`
+- `:StriderStop` — abort the in-flight turn (maps to pi's `abort` RPC)
 
 The main product is no longer centered on a linear `Q` loop.
 Review is the primary walkthrough surface.
@@ -26,7 +26,7 @@ Review is the primary walkthrough surface.
 
 ### 1. Neovim plugin
 
-Lives in `lua/sherpa/`.
+Lives in `lua/strider/`.
 
 Owns:
 - process lifecycle for `pi --mode rpc`
@@ -35,25 +35,25 @@ Owns:
 - quickfix and picker UX
 - file jumps and range highlighting
 - scratch log buffer
-- dedicated `sherpa://review` pane
-- floating `sherpa://prompt` / `sherpa://comment` input editors
+- dedicated `strider://review` pane
+- floating `strider://prompt` / `strider://comment` input editors
 - local review/session state
 
 Review code is split by responsibility:
-- `lua/sherpa/review.lua` owns review state transitions, planning,
+- `lua/strider/review.lua` owns review state transitions, planning,
   navigation, comments, and prompts.
-- `lua/sherpa/review/render.lua` owns the markdown rendered into the
-  `sherpa://review` pane, including status text, item summaries, excerpts,
+- `lua/strider/review/render.lua` owns the markdown rendered into the
+  `strider://review` pane, including status text, item summaries, excerpts,
   comments, and the review plan table of contents.
 
 ### 2. pi extension
 
-Lives in `pi/sherpa-stepper.ts`.
+Lives in `pi/strider-stepper.ts`.
 
 Owns:
 - prompt shaping for `plan`, `review`, `search`, `patch`, and `prompt`
-- the `sherpa_plan` and `sherpa_append_stops` tools used during reviews
-- the `sherpa_clarify` tool used during `prompt` and `patch` for
+- the `strider_plan` and `strider_append_stops` tools used during reviews
+- the `strider_clarify` tool used during `prompt` and `patch` for
   mid-turn questions, plan proposals, and yes/no confirmations
 - read-only guardrails for plan / review / search
 - widget/status updates for Neovim (model, context usage, running cost)
@@ -65,23 +65,23 @@ Owns:
 
 ### Search
 
-1. user runs `:SherpaSearch <prompt>`
+1. user runs `:StriderSearch <prompt>`
 2. plugin sends `/search <prompt>`
 3. extension constrains the model to structured search output
 4. plugin parses result lines
 5. results open through telescope/fzf when available for a consistent selection flow
-6. without a picker, Sherpa falls back to quickfix and jumps/highlights the lone match when only one exists
+6. without a picker, Strider falls back to quickfix and jumps/highlights the lone match when only one exists
 
 ## Review
 
 Reviews are pre-planned. The model commits to a full list of stops up
-front via the `sherpa_plan` tool; the plugin then walks that fixed list.
+front via the `strider_plan` tool; the plugin then walks that fixed list.
 
-1. user runs `:SherpaReview <prose>` (optionally with a visual range)
+1. user runs `:StriderReview <prose>` (optionally with a visual range)
 2. plugin opens the review pane in a "planning..." state and sends
    `/plan <prose>` to the extension
 3. extension's `plan` command tells the model to produce a plan. The model
-   reads code as needed, then calls the `sherpa_plan` tool with:
+   reads code as needed, then calls the `strider_plan` tool with:
    - `scope`: `"selection"`, `"diff"`, or `"free"` (model self-labels)
    - `base`: required when scope is `"diff"`
    - `stops`: ordered list of
@@ -90,15 +90,15 @@ front via the `sherpa_plan` tool; the plugin then walks that fixed list.
 4. plugin ingests the plan, renders the TOC in the review pane, and
    focuses stop 1. The sidebar shows stop 1's pre-written explanation
    immediately — no follow-up model turn.
-5. `:SherpaNext` / `:SherpaPrev` advance through the fixed plan. Each
+5. `:StriderNext` / `:StriderPrev` advance through the fixed plan. Each
    move is a local index change plus a buffer jump — instant, no model
-   call. `:SherpaNext!` accepts the current stop before advancing, so
+   call. `:StriderNext!` accepts the current stop before advancing, so
    explicit acceptance stays on the existing navigation command. The
    sidebar flips to the pre-written explanation for the new stop.
-6. `:SherpaReview <question>` with an active review is the only way to
+6. `:StriderReview <question>` with an active review is the only way to
    trigger a per-stop model call. It sends `/review ...` scoped to the
    current stop, carrying the question.
-7. during a free-scope review, the model may call `sherpa_append_stops`
+7. during a free-scope review, the model may call `strider_append_stops`
    mid-review to add more stops (append-only — no reorder, no deletion)
 8. walking past the last stop ends the review; unresolved comments are
    summarized back to the agent
@@ -117,7 +117,7 @@ Important UX rule:
 ### Patch
 
 1. user visually selects a range (or relies on the active review item)
-2. user runs `:SherpaPatch [prompt]`
+2. user runs `:StriderPatch [prompt]`
 3. plugin opens the floating patch editor, prefilled when inline args were given
 4. on submit, plugin sends `/patch ...` with file, line range, and excerpt context
 5. tool events update the file jump and edit highlighting
@@ -125,37 +125,37 @@ Important UX rule:
 
 ### Tangent
 
-`:SherpaQ` opens a floating editor for a one-shot side question that
-runs on Sherpa's dedicated flow lane — a separate pi process from the
+`:StriderQ` opens a floating editor for a one-shot side question that
+runs on Strider's dedicated flow lane — a separate pi process from the
 main chat. This keeps the main session clean and lets the user ask
 quick questions without interrupting a running chat turn.
 
-1. user runs `:SherpaQ [prompt]` (optionally with a visual range)
+1. user runs `:StriderQ [prompt]` (optionally with a visual range)
 2. plugin opens the floating editor, prefilled when inline args were given
 3. on submit, plugin dispatches the question as `/prompt ...` on the
    flow lane (with an excerpt block when a range was given)
-4. the question runs in the background: answers land in `:SherpaLogFlow`,
+4. the question runs in the background: answers land in `:StriderLogFlow`,
    chat is not auto-opened
 5. no tree anchoring needed — the flow lane has its own independent
    session
 
 ### Chat
 
-1. user runs `:SherpaChat` (no args) to toggle the log + compose surfaces
-2. `:[range]SherpaChat [message]` opens chat and prefills compose with the
+1. user runs `:StriderChat` (no args) to toggle the log + compose surfaces
+2. `:[range]StriderChat [message]` opens chat and prefills compose with the
    range pointer and/or inline text instead of sending immediately
 3. compose `<C-s>` sends `/prompt <message>` if no request is pending, or
    `/steer <message>` to redirect a running turn
 4. assistant handles the request under the user's global pi system
-   prompt; Sherpa adds no mode-specific guidance beyond making
-   `sherpa_clarify` available
+   prompt; Strider adds no mode-specific guidance beyond making
+   `strider_clarify` available
 5. the compose buffer persists across sends; user can fire off steers
    any time, even while a reply is streaming
-6. user can follow up with `:SherpaReview` to walk through the result
+6. user can follow up with `:StriderReview` to walk through the result
 
 ## Review state model
 
-Sherpa keeps local review state in the Neovim session.
+Strider keeps local review state in the Neovim session.
 A review session tracks:
 - review items
 - current index
@@ -171,12 +171,12 @@ Comments are local today, but the data shape leaves room for future GitHub revie
 ### Code window
 
 The source of truth for the currently reviewed or edited range.
-Sherpa jumps here and highlights the active region.
+Strider jumps here and highlights the active region.
 
 ### Review pane
 
 Buffer name:
-- `sherpa://review`
+- `strider://review`
 
 Purpose:
 - show one active review item
@@ -188,12 +188,12 @@ Purpose:
 ### Log buffer
 
 Buffer name:
-- `sherpa://log`
+- `strider://log`
 
 Purpose:
 - keep the full transcript, tool activity, and stderr
 - useful for debugging and history
-- toggled via `:SherpaChat` along with compose
+- toggled via `:StriderChat` along with compose
 - tail new output only while the log window is already at the bottom;
   scrolling up pauses follow-mode until the user jumps back to the tail
 - keep the latest user prompt available as a small pinned preview when
@@ -203,16 +203,16 @@ Purpose:
 ### Input editor
 
 Buffer names:
-- `sherpa://prompt` — used by `:SherpaSearch`, `:SherpaReview`, `:SherpaPatch`, `:SherpaQ`
-- `sherpa://compose` — persistent user input buffer used by `:SherpaChat`;
-  also hijacked to reply to `sherpa_clarify` questions and to edit
+- `strider://prompt` — used by `:StriderSearch`, `:StriderReview`, `:StriderPatch`, `:StriderQ`
+- `strider://compose` — persistent user input buffer used by `:StriderChat`;
+  also hijacked to reply to `strider_clarify` questions and to edit
   plan-proposal bodies (the `[Clarify]` badge marks this state)
-- `sherpa://comment` — used by `:SherpaComment`
+- `strider://comment` — used by `:StriderComment`
 
 A centered floating scratch buffer used by popup-style commands. Renders
 per-command guidance as `Comment`-highlighted virtual lines plus a
 `<C-s> to submit · <Esc><Esc> to cancel` hint. Inline command arguments
-prefill the editor instead of dispatching directly. For `:SherpaReview`,
+prefill the editor instead of dispatching directly. For `:StriderReview`,
 the editor has two modes: when no review is active the text describes the
 review scope; when a review is active, the text is treated as a question
 about the current review item.
@@ -251,7 +251,7 @@ about the current review item.
   assistant response…".
 - `tool_execution_start`
   - log tool usage as a Codex-style `• Verb` header (paths highlighted
-    in the `SherpaLogPath` accent color)
+    in the `StriderLogPath` accent color)
   - track touched paths
 - `tool_execution_end`
   - output is inserted directly after the matching tool header
@@ -259,7 +259,7 @@ about the current review item.
     so parallel tool calls render header+result pairs in order
   - for `edit`: parse `result.details.diff`, update the tool header to
     `• Edited <path> (+N -M)`, and render the diff rows directly under
-    that header with Sherpa-owned green/red extmark bands, a line-number
+    that header with Strider-owned green/red extmark bands, a line-number
     gutter, and treesitter source highlighting on the changed code
   - for `read` / `write`: inline `result.content[*].text` wrapped in
     a fenced markdown code block tagged with the language derived
@@ -271,8 +271,8 @@ about the current review item.
   - for `bash` / `grep` / `ls` / `find`: render compact transcript rows
     with a muted `│` gutter instead of a code fence. `grep`, `ls`, and
     `find` get cheap line-count metadata (`N matches`, `N entries`,
-    `N paths`). Compact output uses the same last-15-lines tail window
-    and `N earlier lines…` marker. The gutter keeps raw command output
+    `N paths`). Compact output uses the same 5-line Codex-style middle
+    truncation and `… +N lines` marker. The gutter keeps raw command output
     from rendering as headings, lists, blockquotes, tables, or fences.
     Search/list headers preserve meaningful
     arguments from pi, including grep patterns, find patterns, paths, and limits.
@@ -280,17 +280,17 @@ about the current review item.
 - `extension_ui_request`
   - `notify` / `setStatus` / `setWidget` / `setTitle` — fire-and-forget
     UI updates. `setWidget` payloads are flattened into the log
-    window's winbar. The `sherpa-clarify` `setStatus` key drives the
+    window's winbar. The `strider-clarify` `setStatus` key drives the
     `[Clarify]` badge in the compose winbar.
   - `editor` — the extension uses this to ask the user something
-    mid-turn (from `sherpa_clarify`). Sherpa routes everything through
+    mid-turn (from `strider_clarify`). Strider routes everything through
     the chat log + compose buffer rather than floating editors:
     - **Plain clarify** (`kind: question`): title/body rendered as a
       `[clarify]` block in the log, pending-id stashed, compose
       hijacked — the next `<C-s>` sends the reply via
       `extension_ui_response{value}`, `<Esc><Esc>` sends `cancelled`.
       `[Clarify]` badge on the compose winbar marks the state.
-    - **Plan proposal** (title prefixed `[sherpa-plan-proposal]`):
+    - **Plan proposal** (title prefixed `[strider-plan-proposal]`):
       body rendered as a `[plan]` block, then `vim.ui.select` offers
       Accept / Modify / Reject. Accept sends the body back as-is;
       Modify seeds compose with the body and hijacks it same as a
@@ -320,13 +320,13 @@ about the current review item.
 - `abort` — cancel the in-flight turn. No body (`{"type":"abort"}`).
   Pi finishes the current model stream and emits a `message_end` with
   `stopReason = "aborted"`, which renders as a cancel-flavored
-  `[error]` block. Driven by `:SherpaStop`.
+  `[error]` block. Driven by `:StriderStop`.
 - `extension_ui_response` — reply to an awaiting `extension_ui_request`
   (carries the request `id` plus `value` / `confirmed` / `cancelled`)
 
 ## File/range heuristics
 
-Sherpa currently keys off explicit tool paths only:
+Strider currently keys off explicit tool paths only:
 - `read.path`
 - `edit.path`
 - `write.path`
@@ -342,13 +342,13 @@ Working today:
 - local review comments
 - selection-scoped patching
 - plain-prompt agent turns with clarify available
-- side questions via `:SherpaQ` on a dedicated flow lane (answers land
-  in `:SherpaLogFlow`)
+- side questions via `:StriderQ` on a dedicated flow lane (answers land
+  in `:StriderLogFlow`)
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
-- `:SherpaStatus` for a compact lane/status/control summary
-- accepted review stops via `:SherpaNext!`
-- `:SherpaStop` to abort in-flight turns
+- `:StriderStatus` for a compact lane/status/control summary
+- accepted review stops via `:StriderNext!`
+- `:StriderStop` to abort in-flight turns
 - inline red `[error]` blocks for provider / model / transport errors
   (no more silent hangs)
 - cycle thinking level via `<S-Tab>` in compose (mirrors pi's TUI);
@@ -359,8 +359,8 @@ Working today:
 - rich log rendering: inline diff rows under `• Edited <path> (+N -M)`
   headers for edit tools; syntax-highlighted fenced output for
   read/write via treesitter + render-markdown; compact gutter output for
-  bash/grep/ls/find; last-15-lines only with a `N earlier lines…` note
-  above when earlier lines are hidden; accent-colored file paths in
+  bash/grep/ls/find; up to 5 visible output lines with a Codex-style
+  `… +N lines` marker when middle lines are hidden; accent-colored file paths in
   tool headers; parallel tool results inserted next to their headers
   via extmark tracking
 - session management: `/new`, `/fork`, `/compact`, `/export`, `/resume`

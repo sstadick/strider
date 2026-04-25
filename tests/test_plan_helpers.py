@@ -3,7 +3,7 @@
 plan_from_range / plan_from_diff are Lua-side helpers invoked directly.
 Selection and free-scope reviews go through the planning pipeline (state:
 planned=true, scope, coverage_ok, TOC in sidebar). Free-scope plans arrive
-via the sherpa_plan tool call; the fake pi simulates that here.
+via the strider_plan tool call; the fake pi simulates that here.
 """
 import json
 import subprocess
@@ -29,11 +29,11 @@ class PlanHelperTests(unittest.TestCase):
         self.repo_root = Path(__file__).resolve().parents[1]
 
     def _advance_to_first_stop(self, h: TmuxNvimHarness) -> None:
-        h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
-        h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
-        h.ex("SherpaNext")
+        h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
+        h.wait_until(lambda: not h.lua_bool("require('strider.review').is_planning()"), timeout=8.0)
+        h.ex("StriderNext")
         h.wait_until(
-            lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 1,
+            lambda: int(h.lua("require('strider.state').get_session('review').review.current_index")) == 1,
             timeout=5.0,
         )
 
@@ -48,7 +48,7 @@ class PlanHelperTests(unittest.TestCase):
     # --- plan_from_range ---------------------------------------------------
 
     def test_plan_from_range_short_range_produces_single_stop(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="sherpa-plan-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="strider-plan-") as tmp:
             project = Path(tmp)
             target = project / "small.txt"
             target.write_text("\n".join(f"line {i}" for i in range(1, 11)) + "\n")
@@ -56,7 +56,7 @@ class PlanHelperTests(unittest.TestCase):
             with TmuxNvimHarness(self.repo_root, project) as h:
                 plan = self._lua_json(
                     h,
-                    f"require('sherpa.review').plan_from_range({json.dumps(str(target))}, 1, 10)",
+                    f"require('strider.review').plan_from_range({json.dumps(str(target))}, 1, 10)",
                 )
 
             self.assertEqual("selection", plan["scope"])
@@ -69,7 +69,7 @@ class PlanHelperTests(unittest.TestCase):
             self.assertTrue(stop["why"])
 
     def test_plan_from_range_long_range_chunks_and_covers_every_line(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="sherpa-plan-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="strider-plan-") as tmp:
             project = Path(tmp)
             target = project / "big.txt"
             target.write_text("\n".join(f"line {i}" for i in range(1, 101)) + "\n")
@@ -77,7 +77,7 @@ class PlanHelperTests(unittest.TestCase):
             with TmuxNvimHarness(self.repo_root, project) as h:
                 plan = self._lua_json(
                     h,
-                    f"require('sherpa.review').plan_from_range({json.dumps(str(target))}, 1, 100)",
+                    f"require('strider.review').plan_from_range({json.dumps(str(target))}, 1, 100)",
                 )
 
             self.assertEqual("selection", plan["scope"])
@@ -93,14 +93,14 @@ class PlanHelperTests(unittest.TestCase):
             self.assertEqual(101, cursor)
 
     def test_plan_from_range_rejects_inverted_range(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="sherpa-plan-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="strider-plan-") as tmp:
             project = Path(tmp)
             target = project / "empty.txt"
             target.write_text("a\nb\n")
 
             with TmuxNvimHarness(self.repo_root, project) as h:
                 lua_src = (
-                    'require("sherpa.review").plan_from_range('
+                    'require("strider.review").plan_from_range('
                     + json.dumps(str(target))
                     + ', 5, 2) == nil'
                 )
@@ -110,7 +110,7 @@ class PlanHelperTests(unittest.TestCase):
     # --- plan_from_diff ----------------------------------------------------
 
     def test_plan_from_diff_covers_every_changed_line(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="sherpa-plan-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="strider-plan-") as tmp:
             project = Path(tmp)
             _seed_repo(project)
             target = project / "file.txt"
@@ -134,7 +134,7 @@ class PlanHelperTests(unittest.TestCase):
                 plan = self._lua_json(
                     h,
                     (
-                        "require('sherpa.review').plan_from_diff("
+                        "require('strider.review').plan_from_diff("
                         f"{json.dumps(str(project))}, {json.dumps(base_sha)})"
                     ),
                 )
@@ -155,7 +155,7 @@ class PlanHelperTests(unittest.TestCase):
                             f"changed={changed_lines} covered={covered}")
 
     def test_plan_from_diff_returns_empty_plan_when_no_changes(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="sherpa-plan-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="strider-plan-") as tmp:
             project = Path(tmp)
             _seed_repo(project)
             (project / "only.txt").write_text("unchanged\n")
@@ -169,7 +169,7 @@ class PlanHelperTests(unittest.TestCase):
                 plan = self._lua_json(
                     h,
                     (
-                        "require('sherpa.review').plan_from_diff("
+                        "require('strider.review').plan_from_diff("
                         f"{json.dumps(str(project))}, {json.dumps(base_sha)})"
                     ),
                 )
@@ -185,16 +185,16 @@ class PlanHelperTests(unittest.TestCase):
     def test_plan_with_wrong_line_numbers_is_rebased_via_first_line_text(self) -> None:
         # Simulates the common LLM failure: model returns a plan whose
         # line numbers are off, but `firstLineText` pinpoints the real
-        # anchor. Sherpa should shift startLine/endLine and annotations
+        # anchor. Strider should shift startLine/endLine and annotations
         # by the detected offset.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
             # Need the backend up so we have a session. Kick off any
             # review first — we'll overwrite the review state below.
-            self._submit_review(h, "SherpaReview prime the session")
-            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            self._submit_review(h, "StriderReview prime the session")
+            h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
             h.wait_until(
-                lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
+                lambda: not h.lua_bool("require('strider.review').is_planning()"),
                 timeout=6.0,
             )
 
@@ -211,7 +211,7 @@ class PlanHelperTests(unittest.TestCase):
                 # Reset into planning state, then ingest a plan with wrong
                 # line numbers but a correct firstLineText anchor.
                 h.lua(
-                    "(function() require('sherpa.review').start_planning('test'); return true end)()"
+                    "(function() require('strider.review').start_planning('test'); return true end)()"
                 )
                 lua_call = (
                     "(function() "
@@ -225,15 +225,15 @@ class PlanHelperTests(unittest.TestCase):
                     "    explanation = 'The model got the numbers wrong but the anchor right.', "
                     "    annotations = { { kind = 'line', line = 9, text = 'Should land at 17' } } "
                     "  } } }; "
-                    "  require('sherpa.review').ingest_plan(args); "
+                    "  require('strider.review').ingest_plan(args); "
                     "  return true "
                     "end)()"
                 )
                 h.lua(lua_call)
 
-                start_line = int(h.lua("require('sherpa.state').get_session('review').review.items[1].startLine"))
-                end_line = int(h.lua("require('sherpa.state').get_session('review').review.items[1].endLine"))
-                ann_line = int(h.lua("require('sherpa.state').get_session('review').review.items[1].annotations[1].line"))
+                start_line = int(h.lua("require('strider.state').get_session('review').review.items[1].startLine"))
+                end_line = int(h.lua("require('strider.state').get_session('review').review.items[1].endLine"))
+                ann_line = int(h.lua("require('strider.state').get_session('review').review.items[1].annotations[1].line"))
             finally:
                 if target_path.exists():
                     target_path.unlink()
@@ -252,88 +252,88 @@ class PlanHelperTests(unittest.TestCase):
         with TmuxNvimHarness(self.repo_root, project) as h:
             h.lua(
                 "(function() "
-                "  _G.sherpa_test_picker_choice = 'UNSET'; "
+                "  _G.strider_test_picker_choice = 'UNSET'; "
                 "  vim.ui.select = function(items, opts, cb) cb('Accept') end; "
                 "  return true "
                 "end)()"
             )
             h.lua(
                 "(function() "
-                "  require('sherpa.ui').clarify_plan_proposal_picker("
-                "    function(c) _G.sherpa_test_picker_choice = tostring(c) end); "
+                "  require('strider.ui').clarify_plan_proposal_picker("
+                "    function(c) _G.strider_test_picker_choice = tostring(c) end); "
                 "  return true "
                 "end)()"
             )
             h.wait_until(
-                lambda: h.lua("tostring(_G.sherpa_test_picker_choice)") != "UNSET",
+                lambda: h.lua("tostring(_G.strider_test_picker_choice)") != "UNSET",
                 timeout=3.0,
             )
-            self.assertEqual("accept", h.lua("tostring(_G.sherpa_test_picker_choice)"))
+            self.assertEqual("accept", h.lua("tostring(_G.strider_test_picker_choice)"))
 
     def test_plan_proposal_modify_delivers_modify_choice(self) -> None:
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
             h.lua(
                 "(function() "
-                "  _G.sherpa_test_picker_choice = 'UNSET'; "
+                "  _G.strider_test_picker_choice = 'UNSET'; "
                 "  vim.ui.select = function(items, opts, cb) cb('Modify') end; "
                 "  return true "
                 "end)()"
             )
             h.lua(
                 "(function() "
-                "  require('sherpa.ui').clarify_plan_proposal_picker("
-                "    function(c) _G.sherpa_test_picker_choice = tostring(c) end); "
+                "  require('strider.ui').clarify_plan_proposal_picker("
+                "    function(c) _G.strider_test_picker_choice = tostring(c) end); "
                 "  return true "
                 "end)()"
             )
             h.wait_until(
-                lambda: h.lua("tostring(_G.sherpa_test_picker_choice)") != "UNSET",
+                lambda: h.lua("tostring(_G.strider_test_picker_choice)") != "UNSET",
                 timeout=3.0,
             )
-            self.assertEqual("modify", h.lua("tostring(_G.sherpa_test_picker_choice)"))
+            self.assertEqual("modify", h.lua("tostring(_G.strider_test_picker_choice)"))
 
     def test_plan_proposal_reject_delivers_nil(self) -> None:
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
             h.lua(
                 "(function() "
-                "  _G.sherpa_test_picker_nil = false; "
+                "  _G.strider_test_picker_nil = false; "
                 "  vim.ui.select = function(items, opts, cb) cb('Reject') end; "
                 "  return true "
                 "end)()"
             )
             h.lua(
                 "(function() "
-                "  require('sherpa.ui').clarify_plan_proposal_picker("
-                "    function(c) if c == nil then _G.sherpa_test_picker_nil = true end end); "
+                "  require('strider.ui').clarify_plan_proposal_picker("
+                "    function(c) if c == nil then _G.strider_test_picker_nil = true end end); "
                 "  return true "
                 "end)()"
             )
             h.wait_until(
-                lambda: h.lua_bool("_G.sherpa_test_picker_nil"),
+                lambda: h.lua_bool("_G.strider_test_picker_nil"),
                 timeout=3.0,
             )
 
     # --- selection reviews go through start_planned ----------------------
 
     def test_selection_review_uses_planned_state_shape(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="sherpa-plan-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="strider-plan-") as tmp:
             project = Path(tmp)
             target = project / "wide.txt"
             target.write_text("\n".join(f"line {i}" for i in range(1, 61)) + "\n")
 
             with TmuxNvimHarness(self.repo_root, project) as h:
                 h.ex("edit wide.txt")
-                self._submit_review(h, "1,60SherpaReview walk through everything")
-                h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
-                h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session('review').review.items")) >= 2)
+                self._submit_review(h, "1,60StriderReview walk through everything")
+                h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
+                h.wait_until(lambda: int(h.lua("#require('strider.state').get_session('review').review.items")) >= 2)
 
-                planned = h.lua_bool("require('sherpa.state').get_session('review').review.planned")
-                scope = h.lua("require('sherpa.state').get_session('review').review.scope")
-                item_count = int(h.lua("#require('sherpa.state').get_session('review').review.items"))
-                first_why = h.lua("require('sherpa.state').get_session('review').review.items[1].why")
-                review_text = "\n".join(h.buffer_lines("sherpa://review"))
+                planned = h.lua_bool("require('strider.state').get_session('review').review.planned")
+                scope = h.lua("require('strider.state').get_session('review').review.scope")
+                item_count = int(h.lua("#require('strider.state').get_session('review').review.items"))
+                first_why = h.lua("require('strider.state').get_session('review').review.items[1].why")
+                review_text = "\n".join(h.buffer_lines("strider://review"))
 
             self.assertTrue(planned)
             self.assertEqual("selection", scope)
@@ -343,24 +343,24 @@ class PlanHelperTests(unittest.TestCase):
             # TOC is rendered in the sidebar for multi-stop plans
             self.assertIn("## Review plan", review_text)
 
-    # --- free-scope review via /plan + sherpa_plan tool --------------------
+    # --- free-scope review via /plan + strider_plan tool --------------------
 
     def test_ranged_question_renders_inline_answer_annotation(self) -> None:
-        # After a plan lands, asking a ranged :SherpaReview question
+        # After a plan lands, asking a ranged :StriderReview question
         # should stash pending_question and route the streamed answer
         # through capture_ranged_question_answer, producing an inline
         # annotation extmark in the stop's buffer.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            self._submit_review(h, "SherpaReview explain the app")
-            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            self._submit_review(h, "StriderReview explain the app")
+            h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
             h.wait_until(
-                lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
+                lambda: not h.lua_bool("require('strider.review').is_planning()"),
                 timeout=8.0,
             )
             self._advance_to_first_stop(h)
             # Open the active stop's buffer so we can mark a sub-range.
-            current_path_expr = "require('sherpa.state').get_session('review').review.items[1].path"
+            current_path_expr = "require('strider.state').get_session('review').review.items[1].path"
             path = h.lua(current_path_expr)
             h.ex(f"edit {path}")
             # Stash pending_question directly to simulate a ranged ask,
@@ -368,15 +368,15 @@ class PlanHelperTests(unittest.TestCase):
             # Avoids racing the fake pi's reply routing.
             h.lua(
                 "(function() "
-                "  local r = require('sherpa.review').current_item(); "
-                "  require('sherpa.review').begin_ranged_question("
+                "  local r = require('strider.review').current_item(); "
+                "  require('strider.review').begin_ranged_question("
                 "    { path = r.path, startLine = r.startLine, endLine = r.startLine }, "
                 "    'why this line?'); return true "
                 "end)()"
             )
             h.lua(
                 "(function() "
-                "  require('sherpa.review').capture_ranged_question_answer("
+                "  require('strider.review').capture_ranged_question_answer("
                 "    'Inline answer about that one line.', { partial = false }); "
                 "  return true "
                 "end)()"
@@ -385,7 +385,7 @@ class PlanHelperTests(unittest.TestCase):
             # At least one annotation extmark should exist in the buffer.
             count_expr = (
                 "(function() "
-                "  local ns = vim.api.nvim_get_namespaces()['sherpa-annotations']; "
+                "  local ns = vim.api.nvim_get_namespaces()['strider-annotations']; "
                 "  if not ns then return 0 end; "
                 "  local buf = vim.fn.bufnr('%'); "
                 "  if buf <= 0 then return 0 end; "
@@ -395,7 +395,7 @@ class PlanHelperTests(unittest.TestCase):
             h.wait_until(lambda: int(h.lua(count_expr)) >= 1, timeout=3.0)
             # pending_question should be cleared on a final (non-partial) answer.
             cleared = h.lua_bool(
-                "require('sherpa.state').get_session('review').review.pending_question == nil"
+                "require('strider.state').get_session('review').review.pending_question == nil"
             )
             self.assertTrue(cleared, "pending_question should clear on final answer")
 
@@ -405,14 +405,14 @@ class PlanHelperTests(unittest.TestCase):
         # next stop clears the previous buffer's annotations.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            self._submit_review(h, "SherpaReview explain the app")
-            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            self._submit_review(h, "StriderReview explain the app")
+            h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
             h.wait_until(
-                lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
+                lambda: not h.lua_bool("require('strider.review').is_planning()"),
                 timeout=8.0,
             )
             h.wait_until(
-                lambda: int(h.lua("#require('sherpa.state').get_session('review').review.items")) >= 2,
+                lambda: int(h.lua("#require('strider.state').get_session('review').review.items")) >= 2,
                 timeout=8.0,
             )
             self._advance_to_first_stop(h)
@@ -421,7 +421,7 @@ class PlanHelperTests(unittest.TestCase):
             # Count annotation extmarks in that buffer.
             count_expr = (
                 "(function() "
-                "  local ns = vim.api.nvim_get_namespaces()['sherpa-annotations']; "
+                "  local ns = vim.api.nvim_get_namespaces()['strider-annotations']; "
                 "  if not ns then return 0 end; "
                 "  local buf = vim.fn.bufnr('src/main.tsx'); "
                 "  if buf <= 0 then return 0 end; "
@@ -438,7 +438,7 @@ class PlanHelperTests(unittest.TestCase):
 
             # Advance to stop 2 — annotations on main.tsx should clear
             # (stop 2 is in App.tsx, a different buffer).
-            h.ex("SherpaNext")
+            h.ex("StriderNext")
             h.wait_until(lambda: int(h.lua(count_expr)) == 0, timeout=3.0)
 
     def test_plan_time_explanations_land_without_follow_up_review_turn(self) -> None:
@@ -447,22 +447,22 @@ class PlanHelperTests(unittest.TestCase):
         # /review dispatch required.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            self._submit_review(h, "SherpaReview explain the app")
-            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            self._submit_review(h, "StriderReview explain the app")
+            h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
             h.wait_until(
-                lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
+                lambda: not h.lua_bool("require('strider.review').is_planning()"),
                 timeout=8.0,
             )
 
             # Plan is done; pending should be None (no follow-up /review sent).
             h.wait_until(
                 lambda: h.lua_bool(
-                    "require('sherpa.state').peek_pending_request() == nil"
+                    "require('strider.state').peek_pending_request() == nil"
                 ),
                 timeout=4.0,
             )
             explanation = h.lua(
-                "require('sherpa.state').get_session('review').review.items[1].explanation"
+                "require('strider.state').get_session('review').review.items[1].explanation"
             )
 
         self.assertTrue(explanation, "stop 1 should carry a pre-computed explanation")
@@ -472,46 +472,46 @@ class PlanHelperTests(unittest.TestCase):
 
     def test_first_line_stops_render_visible_inline_help(self) -> None:
         # A stop anchored at line 1 cannot render its explanation above the
-        # first line and still be visible in-window. Sherpa should place the
+        # first line and still be visible in-window. Strider should place the
         # block where the user can actually see it for the first stop in each
         # file.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            self._submit_review(h, "SherpaReview explain the app")
-            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
+            self._submit_review(h, "StriderReview explain the app")
+            h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
             h.wait_until(
-                lambda: not h.lua_bool("require('sherpa.review').is_planning()"),
+                lambda: not h.lua_bool("require('strider.review').is_planning()"),
                 timeout=8.0,
             )
             self._advance_to_first_stop(h)
 
-            h.wait_until(lambda: "┌─ sherpa" in h.capture_pane(), timeout=3.0)
+            h.wait_until(lambda: "┌─ strider" in h.capture_pane(), timeout=3.0)
 
-            h.ex("SherpaNext")
+            h.ex("StriderNext")
             h.wait_until(
-                lambda: int(h.lua("require('sherpa.state').get_session('review').review.current_index")) == 2,
+                lambda: int(h.lua("require('strider.state').get_session('review').review.current_index")) == 2,
                 timeout=5.0,
             )
             h.wait_until(lambda: "src/App.tsx" in h.current_state()["buf"], timeout=3.0)
-            h.wait_until(lambda: "┌─ sherpa" in h.capture_pane(), timeout=3.0)
+            h.wait_until(lambda: "┌─ strider" in h.capture_pane(), timeout=3.0)
 
     def test_free_scope_review_ingests_plan_tool_output(self) -> None:
         # fixture app has src/main.tsx + src/App.tsx; fake_pi.plan_response
-        # emits a 2-stop sherpa_plan tool call for this project.
+        # emits a 2-stop strider_plan tool call for this project.
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:
-            self._submit_review(h, "SherpaReview explain the app")
+            self._submit_review(h, "StriderReview explain the app")
 
             # Wait for the plan to land and planning to finish.
-            h.wait_until(lambda: h.lua_bool("require('sherpa.review').has_active_review()"))
-            h.wait_until(lambda: not h.lua_bool("require('sherpa.review').is_planning()"), timeout=8.0)
-            h.wait_until(lambda: int(h.lua("#require('sherpa.state').get_session('review').review.items")) >= 2, timeout=8.0)
+            h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
+            h.wait_until(lambda: not h.lua_bool("require('strider.review').is_planning()"), timeout=8.0)
+            h.wait_until(lambda: int(h.lua("#require('strider.state').get_session('review').review.items")) >= 2, timeout=8.0)
 
-            scope = h.lua("require('sherpa.state').get_session('review').review.scope")
-            planned = h.lua_bool("require('sherpa.state').get_session('review').review.planned")
-            item_count = int(h.lua("#require('sherpa.state').get_session('review').review.items"))
-            first_why = h.lua("require('sherpa.state').get_session('review').review.items[1].why")
-            current_index = int(h.lua("require('sherpa.state').get_session('review').review.current_index"))
+            scope = h.lua("require('strider.state').get_session('review').review.scope")
+            planned = h.lua_bool("require('strider.state').get_session('review').review.planned")
+            item_count = int(h.lua("#require('strider.state').get_session('review').review.items"))
+            first_why = h.lua("require('strider.state').get_session('review').review.items[1].why")
+            current_index = int(h.lua("require('strider.state').get_session('review').review.current_index"))
 
         self.assertTrue(planned)
         self.assertEqual("free", scope)
@@ -520,7 +520,7 @@ class PlanHelperTests(unittest.TestCase):
         self.assertEqual(0, current_index)
 
     def test_ranges_cover_detects_gap(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="sherpa-plan-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="strider-plan-") as tmp:
             project = Path(tmp)
             (project / "placeholder.txt").write_text("x\n")
 
@@ -528,7 +528,7 @@ class PlanHelperTests(unittest.TestCase):
                 # target [1,20] covered by [1,5] and [10,20] → gap at 6-9
                 ok_raw = h.expr(
                     "luaeval(\""
-                    "(function() local r = require('sherpa.review'); "
+                    "(function() local r = require('strider.review'); "
                     "local ok, gaps = r._ranges_cover("
                     "  {{path='/x', startLine=1, endLine=20}},"
                     "  {{path='/x', startLine=1, endLine=5}, {path='/x', startLine=10, endLine=20}}"

@@ -1,6 +1,6 @@
-local picker = require("sherpa.picker")
-local state = require("sherpa.state")
-local ui = require("sherpa.ui")
+local picker = require("strider.picker")
+local state = require("strider.state")
+local ui = require("strider.ui")
 
 local M = {}
 
@@ -129,7 +129,7 @@ end
 
 local function store_quickfix(result_set, open)
   ui.set_quickfix(
-    "Sherpa Search: " .. truncate(result_set.prompt or "results", 50),
+    "Strider Search: " .. truncate(result_set.prompt or "results", 50),
     quickfix_items(result_set.results),
     open
   )
@@ -141,7 +141,7 @@ local function present_result_set(result_set)
   if picker.available() then
     local items = M.picker_items(result_set.results)
     store_quickfix(result_set, false)
-    return picker.select("Sherpa Search Results", items, function(item)
+    return picker.select("Strider Search Results", items, function(item)
       M.open_result(item.value, result_set.lane)
     end)
   end
@@ -179,7 +179,7 @@ function M.handle_response(text, metadata, lane)
   if not session then
     return nil
   end
-  local prompt = metadata and metadata.prompt or "Sherpa search"
+  local prompt = metadata and metadata.prompt or "Strider search"
   local results = {}
 
   for _, line in ipairs(vim.split(text or "", "\n", { plain = true })) do
@@ -205,7 +205,7 @@ function M.handle_response(text, metadata, lane)
   end
 
   if #results == 0 then
-    ui.notify("Sherpa search returned no structured results", vim.log.levels.INFO)
+    ui.notify("Strider search returned no structured results", vim.log.levels.INFO)
     return result_set
   end
 
@@ -215,16 +215,16 @@ end
 
 function M.summary_text(result_set)
   if not result_set then
-    return "Sherpa search finished."
+    return "Strider search finished."
   end
   local count = #(result_set.results or {})
   if count == 0 then
-    return string.format("Sherpa search: no matches for '%s'", result_set.prompt or "search")
+    return string.format("Strider search: no matches for '%s'", result_set.prompt or "search")
   end
   if count == 1 then
-    return string.format("Sherpa search: 1 match for '%s'", result_set.prompt or "search")
+    return string.format("Strider search: 1 match for '%s'", result_set.prompt or "search")
   end
-  return string.format("Sherpa search: %d matches for '%s'", count, result_set.prompt or "search")
+  return string.format("Strider search: %d matches for '%s'", count, result_set.prompt or "search")
 end
 
 function M.last_result_set(lane)
@@ -235,7 +235,7 @@ end
 function M.history_picker(lane)
   local session = state.get_session(normalize_lane(lane))
   if not session then
-    ui.notify("No Sherpa searches recorded yet", vim.log.levels.WARN)
+    ui.notify("No Strider searches recorded yet", vim.log.levels.WARN)
     return false
   end
   local items = {}
@@ -247,11 +247,11 @@ function M.history_picker(lane)
   end
 
   if #items == 0 then
-    ui.notify("No Sherpa searches recorded yet", vim.log.levels.WARN)
+    ui.notify("No Strider searches recorded yet", vim.log.levels.WARN)
     return false
   end
 
-  return picker.select("Sherpa Searches", items, function(item)
+  return picker.select("Strider Searches", items, function(item)
     M.open_result_set(item.value, lane)
   end)
 end

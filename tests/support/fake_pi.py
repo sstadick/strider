@@ -127,10 +127,10 @@ def diff_stub(before: str, after: str, line: int) -> str:
     return f"-{line} {old}"
 
 
-def emit_sherpa_plan(stops: list, scope: str = "free", base=None) -> None:
-    """Emit a sherpa_plan tool call + end event carrying the plan args.
+def emit_strider_plan(stops: list, scope: str = "free", base=None) -> None:
+    """Emit a strider_plan tool call + end event carrying the plan args.
 
-    Mirrors the shape the real pi extension's sherpa_plan tool produces so
+    Mirrors the shape the real pi extension's strider_plan tool produces so
     rpc.lua's handle_tool_end can ingest it without needing the real agent.
     """
     tool_id = next_tool_id()
@@ -139,13 +139,13 @@ def emit_sherpa_plan(stops: list, scope: str = "free", base=None) -> None:
         args["base"] = base
     emit({
         "type": "tool_execution_start",
-        "toolName": "sherpa_plan",
+        "toolName": "strider_plan",
         "toolCallId": tool_id,
         "args": args,
     })
     emit({
         "type": "tool_execution_end",
-        "toolName": "sherpa_plan",
+        "toolName": "strider_plan",
         "toolCallId": tool_id,
         "result": {"content": [{"type": "text", "text": f"ok: {len(stops)} stop(s)"}]},
     })
@@ -243,15 +243,15 @@ def review_response(message: str) -> str:
     lower = message.lower()
     if "<review_comments>" in lower:
         return "I found unresolved review comments. The main follow-up is to clarify the reviewed code and keep the intent documented."
-    if "pi extension" in lower and project_has("pi/sherpa-stepper.ts"):
-        emit_read(Path.cwd() / "pi" / "sherpa-stepper.ts", offset=1, limit=20)
-        return "This stop focuses on the pi extension entrypoint and the explicit Sherpa commands it registers."
+    if "pi extension" in lower and project_has("pi/strider-stepper.ts"):
+        emit_read(Path.cwd() / "pi" / "strider-stepper.ts", offset=1, limit=20)
+        return "This stop focuses on the pi extension entrypoint and the explicit Strider commands it registers."
     if "src/main.tsx" in lower and project_has("src/main.tsx"):
         emit_read(Path.cwd() / "src" / "main.tsx", offset=1, limit=20)
         return "This stop focuses on src/main.tsx because it bootstraps the React app and renders App into the root node."
     if ("repo" in lower or "project" in lower) and project_has("readme.md"):
         emit_read(Path.cwd() / "README.md", offset=1, limit=20)
-        return "This stop starts at the top-level README because it explains the plugin surface and how Sherpa is intended to be used."
+        return "This stop starts at the top-level README because it explains the plugin surface and how Strider is intended to be used."
     if "main.py" in lower or "greet" in lower:
         if project_has("main.py"):
             emit_read(Path.cwd() / "main.py", offset=1, limit=20)
@@ -333,7 +333,7 @@ def plan_response(message: str) -> str:
             "explanation": "Opening section of the test fixture file. Used to exercise the review pane's rendering for long-line content.",
         })
     if stops:
-        emit_sherpa_plan(stops, scope="free")
+        emit_strider_plan(stops, scope="free")
     return "Plan ready."
 
 
@@ -358,12 +358,12 @@ def prompt_response(message: str) -> str:
         )
         emit_tool_output(
             "find",
-            {"pattern": "*.lua", "path": "lua/sherpa", "limit": 3},
-            "lua/sherpa/rpc.lua\nlua/sherpa/ui.lua",
+            {"pattern": "*.lua", "path": "lua/strider", "limit": 3},
+            "lua/strider/rpc.lua\nlua/strider/ui.lua",
         )
         emit_tool_output(
             "ls",
-            {"path": "lua/sherpa", "limit": 2},
+            {"path": "lua/strider", "limit": 2},
             "rpc.lua\nui.lua",
         )
         return "Finished tool argument header pass."
@@ -462,7 +462,7 @@ def handle_command(payload: dict) -> None:
         return
 
     if cmd_type == "export_html":
-        emit(response_with_data(req_id, {"path": "/tmp/sherpa-export.html"}, cmd_type))
+        emit(response_with_data(req_id, {"path": "/tmp/strider-export.html"}, cmd_type))
         return
 
     if cmd_type == "switch_session":

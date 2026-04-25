@@ -10,7 +10,7 @@ from tests.support.tmux_nvim import TmuxNvimHarness
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Launch a Sherpa tmux+nvim session")
+    parser = argparse.ArgumentParser(description="Launch a Strider tmux+nvim session")
     parser.add_argument("--project", type=Path, required=True, help="Project root to open in Neovim")
     parser.add_argument("--real-pi", action="store_true", help="Use the real pi backend instead of the fake test backend")
     args = parser.parse_args()

@@ -17,7 +17,7 @@ end
 local defaults = {
   auto_jump = true,
   extension_path = nil,
-  log_buffer_name = "sherpa://log",
+  log_buffer_name = "strider://log",
   log_max_lines = 5000,
   log_pin_max_rows = 5,
   log_pin_user_message = true,
@@ -146,7 +146,7 @@ function M.next_request_id(lane)
     return nil
   end
   session.request_seq = session.request_seq + 1
-  return string.format("sherpa-%s-%d", normalize_lane(lane), session.request_seq)
+  return string.format("strider-%s-%d", normalize_lane(lane), session.request_seq)
 end
 
 function M.record_file(path, lane)
@@ -232,7 +232,7 @@ function M.consume_pending_request(lane)
   return pending
 end
 
--- Pending clarify: when the model calls sherpa_clarify (question kind),
+-- Pending clarify: when the model calls strider_clarify (question kind),
 -- the plugin stashes the extension_ui_request id + title here and
 -- routes the next compose send back as the clarify reply. Cleared by
 -- dispatch_compose (on answer) or by <Esc><Esc> in compose (on reject).

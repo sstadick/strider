@@ -1,4 +1,4 @@
-# Sherpa patch demo — edits app.py via :SherpaPatch on a visual-line selection.
+# Strider patch demo — edits app.py via :StriderPatch on a visual-line selection.
 #
 # Run from the repo root:   vhs recordings/vhs/patch.tape
 
@@ -37,7 +37,7 @@ Type "V"
 Sleep 2200ms
 
 # Type the patch command so the viewer can read it on the cmdline.
-Type ":SherpaPatch change the greeting literal from hi to hello"
+Type ":StriderPatch change the greeting literal from hi to hello"
 Sleep 2800ms
 Enter
 

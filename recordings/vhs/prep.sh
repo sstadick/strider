@@ -36,7 +36,7 @@ if [[ "$want_git" -eq 1 ]]; then
     cd "$dst"
     git init -q
     git config user.email "demo@example.com"
-    git config user.name "Sherpa Demo"
+    git config user.name "Strider Demo"
     git add .
     git commit -qm "base"
   )

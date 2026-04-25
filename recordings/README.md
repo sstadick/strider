@@ -1,4 +1,4 @@
-# Sherpa demos
+# Strider demos
 
 GIF demos rendered with [vhs](https://github.com/charmbracelet/vhs). Each
 scenario is a `.tape` script under `recordings/vhs/` that drives a real
@@ -26,17 +26,17 @@ Output gif lands next to the tape name, e.g. `recordings/patch.gif`.
 
 ## Demos
 
-- `search.gif` — `:SherpaSearch` jumps to the entrypoint
-- `review-file.gif` — `:SherpaReview file`, `:SherpaNext!` acceptance, `:SherpaStatus`, and `:SherpaPrev`
-- `review-diff.gif` — `:SherpaReview diff` on an uncommitted change
-- `review-searches.gif` — chain a search into `:SherpaReview searches`
+- `search.gif` — `:StriderSearch` jumps to the entrypoint
+- `review-file.gif` — `:StriderReview file`, `:StriderNext!` acceptance, `:StriderStatus`, and `:StriderPrev`
+- `review-diff.gif` — `:StriderReview diff` on an uncommitted change
+- `review-searches.gif` — chain a search into `:StriderReview searches`
 - `review-selection.gif` — ask about a visual range inside an active review
-- `review-comment.gif` — leave a multi-line comment with the `:SherpaComment` editor
-- `review-popup.gif` — `:SherpaReview` with no args opens the floating editor; first word picks the scope, then a follow-up shows the in-review question editor
-- `patch.gif` — `:SherpaPatch` on a visual-line selection
-- `chat-review.gif` — `:SherpaChat` followed by reviewing the resulting diff
+- `review-comment.gif` — leave a multi-line comment with the `:StriderComment` editor
+- `review-popup.gif` — `:StriderReview` with no args opens the floating editor; first word picks the scope, then a follow-up shows the in-review question editor
+- `patch.gif` — `:StriderPatch` on a visual-line selection
+- `chat-review.gif` — `:StriderChat` followed by reviewing the resulting diff
 - `reasoning-log.gif` — a chat turn showing faint reasoning text, compact tool output, inline diff rows, and the final answer
-- `tangent.gif` — `:SherpaQ` opens a flow-lane tangent, asks an unrelated question, and keeps the main chat surfaces out of the way
+- `tangent.gif` — `:StriderQ` opens a flow-lane tangent, asks an unrelated question, and keeps the main chat surfaces out of the way
 
 ## How it works
 
@@ -45,7 +45,7 @@ Each tape:
 1. Uses `recordings/vhs/prep.sh <scenario> <fixture> [--git|--diff]` to copy a
    fixture from `tests/fixtures/` into `recordings/_workspace/<scenario>`.
 2. Launches Neovim via `recordings/vhs/run-nvim.sh`, which wires up the
-   fake pi (`SHERPA_TEST_REAL_PI=0`) and the repo-local `minimal_init.lua`.
+   fake pi (`STRIDER_TEST_REAL_PI=0`) and the repo-local `minimal_init.lua`.
 3. Drives the UI with `Type` / `Sleep` / `Enter` directives.
 
 The prep + launch steps run inside a `Hide` block so the rendered gif opens

@@ -1,4 +1,4 @@
-# Sherpa reasoning-log demo — show faint reasoning text landing in the log
+# Strider reasoning-log demo — show faint reasoning text landing in the log
 # before tool output and the final assistant summary.
 # Run:   vhs recordings/vhs/reasoning-log.tape
 
@@ -23,7 +23,7 @@ Show
 Sleep 1500ms
 
 # Run a chat turn that emits reasoning, tool activity, and a final answer.
-Type ":SherpaChat add a banner"
+Type ":StriderChat add a banner"
 Sleep 1600ms
 Enter
 Sleep 5000ms

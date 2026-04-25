@@ -3,9 +3,9 @@ import { Type } from "@sinclair/typebox";
 
 type OperationKind = "search" | "review" | "patch" | "prompt" | "plan";
 
-type SherpaState = {
+type StriderState = {
 	activeOperation?: OperationKind;
-	// Budget: at most one sherpa_clarify call per user request. Reset in
+	// Budget: at most one strider_clarify call per user request. Reset in
 	// startOperation so the next /prompt or /patch starts fresh.
 	clarifyCount: number;
 	// Accumulated cost ($) across assistant turns in this session. Pi
@@ -14,7 +14,7 @@ type SherpaState = {
 	sessionCost: number;
 };
 
-function emptyState(): SherpaState {
+function emptyState(): StriderState {
 	return {
 		clarifyCount: 0,
 		sessionCost: 0,
@@ -29,7 +29,7 @@ function collapseWhitespace(text?: string): string | undefined {
 
 function explicitReviewRules(): string[] {
 	return [
-		"You are operating in explicit Sherpa review mode.",
+		"You are operating in explicit Strider review mode.",
 		"This mode is read-only. Do not use edit or write.",
 		"Answer clearly and directly.",
 		"If more context is needed, inspect only nearby code or the smallest relevant surface.",
@@ -41,7 +41,7 @@ function explicitReviewRules(): string[] {
 
 function searchRules(): string[] {
 	return [
-		"You are operating in Sherpa search mode.",
+		"You are operating in Strider search mode.",
 		"This mode is read-only. Do not use edit or write.",
 		"Prefer a broad `bash` ripgrep (`rg`) or `grep` as the first pass over multiple `read`s — one grep across the repo is usually faster than opening several candidate files.",
 		"Return only matching locations in this exact format:",
@@ -65,7 +65,7 @@ function promptRules(): string[] {
 
 function patchRules(): string[] {
 	return [
-		"You are operating in Sherpa patch mode.",
+		"You are operating in Strider patch mode.",
 		"Treat the provided file and range as a strong edit boundary.",
 		"Prefer changing only the smallest necessary local region.",
 		"Do not expand the edit to other files unless the user explicitly requires it.",
@@ -75,14 +75,14 @@ function patchRules(): string[] {
 
 function planRules(): string[] {
 	return [
-		"You are operating in Sherpa plan mode.",
-		"Your only job this turn is to produce a complete review plan by calling the `sherpa_plan` tool exactly once.",
-		"Read whatever files you need first to understand the user's goal, then call sherpa_plan.",
+		"You are operating in Strider plan mode.",
+		"Your only job this turn is to produce a complete review plan by calling the `strider_plan` tool exactly once.",
+		"Read whatever files you need first to understand the user's goal, then call strider_plan.",
 		"Classify the review in the tool call: scope is 'selection' (user gave a range), 'diff' (user wants changes vs a branch/base — include the base ref), or 'free' (open-ended).",
 		"Stops must be small — keep each stop ≤ 40 lines. Order them pedagogically (foundations → consumers → tests), not in discovery order.",
 		"For 'selection' and 'diff' scopes, the union of stops must cover every line in the selected range / every changed line in the diff.",
 		"",
-		"LINE NUMBERS — read carefully. Your line numbers must be absolute file line numbers matching the actual file content. Do NOT use offsets relative to the stop's start. If you haven't read the exact range in this turn, read it before writing the plan — do not guess. For each stop you MUST include a `firstLineText` field containing the verbatim (trimmed) content of the file at `startLine`; Sherpa uses it to self-correct if your numbers are off.",
+		"LINE NUMBERS — read carefully. Your line numbers must be absolute file line numbers matching the actual file content. Do NOT use offsets relative to the stop's start. If you haven't read the exact range in this turn, read it before writing the plan — do not guess. For each stop you MUST include a `firstLineText` field containing the verbatim (trimmed) content of the file at `startLine`; Strider uses it to self-correct if your numbers are off.",
 		"",
 		"Each stop requires three tiers of detail, written for different surfaces:",
 		"  - `title` — short label for the sidebar and TOC",
@@ -96,7 +96,7 @@ function planRules(): string[] {
 		"  - `kind: 'line'` with `line` renders an end-of-line inline comment on a single line.",
 		"Annotation budget (strict): at most one `kind: 'block'` annotation per stop, and at most 25% of the stop's lines may receive a `kind: 'line'` annotation. Use them only when a specific line or sub-range carries real insight — skip them otherwise.",
 		"",
-		"Do NOT write a long prose reply outside the tool call — all explanations live inside `sherpa_plan`.",
+		"Do NOT write a long prose reply outside the tool call — all explanations live inside `strider_plan`.",
 	];
 }
 
@@ -202,30 +202,30 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function updateWidget(ctx: any) {
-		ctx.ui.setWidget("sherpa", renderStatus(ctx));
-		ctx.ui.setStatus("sherpa", state.activeOperation ? `${state.activeOperation} active` : "idle");
+		ctx.ui.setWidget("strider", renderStatus(ctx));
+		ctx.ui.setStatus("strider", state.activeOperation ? `${state.activeOperation} active` : "idle");
 	}
 
-	// Sherpa-owned tools whose validity is operation-scoped. These are
+	// Strider-owned tools whose validity is operation-scoped. These are
 	// always registered (pi's registerTool is load-time only), but we
 	// toggle which ones are *active* per turn via pi.setActiveTools so
 	// the model only sees them when they'd actually do something.
 	//
-	// Without this gating, the model tends to call sherpa_plan during
+	// Without this gating, the model tends to call strider_plan during
 	// prose turns because the tool name is suggestive — the call
 	// quietly no-ops on our side but wastes tokens and looks weird in
 	// the transcript.
-	const SHERPA_OP_SCOPED_TOOLS = new Set(["sherpa_plan", "sherpa_append_stops"]);
+	const STRIDER_OP_SCOPED_TOOLS = new Set(["strider_plan", "strider_append_stops"]);
 
 	function toolsForOperation(allNames: string[], kind?: OperationKind): string[] {
 		const keep = (name: string): boolean => {
-			if (!SHERPA_OP_SCOPED_TOOLS.has(name)) return true;   // non-scoped tools always active
-			if (name === "sherpa_plan") return kind === "plan";
-			// sherpa_append_stops is only meaningful during plan (appending
+			if (!STRIDER_OP_SCOPED_TOOLS.has(name)) return true;   // non-scoped tools always active
+			if (name === "strider_plan") return kind === "plan";
+			// strider_append_stops is only meaningful during plan (appending
 			// to the plan being built) or during a /review turn on a free-
 			// scope review. We enable it for both — the Lua side silently
 			// rejects appends on non-free scopes so the overreach is safe.
-			if (name === "sherpa_append_stops") return kind === "plan" || kind === "review";
+			if (name === "strider_append_stops") return kind === "plan" || kind === "review";
 			return false;
 		};
 		return allNames.filter(keep);
@@ -266,7 +266,7 @@ export default function (pi: ExtensionAPI) {
 	function sendOperationMessage(kind: OperationKind, ctx: any, message: string) {
 		if (!agentIsIdle(ctx)) {
 			const active = state.activeOperation ? ` (${state.activeOperation})` : "";
-			ctx.ui.notify(`Sherpa is already running${active}; wait for it to finish.`, "warning");
+			ctx.ui.notify(`Strider is already running${active}; wait for it to finish.`, "warning");
 			return;
 		}
 		startOperation(kind, ctx);
@@ -283,12 +283,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (event: any, ctx: any) => {
 		state = emptyState();
-		// Start with Sherpa's op-scoped tools hidden. They'll be turned
+		// Start with Strider's op-scoped tools hidden. They'll be turned
 		// on by startOperation when a command that needs them runs.
 		applyOperationTools(ctx, undefined);
 		updateWidget(ctx);
 		if (event.reason === "new" || event.reason === "fork" || event.reason === "resume") {
-			ctx.ui.setStatus("sherpa-session", event.reason);
+			ctx.ui.setStatus("strider-session", event.reason);
 		}
 	});
 
@@ -296,13 +296,13 @@ export default function (pi: ExtensionAPI) {
 		if (readOnlyOperation()) {
 			if (event.toolName === "edit" || event.toolName === "write") {
 				ctx.ui.notify(`Blocked write tool in ${state.activeOperation} mode: ${event.toolName}`, "warning");
-				return { block: true, reason: `Sherpa ${state.activeOperation} mode is read-only. Do not edit or write files.` };
+				return { block: true, reason: `Strider ${state.activeOperation} mode is read-only. Do not edit or write files.` };
 			}
 			if (event.toolName === "bash" && !isSafeReadOnlyBash(event.input?.command)) {
 				ctx.ui.notify(`Blocked unsafe bash command in ${state.activeOperation} mode`, "warning");
 				return {
 					block: true,
-					reason: `Sherpa ${state.activeOperation} mode only allows safe read-only inspection commands. Use read, rg, grep, find, ls, tree, or git read-only inspection.`,
+					reason: `Strider ${state.activeOperation} mode only allows safe read-only inspection commands. Use read, rg, grep, find, ls, tree, or git read-only inspection.`,
 				};
 			}
 		}
@@ -376,14 +376,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
-		name: "sherpa_plan",
-		label: "Sherpa plan",
-		description: "Submit the review plan for a Sherpa review. Must be called exactly once during plan mode.",
+		name: "strider_plan",
+		label: "Strider plan",
+		description: "Submit the review plan for a Strider review. Must be called exactly once during plan mode.",
 		parameters: planSchema,
-		promptSnippet: "sherpa_plan: submit the review plan during Sherpa plan mode.",
+		promptSnippet: "strider_plan: submit the review plan during Strider plan mode.",
 		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, _ctx: any) {
 			if (params.scope === "diff" && !params.base) {
-				throw new Error("sherpa_plan: base is required when scope='diff'");
+				throw new Error("strider_plan: base is required when scope='diff'");
 			}
 			return {
 				content: [{ type: "text", text: `ok: ${params.stops.length} stop(s)` }],
@@ -397,11 +397,11 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
-		name: "sherpa_append_stops",
-		label: "Sherpa append stops",
-		description: "Append new stops to an active free-scope Sherpa review. Only valid mid-review on free-scope plans.",
+		name: "strider_append_stops",
+		label: "Strider append stops",
+		description: "Append new stops to an active free-scope Strider review. Only valid mid-review on free-scope plans.",
 		parameters: appendStopsSchema,
-		promptSnippet: "sherpa_append_stops: append stops to a free-scope Sherpa review in progress.",
+		promptSnippet: "strider_append_stops: append stops to a free-scope Strider review in progress.",
 		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, _ctx: any) {
 			return {
 				content: [{ type: "text", text: `ok: appended ${params.stops.length} stop(s)` }],
@@ -426,13 +426,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
-		name: "sherpa_clarify",
-		label: "Sherpa clarify",
+		name: "strider_clarify",
+		label: "Strider clarify",
 		description:
 			"Pause the current turn and ask the user for clarification, approval of a proposed plan, or confirmation of a destructive action. Available during /prompt and /patch. Use sparingly — prefer action over questions. Only clarify when a specific ambiguity would change your approach non-trivially. If the user cancels, stop work and explain what you were asking — do NOT proceed with a guess.",
 		parameters: clarifySchema,
 		promptSnippet:
-			"sherpa_clarify: pause and ask the user (question / plan_proposal / confirm) when truly ambiguous.",
+			"strider_clarify: pause and ask the user (question / plan_proposal / confirm) when truly ambiguous.",
 		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: any) {
 			const text = (s: string) => ({
 				content: [{ type: "text", text: s }],
@@ -441,7 +441,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (state.clarifyCount >= 1) {
 				throw new Error(
-					"sherpa_clarify: budget exhausted for this request. Proceed with your best interpretation and summarize the ambiguity in your final reply.",
+					"strider_clarify: budget exhausted for this request. Proceed with your best interpretation and summarize the ambiguity in your final reply.",
 				);
 			}
 			state.clarifyCount += 1;
@@ -463,7 +463,7 @@ export default function (pi: ExtensionAPI) {
 			let title = params.title;
 			let prefill = "";
 			if (params.kind === "plan_proposal") {
-				title = `[sherpa-plan-proposal] ${params.title}`;
+				title = `[strider-plan-proposal] ${params.title}`;
 				prefill = params.body;
 			}
 			const answer = await ctx.ui.editor(title, prefill);
@@ -475,7 +475,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("plan", {
-		description: "Produce a Sherpa review plan",
+		description: "Produce a Strider review plan",
 		handler: async (args: any, ctx: any) => {
 			const request = args?.trim();
 			if (!request) {
@@ -487,7 +487,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("review", {
-		description: "Run an explicit Sherpa review request",
+		description: "Run an explicit Strider review request",
 		handler: async (args: any, ctx: any) => {
 			const request = args?.trim();
 			if (!request) {
@@ -499,7 +499,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("search", {
-		description: "Run a Sherpa structured code search",
+		description: "Run a Strider structured code search",
 		handler: async (args: any, ctx: any) => {
 			const request = args?.trim();
 			if (!request) {
@@ -511,7 +511,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("prompt", {
-		description: "Run a Sherpa prompt — plain agent turn with clarify available",
+		description: "Run a Strider prompt — plain agent turn with clarify available",
 		handler: async (args: any, ctx: any) => {
 			const request = args?.trim();
 			if (!request) {
@@ -523,7 +523,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("patch", {
-		description: "Run a Sherpa local patch request",
+		description: "Run a Strider local patch request",
 		handler: async (args: any, ctx: any) => {
 			const request = args?.trim();
 			if (!request) {

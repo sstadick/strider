@@ -1,8 +1,8 @@
-local picker = require("sherpa.picker")
-local review = require("sherpa.review")
-local search = require("sherpa.search")
-local state = require("sherpa.state")
-local ui = require("sherpa.ui")
+local picker = require("strider.picker")
+local review = require("strider.review")
+local search = require("strider.search")
+local state = require("strider.state")
+local ui = require("strider.ui")
 
 local M = {}
 
@@ -30,7 +30,7 @@ end
 local function command_list()
   local config = state.get_config()
   local cmd = vim.deepcopy(config.pi_cmd)
-  local extension = config.extension_path or (config.plugin_root .. "/pi/sherpa-stepper.ts")
+  local extension = config.extension_path or (config.plugin_root .. "/pi/strider-stepper.ts")
   vim.list_extend(cmd, { "--mode", "rpc", "--extension", extension })
   return cmd
 end
@@ -180,11 +180,11 @@ local function text_content(message)
   return table.concat(parts, "\n")
 end
 
-local function strip_sherpa_footer(text)
+local function strip_strider_footer(text)
   if not text then
     return nil
   end
-  local cleaned = text:gsub("\n?<SHERPA_STATUS>.-</SHERPA_STATUS>%s*$", "")
+  local cleaned = text:gsub("\n?<STRIDER_STATUS>.-</STRIDER_STATUS>%s*$", "")
   cleaned = vim.trim(cleaned)
   return cleaned ~= "" and cleaned or text
 end
@@ -264,7 +264,7 @@ end
 -- Without a handler here, these silently evaporate and the log just
 -- hangs on "Waiting for assistant response...".
 local function handle_extension_error(event, lane)
-  local reason = event.error or "Sherpa extension error"
+  local reason = event.error or "Strider extension error"
   -- Collapse multi-line reasons to the first non-empty line for the
   -- notify + activity echo; put the full text in the [error] block so
   -- detail isn't lost.
@@ -400,30 +400,30 @@ local function notify_turn_done(pending, lane)
   if not pending then return end
   local op = pending.operation
   -- Flow-lane operations: always leave a bottom-left completion cue.
-  -- The popup-style notify is still skipped when SherpaLogFlow is visible,
+  -- The popup-style notify is still skipped when StriderLogFlow is visible,
   -- but the command-line green dot remains so completion is not silent.
   if state.is_flow_operation(op) then
     local messages = {
-      q = "SherpaQ answer is ready",
-      search = "SherpaSearch complete",
-      patch = "SherpaPatch complete",
+      q = "StriderQ answer is ready",
+      search = "StriderSearch complete",
+      patch = "StriderPatch complete",
     }
-    ui.notify_flow_done(messages[op] or "Sherpa flow complete", {
+    ui.notify_flow_done(messages[op] or "Strider flow complete", {
       notify = not ui.log_is_visible("flow"),
     })
     return
   end
-  -- Chat (main lane): notify when SherpaLog isn't visible.
+  -- Chat (main lane): notify when StriderLog isn't visible.
   if lane == "main" then
     if ui.log_is_visible("main") then return end
-    ui.notify("Sherpa chat complete", vim.log.levels.INFO)
+    ui.notify("Strider chat complete", vim.log.levels.INFO)
   end
   -- Review pops up on its own, no notify needed.
 end
 
 local function handle_message_end(event, lane)
   local message = event.message
-  local text = strip_sherpa_footer(text_content(message))
+  local text = strip_strider_footer(text_content(message))
   local pending = state.peek_pending_request(lane)
   local session = state.get_session(lane)
 
@@ -473,13 +473,13 @@ local function handle_message_end(event, lane)
       ui.append_block("assistant", text, lane)
     end
     if review.has_active_review() and review.is_planning() then
-      ui.notify("Sherpa could not produce a plan — try rephrasing.", vim.log.levels.ERROR)
-      ui.finish_activity("Sherpa plan failed", "error", lane)
+      ui.notify("Strider could not produce a plan — try rephrasing.", vim.log.levels.ERROR)
+      ui.finish_activity("Strider plan failed", "error", lane)
       return
     end
-    ui.finish_activity("Sherpa plan complete", "success", lane)
+    ui.finish_activity("Strider plan complete", "success", lane)
     vim.schedule(function()
-      local ok, mod = pcall(require, "sherpa")
+      local ok, mod = pcall(require, "strider")
       if ok and mod and mod.dispatch_first_review then
         mod.dispatch_first_review()
       end
@@ -488,7 +488,7 @@ local function handle_message_end(event, lane)
   end
 
   if not text then
-    ui.finish_activity("Sherpa request complete (no text)", "success", lane)
+    ui.finish_activity("Strider request complete (no text)", "success", lane)
     notify_turn_done(pending, lane)
     return
   end
@@ -512,11 +512,11 @@ local function handle_message_end(event, lane)
     review.capture_assistant_text(text)
   end
 
-  ui.finish_activity("Sherpa request complete", "success", lane)
+  ui.finish_activity("Strider request complete", "success", lane)
   notify_turn_done(pending, lane)
   if completing_review_summary then
     vim.schedule(function()
-      local ok, mod = pcall(require, "sherpa")
+      local ok, mod = pcall(require, "strider")
       if ok and mod and mod.complete_review_summary then
         mod.complete_review_summary(text)
       end
@@ -632,9 +632,9 @@ local function handle_tool_start(event, lane)
   -- disconnects headers from results when tools run in parallel).
   ui.mark_tool_header(event.toolCallId, lane)
 
-  -- Cache args for Sherpa planning tools — tool_execution_end events do not
+  -- Cache args for Strider planning tools — tool_execution_end events do not
   -- carry args, so we have to capture them here while they're available.
-  if (event.toolName == "sherpa_plan" or event.toolName == "sherpa_append_stops")
+  if (event.toolName == "strider_plan" or event.toolName == "strider_append_stops")
       and event.toolCallId then
     session.tool_args[event.toolCallId] = event.args
   end
@@ -644,7 +644,7 @@ local function handle_tool_start(event, lane)
     return
   end
   state.record_file(path, lane)
-  -- Do not auto-jump for model tool reads. Sherpa review navigation is the
+  -- Do not auto-jump for model tool reads. Strider review navigation is the
   -- only flow that should move the user's code window mechanically; prompt /
   -- chat tool use should leave the coding pane where it is.
 end
@@ -734,7 +734,7 @@ local function handle_tool_end(event, lane)
 
   -- Render textual output for tools where seeing the content helps the
   -- user follow along (everything except edit, which renders inline diff
-  -- rows below, and Sherpa's internal planning tools which carry structured
+  -- rows below, and Strider's internal planning tools which carry structured
   -- payloads rather than user-facing text). For read/write we pass a
   -- language tag so the content is fenced and treesitter +
   -- render-markdown can syntax-highlight it; bash/grep/find/ls render
@@ -753,8 +753,8 @@ local function handle_tool_end(event, lane)
     end
   end
 
-  -- Sherpa planning tools carry their payload in args captured at start time.
-  if event.toolName == "sherpa_plan" then
+  -- Strider planning tools carry their payload in args captured at start time.
+  if event.toolName == "strider_plan" then
     local args = consume_tool_args(session, event) or {}
     -- Capture any streamed prose as the plan message BEFORE ingest_plan so
     -- ingest_plan can route to message 0.  handle_message_end skips the
@@ -762,7 +762,7 @@ local function handle_tool_end(event, lane)
     -- so this is the only place the plan message is reliably captured.
     local raw_text = session.assistant_text
     if raw_text and raw_text ~= "" then
-      local text = strip_sherpa_footer(vim.trim(raw_text))
+      local text = strip_strider_footer(vim.trim(raw_text))
       if text ~= "" then
         review.capture_plan_message(text)
       end
@@ -773,11 +773,11 @@ local function handle_tool_end(event, lane)
         #(args.stops or {}),
         args.scope or "?") }, lane)
     else
-      ui.notify("Sherpa plan was empty or invalid; review cannot start", vim.log.levels.ERROR)
+      ui.notify("Strider plan was empty or invalid; review cannot start", vim.log.levels.ERROR)
     end
     return
   end
-  if event.toolName == "sherpa_append_stops" then
+  if event.toolName == "strider_append_stops" then
     local args = consume_tool_args(session, event) or {}
     local added = review.ingest_append_stops(args)
     if added > 0 then
@@ -845,28 +845,28 @@ local function handle_extension_ui(event, lane)
       info = vim.log.levels.INFO,
       warning = vim.log.levels.WARN,
     }
-    ui.notify(event.message or "Sherpa notice", levels[event.notifyType] or vim.log.levels.INFO)
+    ui.notify(event.message or "Strider notice", levels[event.notifyType] or vim.log.levels.INFO)
     return
   end
   if event.method == "setStatus" then
     local session = state.get_session(lane)
     local previous = session.status[event.statusKey]
     state.set_status(event.statusKey, event.statusText, lane)
-    if event.statusKey == "sherpa-session" then
+    if event.statusKey == "strider-session" then
       local reason = event.statusText
       if reason == "new" or reason == "fork" or reason == "resume" then
         local labels = { new = "New session", fork = "Forked session", resume = "Resumed session" }
-        ui.append_block("sherpa", string.format("──── %s ────", labels[reason] or reason), lane)
+        ui.append_block("strider", string.format("──── %s ────", labels[reason] or reason), lane)
       end
       return
     end
-    if event.statusKey == "sherpa" and event.statusText ~= previous then
+    if event.statusKey == "strider" and event.statusText ~= previous then
       if event.statusText == "complete" then
-        ui.append({ "[sherpa] Workflow complete", "" }, lane)
+        ui.append({ "[strider] Workflow complete", "" }, lane)
       elseif event.statusText and event.statusText:find("final%-awaiting%-next", 1, false) then
-        ui.append({ "[sherpa] Final chunk awaiting :SherpaNext", "" }, lane)
+        ui.append({ "[strider] Final chunk awaiting :StriderNext", "" }, lane)
       elseif event.statusText and event.statusText:find("awaiting-next", 1, true) then
-        ui.append({ "[sherpa] Awaiting :SherpaNext", "" }, lane)
+        ui.append({ "[strider] Awaiting :StriderNext", "" }, lane)
       end
     end
     return
@@ -883,16 +883,16 @@ local function handle_extension_ui(event, lane)
     -- awaits this response.
     --
     -- Plan proposals are a special case: the extension tags their title
-    -- with a `[sherpa-plan-proposal]` sentinel so we route through a
+    -- with a `[strider-plan-proposal]` sentinel so we route through a
     -- read-only preview + accept/modify/reject picker rather than the
     -- one-box edit-and-submit flow.
     local id = event.id
-    local title = event.title or "Sherpa clarify"
+    local title = event.title or "Strider clarify"
     local prefill = event.prefill or ""
-    local plan_prefix = "[sherpa-plan-proposal] "
+    local plan_prefix = "[strider-plan-proposal] "
     if lane ~= "main" then
       local function popup_cancel(message)
-        ui.append({ message or "[sherpa] clarify cancelled" }, lane)
+        ui.append({ message or "[strider] clarify cancelled" }, lane)
         send_ui_response(id, { cancelled = true }, lane)
       end
 
@@ -909,14 +909,14 @@ local function handle_extension_ui(event, lane)
               ui.append_block("user", text, lane)
               send_ui_response(id, { value = text }, lane)
             end, {
-              hint_lines = { "Edit the proposal, then submit it back to Sherpa." },
+              hint_lines = { "Edit the proposal, then submit it back to Strider." },
               on_cancel = function()
-                popup_cancel("[sherpa] plan proposal rejected")
+                popup_cancel("[strider] plan proposal rejected")
               end,
               prefill = prefill,
             })
           else
-            popup_cancel("[sherpa] plan proposal rejected")
+            popup_cancel("[strider] plan proposal rejected")
           end
         end)
         return
@@ -932,7 +932,7 @@ local function handle_extension_ui(event, lane)
         ui.append_block("user", text, lane)
         send_ui_response(id, { value = text }, lane)
       end, {
-        hint_lines = { "Reply to Sherpa's question." },
+        hint_lines = { "Reply to Strider's question." },
         on_cancel = popup_cancel,
         prefill = prefill ~= "" and prefill or nil,
       })
@@ -954,13 +954,13 @@ local function handle_extension_ui(event, lane)
           -- the proposal body. The user edits in-place and hits <C-s>
           -- to submit the edited text as the clarify value.
           state.set_pending_clarify(id, display_title, lane)
-          state.set_status("sherpa-clarify", "clarify", lane)
+          state.set_status("strider-clarify", "clarify", lane)
           ui.refresh_compose_winbar(lane)
           ui.refresh_compose_hint()
-          require("sherpa").open_compose_for_clarify()
+          require("strider").open_compose_for_clarify()
           ui.seed_compose(prefill)
         else
-          ui.append({ "[sherpa] plan proposal rejected" }, lane)
+          ui.append({ "[strider] plan proposal rejected" }, lane)
           send_ui_response(id, { cancelled = true }, lane)
         end
       end)
@@ -977,28 +977,28 @@ local function handle_extension_ui(event, lane)
     end
     ui.append_block("clarify", table.concat(body_parts, "\n"), lane)
     state.set_pending_clarify(id, title, lane)
-    state.set_status("sherpa-clarify", "clarify", lane)
+    state.set_status("strider-clarify", "clarify", lane)
     ui.refresh_compose_winbar(lane)
     ui.refresh_compose_hint()
     ui.open_log({ preserve_focus = true }, lane)
     -- Bring compose up; dispatch_compose (init.lua) checks
     -- pending_clarify before anything else and routes there.
-    require("sherpa").open_compose_for_clarify()
+    require("strider").open_compose_for_clarify()
     return
   end
   if event.method == "confirm" then
     local id = event.id
-    local title = event.title or "Sherpa confirm"
+    local title = event.title or "Strider confirm"
     local message = event.message or ""
     local prompt = message ~= "" and (title .. "\n\n" .. message) or title
     vim.schedule(function()
       vim.ui.select({ "Yes", "No" }, { prompt = prompt }, function(choice)
         if choice == nil then
-          ui.append({ "[sherpa] confirm cancelled" }, lane)
+          ui.append({ "[strider] confirm cancelled" }, lane)
           send_ui_response(id, { cancelled = true }, lane)
         else
           local confirmed = choice == "Yes"
-          ui.append({ string.format("[sherpa] confirm: %s", choice) }, lane)
+          ui.append({ string.format("[strider] confirm: %s", choice) }, lane)
           send_ui_response(id, { confirmed = confirmed }, lane)
         end
       end)
@@ -1009,22 +1009,22 @@ local function handle_extension_ui(event, lane)
     -- Fuzzy picker (telescope → fzf-lua → vim.ui.select). Response shape
     -- is `{value: <selected option string>}` or `{cancelled: true}`.
     local id = event.id
-    local title = event.title or "Sherpa select"
+    local title = event.title or "Strider select"
     local options = event.options or {}
     local items = {}
     for _, opt in ipairs(options) do
       table.insert(items, { label = tostring(opt), value = opt })
     end
-    ui.append_block("sherpa", string.format("select: %s", title), lane)
+    ui.append_block("strider", string.format("select: %s", title), lane)
     local delivered = false
     local function deliver(chosen)
       if delivered then return end
       delivered = true
       if chosen == nil then
-        ui.append({ "[sherpa] select cancelled" }, lane)
+        ui.append({ "[strider] select cancelled" }, lane)
         send_ui_response(id, { cancelled = true }, lane)
       else
-        ui.append({ string.format("[sherpa] select: %s", chosen) }, lane)
+        ui.append({ string.format("[strider] select: %s", chosen) }, lane)
         send_ui_response(id, { value = chosen }, lane)
       end
     end
@@ -1042,13 +1042,13 @@ local function handle_extension_ui(event, lane)
     -- Single-line input via vim.ui.input. Response shape is `{value: text}`
     -- or `{cancelled: true}`. Multi-line input is served by `editor`.
     local id = event.id
-    local title = event.title or "Sherpa input"
+    local title = event.title or "Strider input"
     local placeholder = event.placeholder or ""
-    ui.append_block("sherpa", string.format("input: %s", title), lane)
+    ui.append_block("strider", string.format("input: %s", title), lane)
     vim.schedule(function()
       vim.ui.input({ prompt = title .. ": ", default = placeholder }, function(value)
         if value == nil then
-          ui.append({ "[sherpa] input cancelled" }, lane)
+          ui.append({ "[strider] input cancelled" }, lane)
           send_ui_response(id, { cancelled = true }, lane)
         else
           ui.append_block("user", value, lane)
@@ -1177,7 +1177,7 @@ function M.start(arg1, arg2)
     on_exit = function()
       session.job_id = nil
       vim.schedule(function()
-        ui.notify("Sherpa backend exited", vim.log.levels.WARN)
+        ui.notify("Strider backend exited", vim.log.levels.WARN)
       end)
     end,
     on_stderr = function(_, data)
@@ -1197,7 +1197,7 @@ function M.start(arg1, arg2)
   if lane == "main" and state.get_config().open_log_on_start then
     ui.open_log({ preserve_focus = true }, lane)
   end
-  ui.append({ "[sherpa] backend started", "" }, lane)
+  ui.append({ "[strider] backend started", "" }, lane)
   return true
 end
 
@@ -1219,7 +1219,7 @@ end
 function M.abort(lane)
   local session = state.get_session(lane)
   if not session or not session.job_id then
-    ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
+    ui.notify("Strider backend is not running", vim.log.levels.WARN)
     return false
   end
   vim.fn.chansend(session.job_id, vim.json.encode({ type = "abort" }) .. "\n")
@@ -1230,7 +1230,7 @@ function M.send_prompt(arg1, arg2)
   local lane, message = resolve_lane_and_payload(arg1, arg2)
   local session = state.get_session(lane)
   if not session or not session.job_id then
-    ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
+    ui.notify("Strider backend is not running", vim.log.levels.WARN)
     return false
   end
 
@@ -1251,7 +1251,7 @@ function M.send_steer(arg1, arg2)
   local lane, message = resolve_lane_and_payload(arg1, arg2)
   local session = state.get_session(lane)
   if not session or not session.job_id then
-    ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
+    ui.notify("Strider backend is not running", vim.log.levels.WARN)
     return false
   end
 
@@ -1271,7 +1271,7 @@ function M.send_command(cmd_type, extra, lane, callback)
   lane = normalize_lane(lane)
   local session = state.get_session(lane)
   if not session or not session.job_id then
-    ui.notify("Sherpa backend is not running", vim.log.levels.WARN)
+    ui.notify("Strider backend is not running", vim.log.levels.WARN)
     return false
   end
   local req_id = state.next_request_id(lane)

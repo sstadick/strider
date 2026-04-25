@@ -1,4 +1,4 @@
-# Sherpa review-searches demo — kick off a search, then review the results.
+# Strider review-searches demo — kick off a search, then review the results.
 # Run:   vhs recordings/vhs/review-searches.tape
 
 Output recordings/review-searches.gif
@@ -22,7 +22,7 @@ Show
 Sleep 2500ms
 
 # Run a search that returns multiple roots.
-Type ":SherpaSearch show all entry roots"
+Type ":StriderSearch show all entry roots"
 Sleep 2500ms
 Enter
 
@@ -34,7 +34,7 @@ Enter
 Sleep 2000ms
 
 # Start a review over the search results.
-Type ":SherpaReview searches"
+Type ":StriderReview searches"
 Sleep 2200ms
 Enter
 

@@ -15,9 +15,9 @@ Keeping this doc so the plan is shelf-ready.
 
 - Sessions for the current project live under `<project-root>/.sessions/`.
 - Each session has a meaningful name; default = current git branch.
-- `:SherpaSessions` opens a fuzzy picker; selecting resumes a session
+- `:StriderSessions` opens a fuzzy picker; selecting resumes a session
   with full pi context (messages, model, tree) restored.
-- Sherpa-side state either carries over or resets cleanly — no broken
+- Strider-side state either carries over or resets cleanly — no broken
   hybrids.
 
 ## What pi already gives us
@@ -52,7 +52,7 @@ No work needed for any of this — confirmed against `docs/rpc.md` and
    `set_session_name` via RPC. On collision with an existing session of
    the same name, append a short timestamp suffix (e.g. `feat-auth-20260421-1445`).
    Bail silently if not a git repo.
-3. **`:SherpaSessions` picker.** Scan `<project-root>/.sessions/*.jsonl`,
+3. **`:StriderSessions` picker.** Scan `<project-root>/.sessions/*.jsonl`,
    read each header line (first line of the file) to extract name,
    created-at, message count, last-modified. Pass entries through
    `picker.select` (reuses telescope/fzf-lua/`vim.ui.select` fallback
@@ -60,21 +60,21 @@ No work needed for any of this — confirmed against `docs/rpc.md` and
    `<name> <marker> — <msg_count> msgs — <relative_time>`, current
    session marked with `●`. On select: `{type: "switch_session", sessionPath: <abs path>}`.
 4. **Log buffer reset on switch.** Wipe the log buffer on session
-   switch, append a `[sherpa] switched to <name>` marker, and let new
+   switch, append a `[strider] switched to <name>` marker, and let new
    messages stream in. Don't attempt to rebuild the log from historical
    messages for v1.
 
 **Defer:**
 
-- `:SherpaSessionNew [name]` — explicit new-session command. Pi already
+- `:StriderSessionNew [name]` — explicit new-session command. Pi already
   creates a new session file on startup; if the user wants a clean
   session they can quit and relaunch the backend. If we find people
   asking, add later.
 - `/session-name <name>` extension command for inline rename. Nice but
   not essential; `set_session_name` works fine without a UI if the user
   really wants to rename.
-- **Sidecar sherpa state**. If you ever want review state, recent files,
-  or summaries to survive a switch, store `<sessionId>.sherpa.json`
+- **Sidecar strider state**. If you ever want review state, recent files,
+  or summaries to survive a switch, store `<sessionId>.strider.json`
   next to the session file. Skip until a concrete need shows up; the
   recoverable state (recent files, summaries) regenerates naturally.
 - **Log rebuild from history.** Walking `get_messages` and re-rendering
@@ -82,7 +82,7 @@ No work needed for any of this — confirmed against `docs/rpc.md` and
   wipe-and-restart approach but adds non-trivial formatting work. Defer.
 - **Auto-suggest new session on branch change.** Too intrusive. If the
   user `git switch`es mid-pi-run, the current session stays put. User
-  opens `:SherpaSessions` when they want to switch.
+  opens `:StriderSessions` when they want to switch.
 
 ## Implementation sketch
 
@@ -104,7 +104,7 @@ Add helpers:
 Hook `handle_response` to update `state.session_info` from `get_state`
 responses.
 
-**`lua/sherpa/sessions.lua`** (new):
+**`lua/strider/sessions.lua`** (new):
 
 - `list_sessions(cwd) -> { { path, name, msg_count, mtime, is_active }, ... }` —
   readdir `<cwd>/.sessions`, parse each file's first line for the
@@ -117,13 +117,13 @@ responses.
 
 **`init.lua`**:
 
-- `function M.sessions()` — command body for `:SherpaSessions`. Ensures
+- `function M.sessions()` — command body for `:StriderSessions`. Ensures
   backend, calls `sessions.pick`, on select calls `rpc.send_switch_session`
   and resets the log buffer.
 - On backend-start hook (after the first `get_state` resolves): if
   `sessionName` is nil and `branch_name(cwd)` is non-nil, call
   `rpc.send_set_session_name(branch_name)` with collision handling.
-- Register `:SherpaSessions` via `plugin/sherpa.lua`.
+- Register `:StriderSessions` via `plugin/strider.lua`.
 
 **Tests**:
 
@@ -146,9 +146,9 @@ responses.
    `HEAD` (detached) or a generated name (e.g. `dependabot/...`), the
    auto-name is awkward. Probably fine to accept whatever git returns;
    user can rename.
-4. **Switch during an active turn.** Should `:SherpaSessions` refuse to
+4. **Switch during an active turn.** Should `:StriderSessions` refuse to
    switch while a pending request is in flight, or force-abort and
-   switch? Lean toward refuse-with-warning — you can always `:SherpaAbort`
+   switch? Lean toward refuse-with-warning — you can always `:StriderAbort`
    first.
 
 ## Why we're deferring

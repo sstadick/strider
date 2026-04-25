@@ -1,11 +1,11 @@
-local state = require("sherpa.state")
+local state = require("strider.state")
 
 local M = {}
 
 local uv = vim.uv or vim.loop
 
 local function paste_dir()
-  return vim.fs.joinpath(vim.fn.stdpath("cache"), "sherpa", "paste")
+  return vim.fs.joinpath(vim.fn.stdpath("cache"), "strider", "paste")
 end
 
 local function ensure_paste_dir()

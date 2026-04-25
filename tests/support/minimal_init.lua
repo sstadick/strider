@@ -1,5 +1,5 @@
-local root = vim.env.SHERPA_TEST_ROOT
-assert(root and root ~= "", "SHERPA_TEST_ROOT must be set")
+local root = vim.env.STRIDER_TEST_ROOT
+assert(root and root ~= "", "STRIDER_TEST_ROOT must be set")
 
 vim.cmd("syntax on")
 vim.cmd("filetype plugin indent on")
@@ -24,16 +24,16 @@ pcall(function()
 end)
 
 vim.opt.rtp:append(root)
-vim.cmd("runtime plugin/sherpa.lua")
+vim.cmd("runtime plugin/strider.lua")
 
 local pi_cmd
-if vim.env.SHERPA_TEST_REAL_PI == "1" then
+if vim.env.STRIDER_TEST_REAL_PI == "1" then
   pi_cmd = { "pi" }
 else
   pi_cmd = { vim.fn.exepath("python3"), vim.fs.joinpath(root, "tests", "support", "fake_pi.py") }
 end
 
-require("sherpa").setup({
+require("strider").setup({
   auto_jump = true,
   open_log_on_start = false,
   pi_cmd = pi_cmd,

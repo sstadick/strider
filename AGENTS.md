@@ -1,4 +1,4 @@
-# Sherpa is a guided code workflow for Neovim powered by pi
+# Strider is a guided code workflow for Neovim powered by pi
 
 ## Project intent
 
@@ -28,13 +28,13 @@ The product should feel like disciplined pair programming:
 
 ## Product rules
 
-- `:SherpaReview` is the primary walkthrough surface. Reviews are
-  pre-planned via the `sherpa_plan` tool; navigation is mechanical.
-- `:SherpaNext` advances through the planned stops; `:SherpaPrev`
+- `:StriderReview` is the primary walkthrough surface. Reviews are
+  pre-planned via the `strider_plan` tool; navigation is mechanical.
+- `:StriderNext` advances through the planned stops; `:StriderPrev`
   walks back.
 - Review mode is read-only — one file, one small section per stop.
-- `:SherpaPatch` is selection-scoped and intended for small local edits.
-- `:SherpaChat` is the agent catch-all; slash-commands typed into the
+- `:StriderPatch` is selection-scoped and intended for small local edits.
+- `:StriderChat` is the agent catch-all; slash-commands typed into the
   compose buffer (e.g. `/models`, `/tree`) are routed to pi extensions.
 - Accepted stops and reviewed chunks are recorded in pi's session
   history for future restoration work.

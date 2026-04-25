@@ -1,4 +1,4 @@
-# Sherpa review-diff demo — walk the current working-tree diff.
+# Strider review-diff demo — walk the current working-tree diff.
 # Run:   vhs recordings/vhs/review-diff.tape
 
 Output recordings/review-diff.gif
@@ -22,7 +22,7 @@ Show
 Sleep 2500ms
 
 # Start a diff-scoped review of the uncommitted change.
-Type ":SherpaReview diff"
+Type ":StriderReview diff"
 Sleep 2200ms
 Enter
 

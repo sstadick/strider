@@ -1,28 +1,28 @@
 # Current plan
 
-## What Sherpa ships now
+## What Strider ships now
 
 Primary flows:
-- `:SherpaSearch`
-- `:SherpaReview` (pre-planned walkthrough — see `docs/review-mode.md`)
-- `:SherpaPatch`
-- `:SherpaQ` (tangent that branches off the session tree and drops
+- `:StriderSearch`
+- `:StriderReview` (pre-planned walkthrough — see `docs/review-mode.md`)
+- `:StriderPatch`
+- `:StriderQ` (tangent that branches off the session tree and drops
   from the active path on end)
-- `:SherpaChat`
+- `:StriderChat`
 
 Supporting UX:
 - dedicated review pane with a plan TOC
 - quickfix + telescope/fzf search selection
 - range highlighting for search/edit targets (suppressed during review)
 - local review comments summarized back to the agent at review end
-- accepted review stops via `:SherpaNext!` without adding another
+- accepted review stops via `:StriderNext!` without adding another
   top-level review command
-- `[Tangent]` badge in the compose winbar while a `:SherpaQ` branch is
-  active; any other `:Sherpa*` command implicitly ends it
+- `[Tangent]` badge in the compose winbar while a `:StriderQ` branch is
+  active; any other `:Strider*` command implicitly ends it
 - clarify and plan-proposal flows in the chat log (no popups);
   compose hijacked for replies with a `[Clarify]` badge
-- `:SherpaStatus` for a compact lane/status/control summary
-- `:SherpaStop` to abort in-flight turns (pi `abort` RPC)
+- `:StriderStatus` for a compact lane/status/control summary
+- `:StriderStop` to abort in-flight turns (pi `abort` RPC)
 - inline red `[error]` blocks surface provider / model / transport
   errors that used to silently hang the log
 - `<S-Tab>` in compose cycles the pi thinking level; active level
@@ -32,7 +32,7 @@ Supporting UX:
   line numbers, and source syntax highlighting;
   syntax-highlighted fenced output for read/write via treesitter +
   render-markdown; compact gutter output for bash/grep/ls/find; shows
-  the last 15 lines with a `N earlier lines…` note above;
+  up to 5 visible output lines with a Codex-style `… +N lines` marker;
   accent-colored paths in tool headers
 - log windows tail only while already at the bottom; scrolling up
   pauses follow-mode, and a pinned preview keeps the latest user
@@ -45,7 +45,7 @@ Supporting UX:
 ### 1. Review ergonomics
 
 Done:
-- model-led planning via the `sherpa_plan` tool (one-shot plan, fixed navigation)
+- model-led planning via the `strider_plan` tool (one-shot plan, fixed navigation)
 - plan-time explanations at three detail tiers (`why` → sidebar hook,
   `summary` → sidebar synopsis, `explanation` → in-buffer block annotation
   above startLine)
@@ -53,25 +53,25 @@ Done:
   pinned to sub-ranges of the code; budgeted at ≤1 block + 25% of lines
 - annotation lifecycle: cleared when the active stop changes or the review
   ends; extmarks are in-memory only so nvim exit cleans up automatically
-- `:SherpaNext` / `:SherpaPrev` are instant — no per-stop model call
-- `:SherpaNext!` marks the current stop accepted before moving on
+- `:StriderNext` / `:StriderPrev` are instant — no per-stop model call
+- `:StriderNext!` marks the current stop accepted before moving on
 - TOC in the review pane for multi-stop plans (rendered below comments)
 - coverage guarantees for `selection` and `diff` scopes
-- append-only mid-review plan growth for free-scope (`sherpa_append_stops`)
+- append-only mid-review plan growth for free-scope (`strider_append_stops`)
 - no auto-jump during review — code window stays on the active stop
 - `/review` reserved for user questions on an active stop
-  (`:SherpaReview <question>`); default explanations are pre-computed
+  (`:StriderReview <question>`); default explanations are pre-computed
 
 Next:
 - prompt hardening: better guidance for when explanations are too terse
   or too generic
-- `:SherpaRetry` today only handles a stalled `/plan` turn — consider
+- `:StriderRetry` today only handles a stalled `/plan` turn — consider
   whether `/review` question turns need recovery too
 
 ### 2. Work → review handoff
 
 Improve:
-- stronger review suggestions after `:SherpaChat`
+- stronger review suggestions after `:StriderChat`
 - better use of the latest touched file / search result set / diff as
   review entry points
 
@@ -97,7 +97,7 @@ Goal: stay in the low-seconds range.
 ### Optional real-pi smoke
 
 ```bash
-SHERPA_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
+STRIDER_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
 ```
 
 Goal: stay under a minute; cover at least review + patch on the bundled
@@ -112,8 +112,8 @@ we decide resumption is worth the context drift.
 
 - code restoration / rewind
 - GitHub review submission
-- a separate Sherpa skill system
-- a separate Sherpa instruction loader
+- a separate Strider skill system
+- a separate Strider instruction loader
 - heavy shell parsing heuristics
 - restoring the old pre-refactor dynamic-discovery review flow
 

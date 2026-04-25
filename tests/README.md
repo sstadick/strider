@@ -1,9 +1,9 @@
-# Sherpa test tooling
+# Strider test tooling
 
 ## Goals
 
 These tests cover the Neovim UX layer that is hard to validate with pure unit tests:
-- running Sherpa inside a real Neovim TUI
+- running Strider inside a real Neovim TUI
 - driving it from a tmux session
 - querying Neovim state over a `--listen` socket
 - using a fake pi RPC backend for repeatable UX tests
@@ -13,10 +13,10 @@ These tests cover the Neovim UX layer that is hard to validate with pure unit te
 
 ## Pieces
 
-- `support/fake_pi.py` — tiny fake pi RPC process for canned Sherpa responses
-- `support/minimal_init.lua` — minimal Neovim init that loads Sherpa from this repo and reuses already-installed telescope/fzf plugins
+- `support/fake_pi.py` — tiny fake pi RPC process for canned Strider responses
+- `support/minimal_init.lua` — minimal Neovim init that loads Strider from this repo and reuses already-installed telescope/fzf plugins
 - `support/tmux_nvim.py` — reusable tmux + Neovim harness
-- `run_tmux_session.py` — manual launcher for an interactive tmux-backed Sherpa session
+- `run_tmux_session.py` — manual launcher for an interactive tmux-backed Strider session
 - `fixtures/app/` — small fixture project used by the UX tests
 
 ## Running tests
@@ -32,11 +32,11 @@ These fake-backend tmux tests should stay cheap to run: seconds, not minutes.
 ## Optional real-pi smoke test
 
 Uses the bundled zero-dependency `fixtures/python_app` project and covers:
-- `:SherpaReview file`
-- `:SherpaPatch` on a selected line
+- `:StriderReview file`
+- `:StriderPatch` on a selected line
 
 ```bash
-SHERPA_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
+STRIDER_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
 ```
 
 ## Manual tmux session

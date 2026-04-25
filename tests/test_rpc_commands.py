@@ -24,9 +24,9 @@ class RpcCommandTests(unittest.TestCase):
         """When no messages have been sent, /fork should warn (no picker)."""
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 # Type /fork in compose and submit.
@@ -42,9 +42,9 @@ class RpcCommandTests(unittest.TestCase):
         """After sending a prompt, /fork should trigger the picker flow."""
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 # Send a prompt first so the fake backend has a fork-able message.
@@ -56,7 +56,7 @@ class RpcCommandTests(unittest.TestCase):
                 # Wait for the turn to finish.
                 h.wait_until(
                     lambda: h.lua_bool(
-                        "require('sherpa.state').peek_pending_request() == nil"
+                        "require('strider.state').peek_pending_request() == nil"
                     ),
                     timeout=5.0,
                 )
@@ -88,15 +88,15 @@ class RpcCommandTests(unittest.TestCase):
         """Verify fork_flow handles a failed get_fork_messages gracefully."""
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 # Force the backend to stop so the next command fails.
                 h.lua(
                     "(function() "
-                    "  local s = require('sherpa.state').get_session(); "
+                    "  local s = require('strider.state').get_session(); "
                     "  if s and s.job_id then vim.fn.jobstop(s.job_id) end; "
                     "  return true "
                     "end)()"
@@ -113,9 +113,9 @@ class RpcCommandTests(unittest.TestCase):
         """Typing /new in compose should send new_session to pi."""
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 h.send("/new", "C-s", pause=0.5)
@@ -128,9 +128,9 @@ class RpcCommandTests(unittest.TestCase):
     def test_compact_command_without_args(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 h.send("/compact", "C-s", pause=0.5)
@@ -140,9 +140,9 @@ class RpcCommandTests(unittest.TestCase):
     def test_compact_command_with_instructions(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 h.send("/compact focus on the API layer", "C-s", pause=0.5)
@@ -155,16 +155,16 @@ class RpcCommandTests(unittest.TestCase):
         """send_command with a callback should invoke it on success."""
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 # Use send_command with a callback directly from Lua.
                 h.lua(
                     "(function() "
                     "  _G._cb_test_result = 'waiting'; "
-                    "  require('sherpa.rpc').send_command('get_fork_messages', {}, nil, "
+                    "  require('strider.rpc').send_command('get_fork_messages', {}, nil, "
                     "    function(event) "
                     "      if event.success and event.data then "
                     "        _G._cb_test_result = 'ok:' .. tostring(#(event.data.messages or {})); "
@@ -186,16 +186,16 @@ class RpcCommandTests(unittest.TestCase):
         """send_command callback should fire with success=false on error."""
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 # Send fork without entryId — fake backend returns error.
                 h.lua(
                     "(function() "
                     "  _G._cb_err_result = 'waiting'; "
-                    "  require('sherpa.rpc').send_command('fork', {}, nil, "
+                    "  require('strider.rpc').send_command('fork', {}, nil, "
                     "    function(event) "
                     "      _G._cb_err_result = event.success and 'ok' or 'error'; "
                     "    end); "
@@ -214,9 +214,9 @@ class RpcCommandTests(unittest.TestCase):
         """/model (singular) should behave the same as /models."""
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 # /model should be sent to pi as /models (the canonical name).
@@ -237,9 +237,9 @@ class RpcCommandTests(unittest.TestCase):
         """Failed RPC responses should show /<command> in the error."""
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://compose')") == "1",
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
                 # Send a fork command without entryId via send_command
@@ -248,7 +248,7 @@ class RpcCommandTests(unittest.TestCase):
                 # format it as "/fork failed: ...".
                 h.lua(
                     "(function() "
-                    "  require('sherpa.rpc').send_command('fork', {}); "
+                    "  require('strider.rpc').send_command('fork', {}); "
                     "  return true "
                     "end)()"
                 )

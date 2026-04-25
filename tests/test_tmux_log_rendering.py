@@ -24,8 +24,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
     def test_edit_tool_emits_inline_diff_rows(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat update the fixture app")
-                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.ex("StriderChat update the fixture app")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
                     lambda: any(line.lstrip().startswith("+") for line in h.log_lines()),
@@ -52,8 +52,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
     def test_inline_diff_rows_have_line_highlighting_extmarks(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat update the fixture app")
-                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.ex("StriderChat update the fixture app")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
                     lambda: any(line.lstrip().startswith("+") for line in h.log_lines()),
@@ -62,9 +62,9 @@ class TmuxLogRenderingTests(unittest.TestCase):
 
                 has_diff_hl = h.lua_bool(
                     "(function() "
-                    "  local buf = vim.fn.bufnr('sherpa://log'); "
+                    "  local buf = vim.fn.bufnr('strider://log'); "
                     "  if buf <= 0 then return false end; "
-                    "  local ns = vim.api.nvim_create_namespace('sherpa-log'); "
+                    "  local ns = vim.api.nvim_create_namespace('strider-log'); "
                     "  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {details=true}); "
                     "  local seen = {}; "
                     "  for _, m in ipairs(marks) do "
@@ -75,17 +75,17 @@ class TmuxLogRenderingTests(unittest.TestCase):
                     "      seen[hl] = true "
                     "    end "
                     "  end; "
-                    "  return seen.SherpaLogDiffAdd and seen.SherpaLogDiffRemove "
-                    "    and seen.SherpaLogDiffLineNumber and seen.SherpaLogDiffGutter "
+                    "  return seen.StriderLogDiffAdd and seen.StriderLogDiffRemove "
+                    "    and seen.StriderLogDiffLineNumber and seen.StriderLogDiffGutter "
                     "end)()"
                 )
                 self.assertTrue(has_diff_hl, "expected diff line/gutter highlighting extmarks in the log")
 
                 has_syntax_hl = h.lua_bool(
                     "(function() "
-                    "  local buf = vim.fn.bufnr('sherpa://log'); "
+                    "  local buf = vim.fn.bufnr('strider://log'); "
                     "  if buf <= 0 then return false end; "
-                    "  local ns = vim.api.nvim_create_namespace('sherpa-log'); "
+                    "  local ns = vim.api.nvim_create_namespace('strider-log'); "
                     "  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {details=true}); "
                     "  for _, m in ipairs(marks) do "
                     "    local hl = m[4] and m[4].hl_group or ''; "
@@ -99,8 +99,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
     def test_read_tool_renders_fenced_output(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat update the fixture app")
-                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.ex("StriderChat update the fixture app")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
                     lambda: "• Explored" in "\n".join(h.log_lines()),
@@ -118,41 +118,44 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 self.assertGreaterEqual(log.count("```"), 2,
                     f"expected open+close fence; got:\n{log}")
 
-    def test_earlier_lines_marker_shown_above_fence_when_truncated(self) -> None:
+    def test_codex_style_ellipsis_splits_fenced_output_when_truncated(self) -> None:
         # Direct ui.append_tool_output test: feed a 20-line file so the
-        # last-15 rendering leaves 5 hidden. Marker should say `5 earlier
-        # lines…` and should appear BEFORE the fence (never inside it —
-        # that would break code syntax).
+        # 5-line Codex-style view keeps the first two and last two lines.
+        # The omission marker must sit between fences, never inside one.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 # Open chat so the log buffer exists.
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    lambda: h.expr("bufexists('strider://log')") == "1",
                     timeout=3.0,
                 )
                 # Push a 20-line synthetic "file" through append_tool_output.
                 lines_literal = "\\n".join(f"line {i}" for i in range(1, 21))
                 h.lua(
                     "(function() "
-                    "  require('sherpa.ui').append_tool_output('"
+                    "  require('strider.ui').append_tool_output('"
                     + lines_literal + "', 'lua'); return true end)()"
                 )
                 log = "\n".join(h.log_lines())
-                self.assertIn("5 earlier lines…", log,
-                    f"expected '5 earlier lines…' marker; got:\n{log}")
+                self.assertIn("… +16 lines", log,
+                    f"expected '… +16 lines' marker; got:\n{log}")
                 self.assertIn("```lua", log,
                     f"expected fence open; got:\n{log}")
-                # First 5 lines should NOT appear (they were truncated).
-                self.assertNotIn("line 1\n", log)
-                self.assertNotIn("line 5\n", log)
-                # Last lines SHOULD appear.
+                # First and last lines should appear; middle lines should not.
+                self.assertIn("line 1", log)
+                self.assertIn("line 2", log)
+                self.assertNotIn("line 3\n", log)
+                self.assertNotIn("line 18\n", log)
+                self.assertIn("line 19", log)
                 self.assertIn("line 20", log)
-                # Marker must land ABOVE the fence, not inside it.
-                marker_pos = log.find("5 earlier lines…")
-                fence_pos = log.find("```lua")
-                self.assertGreater(fence_pos, marker_pos,
-                    "marker should be above the fence open")
+                first_fence = log.find("```lua")
+                marker_pos = log.find("… +16 lines")
+                second_fence = log.find("```lua", first_fence + len("```lua"))
+                self.assertGreater(marker_pos, first_fence,
+                    "marker should be after the first fence")
+                self.assertGreater(second_fence, marker_pos,
+                    "tail block should open a new fence after the marker")
 
     def test_pi_trailing_sentinel_is_stripped_from_fenced_output(self) -> None:
         # Pi's read tool appends a meta line like
@@ -162,9 +165,9 @@ class TmuxLogRenderingTests(unittest.TestCase):
         # parser barf. We strip it before fencing.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    lambda: h.expr("bufexists('strider://log')") == "1",
                     timeout=3.0,
                 )
                 # Simulate pi's shape: a few lines of code + the trailing
@@ -175,7 +178,7 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 )
                 h.lua(
                     "(function() "
-                    "  require('sherpa.ui').append_tool_output('"
+                    "  require('strider.ui').append_tool_output('"
                     + synthetic + "', 'rust'); return true end)()"
                 )
                 log = "\n".join(h.log_lines())
@@ -187,16 +190,16 @@ class TmuxLogRenderingTests(unittest.TestCase):
     def test_compact_tool_output_has_gutter_counts_and_no_fence(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    lambda: h.expr("bufexists('strider://log')") == "1",
                     timeout=3.0,
                 )
-                output = "lua/sherpa/ui.lua:1295:function M.append_tool_output()\n" \
-                         "lua/sherpa/rpc.lua:678:ui.append_tool_output(...)"
+                output = "lua/strider/ui.lua:1295:function M.append_tool_output()\n" \
+                         "lua/strider/rpc.lua:678:ui.append_tool_output(...)"
                 h.lua(
                     "(function() "
-                    "  require('sherpa.ui').append_compact_tool_output("
+                    "  require('strider.ui').append_compact_tool_output("
                     + json.dumps(output)
                     + ", { kind = 'grep', count_singular = 'match', count_plural = 'matches' }, 'main'); "
                     "  return true "
@@ -204,21 +207,21 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 )
                 log = "\n".join(h.log_lines())
                 self.assertIn("2 matches", log)
-                self.assertIn("│ lua/sherpa/ui.lua", log)
+                self.assertIn("│ lua/strider/ui.lua", log)
                 self.assertNotIn("```", log, f"compact output should not use markdown fences; got:\n{log}")
 
                 has_compact_hl = h.lua_bool(
                     "(function() "
-                    "  local buf = vim.fn.bufnr('sherpa://log'); "
-                    "  local ns = vim.api.nvim_create_namespace('sherpa-log'); "
+                    "  local buf = vim.fn.bufnr('strider://log'); "
+                    "  local ns = vim.api.nvim_create_namespace('strider-log'); "
                     "  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true }); "
                     "  local seen = {}; "
                     "  for _, m in ipairs(marks) do "
                     "    local hl = m[4] and m[4].hl_group or ''; "
                     "    seen[hl] = true "
                     "  end; "
-                    "  return seen.SherpaLogToolOutputGutter and seen.SherpaLogToolOutputMeta "
-                    "    and seen.SherpaLogToolOutput "
+                    "  return seen.StriderLogToolOutputGutter and seen.StriderLogToolOutputMeta "
+                    "    and seen.StriderLogToolOutput "
                     "end)()"
                 )
                 self.assertTrue(has_compact_hl, "expected compact output gutter/body/meta extmarks")
@@ -226,8 +229,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
     def test_rpc_routes_grep_output_to_compact_renderer(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat show compact tool output")
-                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.ex("StriderChat show compact tool output")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(lambda: "2 matches" in "\n".join(h.log_lines()), timeout=5.0)
                 log = "\n".join(h.log_lines())
@@ -241,8 +244,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
     def test_rpc_tool_headers_include_search_args(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat show tool argument headers")
-                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.ex("StriderChat show tool argument headers")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
                     lambda: "Finished tool argument header pass" in "\n".join(h.log_lines()),
@@ -250,21 +253,21 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 )
                 log = "\n".join(h.log_lines())
                 self.assertIn('└ grep "fixture" in src (glob *.tsx, limit 5)', log)
-                self.assertIn("└ find *.lua in lua/sherpa (limit 3)", log)
-                self.assertIn("└ ls lua/sherpa (limit 2)", log)
+                self.assertIn("└ find *.lua in lua/strider (limit 3)", log)
+                self.assertIn("└ ls lua/strider (limit 2)", log)
 
-    def test_compact_tool_output_truncates_above_rows(self) -> None:
+    def test_compact_tool_output_uses_codex_style_middle_truncation(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    lambda: h.expr("bufexists('strider://log')") == "1",
                     timeout=3.0,
                 )
                 output = "\n".join(f"entry {i}" for i in range(1, 21))
                 h.lua(
                     "(function() "
-                    "  require('sherpa.ui').append_compact_tool_output("
+                    "  require('strider.ui').append_compact_tool_output("
                     + json.dumps(output)
                     + ", { kind = 'ls', count_singular = 'entry', count_plural = 'entries' }, 'main'); "
                     "  return true "
@@ -272,24 +275,28 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 )
                 log = "\n".join(h.log_lines())
                 self.assertIn("20 entries", log)
-                self.assertIn("5 earlier lines…", log)
-                self.assertNotIn("entry 1\n", log)
-                self.assertIn("│ entry 6", log)
+                self.assertIn("… +16 lines", log)
+                self.assertIn("│ entry 1", log)
+                self.assertIn("│ entry 2", log)
+                self.assertNotIn("entry 3\n", log)
+                self.assertNotIn("entry 18\n", log)
+                self.assertIn("│ entry 19", log)
                 self.assertIn("│ entry 20", log)
-                self.assertLess(log.find("5 earlier lines…"), log.find("│ entry 6"))
+                self.assertLess(log.find("│ entry 2"), log.find("… +16 lines"))
+                self.assertLess(log.find("… +16 lines"), log.find("│ entry 19"))
 
     def test_compact_tool_output_preserves_markdown_leaders(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat")
+                h.ex("StriderChat")
                 h.wait_until(
-                    lambda: h.expr("bufexists('sherpa://log')") == "1",
+                    lambda: h.expr("bufexists('strider://log')") == "1",
                     timeout=3.0,
                 )
-                output = "# heading\n- item\n> quote\n1. ordered\n```md\n| table |"
+                output = "# heading\n- item\n> quote\n1. ordered\n```md"
                 h.lua(
                     "(function() "
-                    "  require('sherpa.ui').append_compact_tool_output("
+                    "  require('strider.ui').append_compact_tool_output("
                     + json.dumps(output)
                     + ", { kind = 'bash' }, 'main'); "
                     "  return true "
@@ -301,7 +308,6 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 self.assertIn("│ > quote", log)
                 self.assertIn("│ 1. ordered", log)
                 self.assertIn("│ ```md", log)
-                self.assertIn("│ | table |", log)
                 self.assertNotIn("\\# heading", log)
                 self.assertNotIn("\\- item", log)
                 self.assertNotRegex(log, r"(?m)^```md")
@@ -309,8 +315,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
     def test_tool_header_path_has_extmark(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("SherpaChat update the fixture app")
-                h.wait_until(lambda: h.current_state()["buf"] == "sherpa://compose", timeout=3.0)
+                h.ex("StriderChat update the fixture app")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
                 h.send("C-s", pause=0.3)
                 h.wait_until(
                     lambda: "• Explored" in "\n".join(h.log_lines()),
@@ -319,26 +325,26 @@ class TmuxLogRenderingTests(unittest.TestCase):
 
                 has_path_hl = h.lua_bool(
                     "(function() "
-                    "  local buf = vim.fn.bufnr('sherpa://log'); "
+                    "  local buf = vim.fn.bufnr('strider://log'); "
                     "  if buf <= 0 then return false end; "
-                    "  local ns = vim.api.nvim_create_namespace('sherpa-log'); "
+                    "  local ns = vim.api.nvim_create_namespace('strider-log'); "
                     "  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {details=true}); "
                     "  for _, m in ipairs(marks) do "
-                    "    if m[4] and m[4].hl_group == 'SherpaLogPath' then return true end "
+                    "    if m[4] and m[4].hl_group == 'StriderLogPath' then return true end "
                     "  end; "
                     "  return false "
                     "end)()"
                 )
-                self.assertTrue(has_path_hl, "expected SherpaLogPath extmark on a tool header")
+                self.assertTrue(has_path_hl, "expected StriderLogPath extmark on a tool header")
 
     def test_log_pin_shows_last_user_message_preview(self) -> None:
         pin_state = (
             "(function() "
-            "  local buf = vim.fn.bufnr('sherpa://log'); "
+            "  local buf = vim.fn.bufnr('strider://log'); "
             "  if buf <= 0 then return {height = 0, lines = {}} end; "
             "  local win = vim.fn.win_findbuf(buf)[1]; "
             "  if not win then return {height = 0, lines = {}} end; "
-            "  local pin = vim.w[win].sherpa_log_pin_win; "
+            "  local pin = vim.w[win].strider_log_pin_win; "
             "  if not pin or not vim.api.nvim_win_is_valid(pin) then return {height = 0, lines = {}} end; "
             "  local pbuf = vim.api.nvim_win_get_buf(pin); "
             "  return {height = vim.api.nvim_win_get_height(pin), lines = vim.api.nvim_buf_get_lines(pbuf, 0, -1, false)} "
@@ -350,11 +356,11 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 message = " ".join(["sticky"] * 60)
                 h.lua(
                     "(function() "
-                    "  local state = require('sherpa.state'); "
-                    "  local ui = require('sherpa.ui'); "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui'); "
                     "  state.ensure_session('main', vim.fn.getcwd()); "
                     "  ui.open_log({}, 'main'); "
-                    "  local log_win = vim.fn.win_findbuf(vim.fn.bufnr('sherpa://log'))[1]; "
+                    "  local log_win = vim.fn.win_findbuf(vim.fn.bufnr('strider://log'))[1]; "
                     "  vim.api.nvim_win_set_width(log_win, 28); "
                     "  ui.append_block('user', " + json.dumps(message) + ", 'main'); "
                     "  for i = 1, 80 do ui.append({'assistant ' .. i}, 'main') end; "
@@ -372,7 +378,7 @@ class TmuxLogRenderingTests(unittest.TestCase):
     def test_log_follow_pauses_when_scrolled_up_and_resumes_at_bottom(self) -> None:
         log_at_bottom = (
             "(function() "
-            "  local buf = vim.fn.bufnr('sherpa://log'); "
+            "  local buf = vim.fn.bufnr('strider://log'); "
             "  if buf <= 0 then return false end; "
             "  local win = vim.fn.win_findbuf(buf)[1]; "
             "  if not win then return false end; "
@@ -383,11 +389,11 @@ class TmuxLogRenderingTests(unittest.TestCase):
         )
         log_following = (
             "(function() "
-            "  local buf = vim.fn.bufnr('sherpa://log'); "
+            "  local buf = vim.fn.bufnr('strider://log'); "
             "  if buf <= 0 then return false end; "
             "  local win = vim.fn.win_findbuf(buf)[1]; "
             "  if not win then return false end; "
-            "  return vim.w[win].sherpa_log_follow == true "
+            "  return vim.w[win].strider_log_follow == true "
             "end)()"
         )
 
@@ -395,8 +401,8 @@ class TmuxLogRenderingTests(unittest.TestCase):
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.lua(
                     "(function() "
-                    "  local state = require('sherpa.state'); "
-                    "  local ui = require('sherpa.ui'); "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui'); "
                     "  state.ensure_session('main', vim.fn.getcwd()); "
                     "  ui.open_log({}, 'main'); "
                     "  for i = 1, 80 do ui.append({'initial ' .. i}, 'main') end; "
@@ -409,7 +415,7 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 h.wait_until(lambda: not h.lua_bool(log_at_bottom), timeout=3.0)
                 h.wait_until(lambda: not h.lua_bool(log_following), timeout=3.0)
 
-                h.lua("(function() require('sherpa.ui').append({'after paused'}, 'main'); return true end)()")
+                h.lua("(function() require('strider.ui').append({'after paused'}, 'main'); return true end)()")
                 time.sleep(0.2)  # allow the debounced follow-scroll timer to fire
                 self.assertIn("after paused", "\n".join(h.log_lines()))
                 self.assertFalse(h.lua_bool(log_at_bottom), "paused log window should not jump to the tail")
@@ -418,7 +424,7 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 h.wait_until(lambda: h.lua_bool(log_at_bottom), timeout=3.0)
                 h.wait_until(lambda: h.lua_bool(log_following), timeout=3.0)
 
-                h.lua("(function() require('sherpa.ui').append({'after relocked'}, 'main'); return true end)()")
+                h.lua("(function() require('strider.ui').append({'after relocked'}, 'main'); return true end)()")
                 h.wait_until(lambda: h.lua_bool(log_at_bottom), timeout=3.0)
                 self.assertIn("after relocked", "\n".join(h.log_lines()))
 

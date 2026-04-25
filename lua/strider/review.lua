@@ -1,7 +1,7 @@
-local picker = require("sherpa.picker")
-local render = require("sherpa.review.render")
-local state = require("sherpa.state")
-local ui = require("sherpa.ui")
+local picker = require("strider.picker")
+local render = require("strider.review.render")
+local state = require("strider.state")
+local ui = require("strider.ui")
 
 local M = {}
 
@@ -564,14 +564,14 @@ local function normalize_plan_stop(cwd, raw)
 end
 
 -- Start a free-scope review in "planning" state. The plan itself arrives
--- later via M.ingest_plan (driven by the sherpa_plan tool). The sidebar
+-- later via M.ingest_plan (driven by the strider_plan tool). The sidebar
 -- and status widget update immediately so the user sees activity from
 -- keystroke zero.
 function M.start_planning(focus, opts)
   opts = opts or {}
   local session = review_session()
   if not session then
-    ui.notify("No active Sherpa session", vim.log.levels.WARN)
+    ui.notify("No active Strider session", vim.log.levels.WARN)
     return false
   end
 
@@ -592,18 +592,18 @@ function M.start_planning(focus, opts)
     scope = nil,
     source = opts.source or "review",
     summary = nil,
-    title = opts.title or "Sherpa review",
+    title = opts.title or "Strider review",
   }
   -- Optimistically seed the status widget so the user sees "planning..."
   -- immediately, before the pi extension's setWidget roundtrip lands.
   state.set_widget({ "Planning review..." }, REVIEW_LANE)
-  state.set_status("sherpa", "plan active", REVIEW_LANE)
+  state.set_status("strider", "plan active", REVIEW_LANE)
   ui.show_review()
   M.render()
   return true
 end
 
--- Ingest a plan produced by the model via the sherpa_plan tool. Replaces
+-- Ingest a plan produced by the model via the strider_plan tool. Replaces
 -- the current (empty, planning-state) plan with the given stops and
 -- activates the first stop. Only valid while review.planning == true.
 function M.ingest_plan(args)
@@ -648,7 +648,7 @@ function M.ingest_plan(args)
 end
 
 -- Append more stops to an active free-scope review. No-op for
--- selection/diff. The model calls this via the sherpa_append_stops tool
+-- selection/diff. The model calls this via the strider_append_stops tool
 -- when it discovers an additional area to visit mid-review.
 function M.ingest_append_stops(args)
   local review = active_review()
@@ -690,7 +690,7 @@ function M.start_planned(scope, opts)
   opts = opts or {}
   local session = review_session()
   if not session then
-    ui.notify("No active Sherpa session", vim.log.levels.WARN)
+    ui.notify("No active Strider session", vim.log.levels.WARN)
     return nil
   end
 
@@ -733,7 +733,7 @@ function M.start_planned(scope, opts)
     scope = plan.scope,
     source = source,
     summary = nil,
-    title = opts.title or ("Sherpa review: " .. source),
+    title = opts.title or ("Strider review: " .. source),
   }
   ui.show_review()
   M.focus_item(plan.stops[1])
@@ -947,13 +947,13 @@ end
 function M.comment_picker()
   local session = review_session()
   if not session then
-    ui.notify("No active Sherpa session", vim.log.levels.WARN)
+    ui.notify("No active Strider session", vim.log.levels.WARN)
     return false
   end
   local review = active_review() or session.review
   local comments = (review and review.comments) or {}
   if #comments == 0 then
-    ui.notify("No Sherpa review comments recorded", vim.log.levels.WARN)
+    ui.notify("No Strider review comments recorded", vim.log.levels.WARN)
     return false
   end
 
@@ -972,7 +972,7 @@ function M.comment_picker()
     })
   end
 
-  return picker.select("Sherpa Comments", items, function(entry)
+  return picker.select("Strider Comments", items, function(entry)
     local comment = entry.value
     ui.jump_to_file(comment.path, comment.startLine)
     ui.highlight_range(comment.path, comment.startLine, comment.endLine, REVIEW_LANE)
@@ -983,7 +983,7 @@ function M.item_picker()
   local session = review_session()
   local review = active_review() or (session and session.review)
   if not review then
-    ui.notify("No Sherpa review session available", vim.log.levels.WARN)
+    ui.notify("No Strider review session available", vim.log.levels.WARN)
     return false
   end
 
@@ -1002,7 +1002,7 @@ function M.item_picker()
     })
   end
 
-  return picker.select("Sherpa Review Items", items, function(entry)
+  return picker.select("Strider Review Items", items, function(entry)
     review.current_index = entry.value.index
     if entry.value.index == 0 then
       ui.clear_stop_annotations()

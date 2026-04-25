@@ -1,48 +1,48 @@
-local clipboard = require("sherpa.clipboard")
-local log_diff = require("sherpa.log.diff")
-local log_pin = require("sherpa.log_pin")
-local state = require("sherpa.state")
-local status = require("sherpa.status")
+local clipboard = require("strider.clipboard")
+local log_diff = require("strider.log.diff")
+local log_pin = require("strider.log_pin")
+local state = require("strider.state")
+local status = require("strider.status")
 
 local M = {}
 
-local chunk_namespace = vim.api.nvim_create_namespace("sherpa-chunk")
-local comment_namespace = vim.api.nvim_create_namespace("sherpa-comments")
-local annotation_namespace = vim.api.nvim_create_namespace("sherpa-annotations")
-local log_namespace = vim.api.nvim_create_namespace("sherpa-log")
-local added_chunk_hl = "SherpaChunkAddedGutter"
-local removed_chunk_hl = "SherpaChunkRemovedGutter"
-local comment_hl = "SherpaCommentGutter"
-local annotation_hl = "SherpaAnnotation"
-local log_assistant_hl = "SherpaLogAssistant"
-local log_user_hl = "SherpaLogUser"
-local log_tool_hl = "SherpaLogTool"
-local log_thinking_hl = "SherpaLogThinking"
-local log_rule_hl = "SherpaLogRule"
-local log_error_hl = "SherpaLogError"
-local log_path_hl = "SherpaLogPath"
-local log_muted_hl = "SherpaLogMuted"
-local log_tool_output_hl = "SherpaLogToolOutput"
-local log_tool_output_ellipsis_hl = "SherpaLogToolOutputEllipsis"
-local log_tool_output_gutter_hl = "SherpaLogToolOutputGutter"
-local log_tool_output_meta_hl = "SherpaLogToolOutputMeta"
-local log_tool_output_error_hl = "SherpaLogToolOutputError"
+local chunk_namespace = vim.api.nvim_create_namespace("strider-chunk")
+local comment_namespace = vim.api.nvim_create_namespace("strider-comments")
+local annotation_namespace = vim.api.nvim_create_namespace("strider-annotations")
+local log_namespace = vim.api.nvim_create_namespace("strider-log")
+local added_chunk_hl = "StriderChunkAddedGutter"
+local removed_chunk_hl = "StriderChunkRemovedGutter"
+local comment_hl = "StriderCommentGutter"
+local annotation_hl = "StriderAnnotation"
+local log_assistant_hl = "StriderLogAssistant"
+local log_user_hl = "StriderLogUser"
+local log_tool_hl = "StriderLogTool"
+local log_thinking_hl = "StriderLogThinking"
+local log_rule_hl = "StriderLogRule"
+local log_error_hl = "StriderLogError"
+local log_path_hl = "StriderLogPath"
+local log_muted_hl = "StriderLogMuted"
+local log_tool_output_hl = "StriderLogToolOutput"
+local log_tool_output_ellipsis_hl = "StriderLogToolOutputEllipsis"
+local log_tool_output_gutter_hl = "StriderLogToolOutputGutter"
+local log_tool_output_meta_hl = "StriderLogToolOutputMeta"
+local log_tool_output_error_hl = "StriderLogToolOutputError"
 local log_user_prefix = "› "
 local log_user_continuation = "  "
-local log_assistant_bg_hl = "SherpaLogAssistantBg"
-local log_user_bg_hl = "SherpaLogUserBg"
-local log_error_bg_hl = "SherpaLogErrorBg"
-local log_diff_add_hl = "SherpaLogDiffAdd"
-local log_diff_remove_hl = "SherpaLogDiffRemove"
-local log_diff_context_hl = "SherpaLogDiffContext"
-local log_diff_stats_hl = "SherpaLogDiffStats"
-local log_diff_add_sign_hl = "SherpaLogDiffAddSign"
-local log_diff_remove_sign_hl = "SherpaLogDiffRemoveSign"
-local log_diff_line_number_hl = "SherpaLogDiffLineNumber"
-local log_diff_gutter_hl = "SherpaLogDiffGutter"
-local compose_working_hl = "SherpaComposeWorking"
-local compose_working_soft_hl = "SherpaComposeWorkingSoft"
-local compose_working_shine_hl = "SherpaComposeWorkingShine"
+local log_assistant_bg_hl = "StriderLogAssistantBg"
+local log_user_bg_hl = "StriderLogUserBg"
+local log_error_bg_hl = "StriderLogErrorBg"
+local log_diff_add_hl = "StriderLogDiffAdd"
+local log_diff_remove_hl = "StriderLogDiffRemove"
+local log_diff_context_hl = "StriderLogDiffContext"
+local log_diff_stats_hl = "StriderLogDiffStats"
+local log_diff_add_sign_hl = "StriderLogDiffAddSign"
+local log_diff_remove_sign_hl = "StriderLogDiffRemoveSign"
+local log_diff_line_number_hl = "StriderLogDiffLineNumber"
+local log_diff_gutter_hl = "StriderLogDiffGutter"
+local compose_working_hl = "StriderComposeWorking"
+local compose_working_soft_hl = "StriderComposeWorkingSoft"
+local compose_working_shine_hl = "StriderComposeWorkingShine"
 local close_windows_for_buffer
 local target_window
 -- Forward declaration — defined later, referenced by append_block.
@@ -64,14 +64,14 @@ local function spin_state(lane)
 end
 
 local function activity_echo(message)
-  return pcall(vim.api.nvim_echo, { { "sherpa: " .. message } }, false, {})
+  return pcall(vim.api.nvim_echo, { { "strider: " .. message } }, false, {})
 end
 
 local function flow_done_echo(message)
   return pcall(vim.api.nvim_echo, {
-    { "sherpa: ", "Comment" },
+    { "strider: ", "Comment" },
     { "● ", "MoreMsg" },
-    { message or "Sherpa flow complete" },
+    { message or "Strider flow complete" },
   }, true, {})
 end
 
@@ -139,12 +139,12 @@ end
 local function compose_status_line(progress, lane)
   local session = state.get_session(lane)
   local statuses = session and session.status or {}
-  local clarify_badge = statuses["sherpa-clarify"]
+  local clarify_badge = statuses["strider-clarify"]
   local prefix = ""
   local idle_msg = nil
   if clarify_badge and clarify_badge ~= "" then
     prefix = "[Clarify] "
-    idle_msg = "Sherpa is asking — type your answer (<Esc><Esc> to reject)."
+    idle_msg = "Strider is asking — type your answer (<Esc><Esc> to reject)."
   end
   if not progress then
     if idle_msg then return prefix .. idle_msg end
@@ -162,12 +162,12 @@ local function compose_status_line(progress, lane)
     if #parts > 0 then
       return table.concat(parts, " · ")
     end
-    return "Sherpa is ready."
+    return "Strider is ready."
   end
   -- Active: animate `Working`, keep elapsed time beside it, and leave the stop hint on the right.
   local elapsed = format_elapsed(progress.started_at) or "0s"
   local left = compose_working_label(prefix, lane) .. escape_status_text(string.format(" (%s)", elapsed))
-  local right = ":SherpaStop to interrupt"
+  local right = ":StriderStop to interrupt"
   return left, right, true
 end
 
@@ -221,26 +221,26 @@ local function start_spin(progress, lane)
 end
 
 local function notify(message, level)
-  vim.notify(message, level or vim.log.levels.INFO, { title = "sherpa" })
+  vim.notify(message, level or vim.log.levels.INFO, { title = "strider" })
 end
 
 local function log_name(lane)
   lane = normalize_lane(lane)
   if lane == "flow" then
-    return "sherpa://SherpaLogFlow"
+    return "strider://StriderLogFlow"
   end
   if lane == "review" then
-    return "sherpa://SherpaLogReview"
+    return "strider://StriderLogReview"
   end
   return state.get_config().log_buffer_name
 end
 
 local function review_name()
-  return "sherpa://review"
+  return "strider://review"
 end
 
 local function status_name()
-  return "sherpa://status"
+  return "strider://status"
 end
 
 local function log_lines(lines)
@@ -341,9 +341,9 @@ end
 
 -- Debounced log scroll. During tool-heavy turns scroll_log_windows fires
 -- many times per frame. A 30ms trailing timer coalesces rapid appends.
--- Each log window has a window-local `sherpa_log_follow` bit: when the
+-- Each log window has a window-local `strider_log_follow` bit: when the
 -- viewport is at the bottom, appends tail the log; scrolling up clears it
--- so the user can inspect earlier output without Sherpa yanking them back.
+-- so the user can inspect earlier output without Strider yanking them back.
 local scroll_timers = {}
 local SCROLL_DEBOUNCE_MS = 30
 local log_follow_augroup = nil
@@ -393,7 +393,7 @@ end
 
 local function log_follow_value(win)
   local ok, value = pcall(function()
-    return vim.w[win].sherpa_log_follow
+    return vim.w[win].strider_log_follow
   end)
   if not ok then return nil end
   return value
@@ -401,7 +401,7 @@ end
 
 local function log_follow_line_count(win)
   local ok, value = pcall(function()
-    return vim.w[win].sherpa_log_follow_line_count
+    return vim.w[win].strider_log_follow_line_count
   end)
   if not ok or type(value) ~= "number" then return nil end
   return value
@@ -410,9 +410,9 @@ end
 local function set_log_follow(win, follow)
   if not window_is_log(win) then return end
   pcall(function()
-    vim.w[win].sherpa_log_follow = follow and true or false
+    vim.w[win].strider_log_follow = follow and true or false
     if follow then
-      vim.w[win].sherpa_log_follow_line_count = log_window_line_count(win)
+      vim.w[win].strider_log_follow_line_count = log_window_line_count(win)
     end
   end)
 end
@@ -423,7 +423,7 @@ local function log_window_follows(win)
   end
   local follow = log_follow_value(win)
   if follow == nil then
-    -- A Sherpa-created log window is initialized explicitly. If a log
+    -- A Strider-created log window is initialized explicitly. If a log
     -- buffer is shown manually before that happens, prefer tailing until
     -- the first real scroll/cursor event records the user's intent.
     return true
@@ -468,7 +468,7 @@ end
 
 local function ensure_log_follow_autocmds()
   if log_follow_augroup then return end
-  log_follow_augroup = vim.api.nvim_create_augroup("SherpaLogFollow", { clear = true })
+  log_follow_augroup = vim.api.nvim_create_augroup("StriderLogFollow", { clear = true })
   vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "WinScrolled", "WinResized" }, {
     group = log_follow_augroup,
     callback = function(args)
@@ -515,7 +515,7 @@ local function scroll_log_windows(buf)
 end
 
 -- Build a single-line winbar from the widget that the extension pushes
--- via setWidget("sherpa", [...]). We flatten meaningful lines (Model,
+-- via setWidget("strider", [...]). We flatten meaningful lines (Model,
 -- Context, Cost, last response, etc.) joined with ` · `. Empty widget
 -- renders a minimal idle label.
 local function format_log_winbar(lane)
@@ -529,7 +529,7 @@ local function format_log_winbar(lane)
     end
   end
   if #parts == 0 then
-    return "Sherpa"
+    return "Strider"
   end
   return table.concat(parts, " · "):gsub("%%", "%%%%")
 end
@@ -598,10 +598,10 @@ end
 -- a horizontal split below the log (right-hand column). <C-s> sends
 -- its contents via the provided dispatcher; buffer is cleared on
 -- successful send but kept alive across sends.
-local compose_ns = vim.api.nvim_create_namespace("sherpa-compose-hint")
+local compose_ns = vim.api.nvim_create_namespace("strider-compose-hint")
 
 local function compose_buffer_name()
-  return "sherpa://compose"
+  return "strider://compose"
 end
 
 local function compose_hint_text()
@@ -609,7 +609,7 @@ local function compose_hint_text()
     return "Answer clarify · <C-s> send · <Esc><Esc> reject"
   end
   if state.peek_pending_request() then
-    return "Turn in flight · type to steer · <C-s> send · :SherpaStop cancel"
+    return "Turn in flight · type to steer · <C-s> send · :StriderStop cancel"
   end
   return "Type a message · <C-v> screenshot · <C-s> to send"
 end
@@ -726,26 +726,26 @@ function M.ensure_compose_buffer(on_send)
     -- goes back to the extension, the badge clears, and then we drop
     -- out of insert as usual. Lazy-required to avoid a load-order cycle
     -- (ui is required by init).
-    local ok, sherpa = pcall(require, "sherpa")
-    if ok and sherpa and sherpa.cancel_pending_clarify_if_any then
-      sherpa.cancel_pending_clarify_if_any()
+    local ok, strider = pcall(require, "strider")
+    if ok and strider and strider.cancel_pending_clarify_if_any then
+      strider.cancel_pending_clarify_if_any()
     end
     pcall(vim.cmd, "stopinsert")
   end
 
   vim.keymap.set({ "n", "i" }, "<C-s>", send_compose, {
-    buffer = buf, nowait = true, silent = true, desc = "Send Sherpa compose"
+    buffer = buf, nowait = true, silent = true, desc = "Send Strider compose"
   })
   vim.keymap.set({ "n", "i" }, "<C-v>", paste_image, {
-    buffer = buf, nowait = true, silent = true, desc = "Paste clipboard image into Sherpa compose"
+    buffer = buf, nowait = true, silent = true, desc = "Paste clipboard image into Strider compose"
   })
   vim.keymap.set({ "n", "i" }, "<S-Tab>", function()
     -- Mirror pi's own shift-tab UX: cycle the thinking level without
     -- leaving the compose buffer. The new level shows up in the log
     -- winbar's Model: ... (level) suffix once the widget refreshes.
-    require("sherpa").cycle_thinking()
+    require("strider").cycle_thinking()
   end, {
-    buffer = buf, nowait = true, silent = true, desc = "Cycle Sherpa thinking level"
+    buffer = buf, nowait = true, silent = true, desc = "Cycle Strider thinking level"
   })
   vim.keymap.set("i", "<Esc><Esc>", leave_insert, {
     buffer = buf, nowait = true, silent = true, desc = "Leave insert without sending"
@@ -819,7 +819,7 @@ function M.hide_compose()
 end
 
 -- True if either chat surface (log or compose) has a live window.
--- Used by :SherpaChat to decide between open and hide on the no-args
+-- Used by :StriderChat to decide between open and hide on the no-args
 -- toggle path.
 function M.log_is_visible(lane)
   local session = state.get_session(lane)
@@ -886,7 +886,7 @@ local log_label_hl = {
   user = log_user_hl,
   tool = log_tool_hl,
   thinking = log_thinking_hl,
-  sherpa = log_tool_hl,
+  strider = log_tool_hl,
   stderr = log_tool_hl,
   error = log_error_hl,
   plan = log_tool_hl,
@@ -917,7 +917,7 @@ local block_verbs = {
   user = log_user_prefix,
   thinking = "Thought",
   error = "Error",
-  sherpa = "Sherpa",
+  strider = "Strider",
   tool = "Ran",
   plan = "Plan",
   clarify = "Clarify",
@@ -1291,10 +1291,9 @@ function M.pop_tool_insert_row(tool_call_id, lane)
   return nil
 end
 
--- Render tool output in the log. Shows only the last TAIL_LINES of the
--- output; when earlier lines are hidden, emits a muted
--- `N earlier lines…` marker BEFORE the block so nothing breaks the
--- syntactic structure of the code inside.
+-- Render tool output in the log. Mirrors Codex's compact transcript view:
+-- show at most TOOL_OUTPUT_MAX_LINES output rows, keeping the beginning and
+-- end with a muted `… +N lines` marker between them.
 --
 -- When `lang` is non-nil, the shown lines are wrapped in a fenced
 -- markdown code block with that language tag. The log buffer's
@@ -1302,10 +1301,13 @@ end
 -- syntax-highlight the body. When `lang` is nil, this still uses a
 -- plain fence, which is useful for read/write paths whose filetype is
 -- unknown. Heterogeneous command/search output uses the compact renderer
--- below instead.
+-- below instead. For truncated fenced output, the marker is placed between
+-- two fences so omitted-output prose never lands inside code.
 --
 -- Empty text is skipped (not every tool produces output worth showing).
-local TOOL_OUTPUT_TAIL = 15
+local TOOL_OUTPUT_MAX_LINES = 5
+local TOOL_OUTPUT_HEAD_LINES = math.floor((TOOL_OUTPUT_MAX_LINES - 1) / 2)
+local TOOL_OUTPUT_TAIL_LINES = TOOL_OUTPUT_MAX_LINES - 1 - TOOL_OUTPUT_HEAD_LINES
 
 local function tool_output_window(text)
   if type(text) ~= "string" or vim.trim(text) == "" then return nil end
@@ -1322,14 +1324,32 @@ local function tool_output_window(text)
   end
   if last_meaningful == 0 then return nil end
 
-  local hidden = math.max(0, last_meaningful - TOOL_OUTPUT_TAIL)
-  local tail_start = hidden > 0 and (last_meaningful - TOOL_OUTPUT_TAIL + 1) or 1
-  return all_lines, last_meaningful, hidden, tail_start
+  if last_meaningful <= TOOL_OUTPUT_MAX_LINES then
+    return all_lines, last_meaningful, 0, last_meaningful, nil
+  end
+
+  local head_end = math.min(TOOL_OUTPUT_HEAD_LINES, last_meaningful)
+  local tail_start = math.max(head_end + 1, last_meaningful - TOOL_OUTPUT_TAIL_LINES + 1)
+  local omitted = math.max(0, tail_start - head_end - 1)
+  return all_lines, last_meaningful, omitted, head_end, tail_start
+end
+
+local function tool_output_ellipsis(omitted)
+  return string.format("… +%d lines", omitted)
+end
+
+local function add_fenced_tool_segment(lines, all_lines, lang, first_line, last_line)
+  if not first_line or not last_line or first_line > last_line then return end
+  lines[#lines + 1] = lang and ("```" .. lang) or "```"
+  for i = first_line, last_line do
+    lines[#lines + 1] = all_lines[i]
+  end
+  lines[#lines + 1] = "```"
 end
 
 function M.append_tool_output(text, lang, lane, opts)
   opts = opts or {}
-  local all_lines, last_meaningful, hidden, tail_start = tool_output_window(text)
+  local all_lines, last_meaningful, omitted, head_end, tail_start = tool_output_window(text)
   if not all_lines then return end
 
   local session = state.get_session(lane)
@@ -1340,16 +1360,13 @@ function M.append_tool_output(text, lang, lane, opts)
 
   -- Build output lines directly from the computed window.
   local lines = {}
-  local marker_offset = nil
-  if hidden > 0 then
-    lines[#lines + 1] = string.format("%d earlier %s\u{2026}", hidden, hidden == 1 and "line" or "lines")
+  local marker_offset
+  add_fenced_tool_segment(lines, all_lines, lang, 1, head_end)
+  if omitted > 0 then
+    lines[#lines + 1] = tool_output_ellipsis(omitted)
     marker_offset = #lines - 1
+    add_fenced_tool_segment(lines, all_lines, lang, tail_start, last_meaningful)
   end
-  lines[#lines + 1] = lang and ("```" .. lang) or "```"
-  for i = tail_start, last_meaningful do
-    lines[#lines + 1] = all_lines[i]
-  end
-  lines[#lines + 1] = "```"
   lines[#lines + 1] = ""
 
   local items = log_lines(lines)
@@ -1426,7 +1443,7 @@ local function add_compact_extmarks(buf, start_row, roles, items)
   end
 end
 
-local function compact_tool_output_lines(tool_opts, all_lines, last_meaningful, hidden, tail_start)
+local function compact_tool_output_lines(tool_opts, all_lines, last_meaningful, omitted, head_end, tail_start)
   local lines = {}
   local roles = {}
   local count_label = compact_count_label(tool_opts, last_meaningful)
@@ -1434,13 +1451,17 @@ local function compact_tool_output_lines(tool_opts, all_lines, last_meaningful, 
     lines[#lines + 1] = string.format("  %d %s", last_meaningful, count_label)
     roles[#roles + 1] = "meta"
   end
-  if hidden > 0 then
-    lines[#lines + 1] = string.format("  %d earlier %s\u{2026}", hidden, hidden == 1 and "line" or "lines")
-    roles[#roles + 1] = "meta"
-  end
-  for i = tail_start, last_meaningful do
+  for i = 1, head_end do
     lines[#lines + 1] = compact_output_prefix .. all_lines[i]
     roles[#roles + 1] = "row"
+  end
+  if omitted > 0 then
+    lines[#lines + 1] = "  " .. tool_output_ellipsis(omitted)
+    roles[#roles + 1] = "meta"
+    for i = tail_start, last_meaningful do
+      lines[#lines + 1] = compact_output_prefix .. all_lines[i]
+      roles[#roles + 1] = "row"
+    end
   end
   local status_line, status_role = compact_status_line(tool_opts.status)
   if status_line then
@@ -1457,7 +1478,7 @@ function M.append_compact_tool_output(text, tool_opts, lane, opts)
   tool_opts = tool_opts or {}
   ensure_chunk_style()
 
-  local all_lines, last_meaningful, hidden, tail_start = tool_output_window(text)
+  local all_lines, last_meaningful, omitted, head_end, tail_start = tool_output_window(text)
   if not all_lines then return end
 
   local session = state.get_session(lane)
@@ -1467,7 +1488,7 @@ function M.append_compact_tool_output(text, tool_opts, lane, opts)
   end
 
   local lines, roles = compact_tool_output_lines(
-    tool_opts, all_lines, last_meaningful, hidden, tail_start
+    tool_opts, all_lines, last_meaningful, omitted, head_end, tail_start
   )
 
   local items = log_lines(lines)
@@ -1708,7 +1729,7 @@ function M.finish_activity(message, status, lane)
   M.refresh_compose_hint()
 end
 
-local editor_ns = vim.api.nvim_create_namespace("sherpa-editor-hint")
+local editor_ns = vim.api.nvim_create_namespace("strider-editor-hint")
 
 -- Open a centered floating scratch editor with ghost-text help.
 -- opts: { name, title, hint_lines?, allow_empty?, prefill?, on_cancel? }
@@ -1803,7 +1824,7 @@ local function open_scratch_editor(opts, on_submit)
     if submit and (text ~= "" or opts.allow_empty) then
       on_submit(text)
     elseif submit then
-      notify("Discarded empty Sherpa input", vim.log.levels.WARN)
+      notify("Discarded empty Strider input", vim.log.levels.WARN)
       if opts.on_cancel then opts.on_cancel() end
     else
       if opts.on_cancel then opts.on_cancel() end
@@ -1837,8 +1858,8 @@ end
 function M.open_comment_editor(on_submit, opts)
   opts = opts or {}
   open_scratch_editor({
-    name = "sherpa://comment",
-    title = "Sherpa comment",
+    name = "strider://comment",
+    title = "Strider comment",
     prefill = opts.prefill,
     hint_lines = opts.hint_lines or { "Leave a review comment. Multiple lines are fine." },
   }, on_submit)
@@ -1913,7 +1934,7 @@ function M.seed_compose(text)
   return true
 end
 
--- Prefill compose for :SherpaChat. Empty compose is replaced outright;
+-- Prefill compose for :StriderChat. Empty compose is replaced outright;
 -- non-empty compose keeps the user's draft and appends the new context
 -- after a blank line so command-line context doesn't stomp on typing.
 function M.prefill_compose(text)
@@ -1956,7 +1977,7 @@ end
 function M.open_prompt_editor(label, on_submit, opts)
   opts = normalize_prompt_editor_opts(opts)
   open_scratch_editor({
-    name = "sherpa://prompt",
+    name = "strider://prompt",
     title = label,
     hint_lines = opts.hint_lines,
     prefill = opts.prefill,
@@ -2153,7 +2174,7 @@ ensure_chunk_style = function()
   vim.api.nvim_set_hl(0, log_tool_output_error_hl, { default = true, fg = "#F14C4C" })
 end
 
-local highlight_augroup = vim.api.nvim_create_augroup("SherpaHighlights", { clear = true })
+local highlight_augroup = vim.api.nvim_create_augroup("StriderHighlights", { clear = true })
 vim.api.nvim_create_autocmd("ColorScheme", {
   group = highlight_augroup,
   callback = function()
@@ -2302,7 +2323,7 @@ end
 -- Render annotations for a single plan stop. `item` is a stop from the
 -- review plan; it may carry `explanation` (rendered as a block above the
 -- stop's startLine) and `annotations` (optional extras). See stop schema
--- in pi/sherpa-stepper.ts for the shape.
+-- in pi/strider-stepper.ts for the shape.
 --
 -- Caller is responsible for clearing prior annotations first.
 function M.set_stop_annotations(item)
@@ -2330,7 +2351,7 @@ function M.set_stop_annotations(item)
       return
     end
     local virt_lines = {}
-    table.insert(virt_lines, { { "┌─ sherpa ─────────────────────", annotation_hl } })
+    table.insert(virt_lines, { { "┌─ strider ─────────────────────", annotation_hl } })
     for _, line in ipairs(wrap_text(text, 78)) do
       table.insert(virt_lines, { { "│ " .. line, annotation_hl } })
     end
@@ -2420,7 +2441,7 @@ end
 
 function M.notify_flow_done(message, opts)
   opts = opts or {}
-  local text = message or "Sherpa flow complete"
+  local text = message or "Strider flow complete"
   if opts.notify ~= false then
     notify("🟢 " .. text, vim.log.levels.INFO)
   end

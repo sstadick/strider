@@ -8,7 +8,7 @@
 ## Goal
 
 Make non-code tool output feel like the Codex transcript style while keeping
-Sherpa's useful pi-style visibility into tool results.
+Strider's useful pi-style visibility into tool results.
 
 The main change is to stop rendering `bash`, `grep`, `find`, and `ls` output as
 markdown code blocks. Instead, render them as compact rows attached to the tool
@@ -21,7 +21,7 @@ syntax highlighting is valuable.
 
 ```text
 • Ran command
-  luajit -b lua/sherpa/ui.lua /tmp/sherpa-ui.luac
+  luajit -b lua/strider/ui.lua /tmp/strider-ui.luac
   ✓ exited 0
 ```
 
@@ -40,7 +40,7 @@ syntax highlighting is valuable.
 ```text
 • Ran command
   npm test
-  42 earlier lines…
+  … +42 lines
   │ PASS src/parser.test.ts
   │ PASS src/queue.test.ts
   │ FAIL src/ui.test.ts
@@ -50,11 +50,11 @@ syntax highlighting is valuable.
 ### Grep
 
 ```text
-• Explored "append_tool_output" lua/sherpa
+• Explored "append_tool_output" lua/strider
   3 matches
-  │ lua/sherpa/ui.lua:1193  function M.append_tool_output(text, lang, lane, opts)
-  │ lua/sherpa/rpc.lua:678  ui.append_tool_output(text, lang, lane, insert_opts)
-  │ tests/test_tmux_log_rendering.py:110  require('sherpa.ui').append_tool_output(...)
+  │ lua/strider/ui.lua:1193  function M.append_tool_output(text, lang, lane, opts)
+  │ lua/strider/rpc.lua:678  ui.append_tool_output(text, lang, lane, insert_opts)
+  │ tests/test_tmux_log_rendering.py:110  require('strider.ui').append_tool_output(...)
 ```
 
 ### Find
@@ -69,7 +69,7 @@ syntax highlighting is valuable.
 ### Ls
 
 ```text
-• Explored lua/sherpa
+• Explored lua/strider
   9 entries
   │ init.lua
   │ log_pin.lua
@@ -83,7 +83,8 @@ syntax highlighting is valuable.
 1. Keep `read` and `write` on the existing fenced-code renderer.
 2. Keep `edit` on inline diff rows.
 3. Render `bash`, `grep`, `find`, and `ls` through a compact output renderer.
-4. Preserve tail truncation: show `N earlier lines…` before visible output rows.
+4. Preserve Codex-style middle truncation: show `… +N lines` between visible
+   head and tail output rows.
 5. Prefix visible output rows with a muted `│` gutter.
 6. Highlight output text as secondary log text, not as syntax-highlighted code.
 7. Treat compact output as inert transcript text, not markdown.
@@ -103,23 +104,23 @@ syntax highlighting is valuable.
 
 ## Implementation Plan
 
-1. Add a compact renderer in `lua/sherpa/ui.lua`.
+1. Add a compact renderer in `lua/strider/ui.lua`.
    - Suggested API: `append_compact_tool_output(text, opts, lane, insert_opts)`.
    - `opts.kind`: `bash`, `grep`, `find`, or `ls`.
    - `opts.count_label`: optional plural label such as `matches`.
    - `opts.status`: optional command status for future bash metadata.
-   - Reuse the existing tail limit and sentinel stripping behavior where possible.
+   - Reuse the existing output-window and sentinel stripping behavior where possible.
    - Add a small markdown-neutralization helper for compact output row bodies.
      The helper should run before lines are inserted into the markdown log
      buffer.
 
-2. Add highlight groups in `lua/sherpa/ui.lua`.
-   - `SherpaLogToolOutputGutter`: muted `│`.
-   - `SherpaLogToolOutputMeta`: muted count/truncation/status lines.
-   - `SherpaLogToolOutputError`: red status line for failed commands.
-   - Keep `SherpaLogToolOutput` for row body text.
+2. Add highlight groups in `lua/strider/ui.lua`.
+   - `StriderLogToolOutputGutter`: muted `│`.
+   - `StriderLogToolOutputMeta`: muted count/truncation/status lines.
+   - `StriderLogToolOutputError`: red status line for failed commands.
+   - Keep `StriderLogToolOutput` for row body text.
 
-3. Route non-code tools in `lua/sherpa/rpc.lua`.
+3. Route non-code tools in `lua/strider/rpc.lua`.
    - Keep `read` / `write` calling `append_tool_output(text, lang, ...)`.
    - Route `bash`, `grep`, `find`, and `ls` to the compact renderer.
    - Leave result parsing conservative: line-count-based counts are fine for v1.
@@ -160,13 +161,13 @@ syntax highlighting is valuable.
 2. Decide whether `grep` paths should get path-specific extmarks inside output
    rows. This is useful, but can wait until the compact renderer exists.
 
-3. Decide whether compact output should have a different tail limit from code
-   blocks. A smaller default, such as 10 lines, may scan better.
+3. Decide whether compact output should have a different visible limit from code
+   blocks. Codex uses a 5-line visible output cap for agent tool output.
 
 ## Estimated Size
 
 Expected implementation size: roughly 160-310 LOC.
 
-- `lua/sherpa/ui.lua`: 80-140 LOC
-- `lua/sherpa/rpc.lua`: 30-70 LOC
+- `lua/strider/ui.lua`: 80-140 LOC
+- `lua/strider/rpc.lua`: 30-70 LOC
 - `tests/test_tmux_log_rendering.py`: 50-100 LOC

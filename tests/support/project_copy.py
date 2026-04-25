@@ -10,7 +10,7 @@ class FixtureProject:
         self.root = None
 
     def __enter__(self) -> Path:
-        self._tempdir = tempfile.TemporaryDirectory(prefix="sherpa-fixture-")
+        self._tempdir = tempfile.TemporaryDirectory(prefix="strider-fixture-")
         target = Path(self._tempdir.name) / self.fixture_root.name
         shutil.copytree(self.fixture_root, target)
         self.root = target

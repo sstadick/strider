@@ -1,16 +1,16 @@
 # Review mode
 
-How `:SherpaReview` works today. For the underlying architecture see
+How `:StriderReview` works today. For the underlying architecture see
 `docs/architecture.md`; for the design rationale of the plan-based flow
 see `docs/review-planning.md`.
 
 ## Mental model
 
 Review is pre-planned. The model commits to a full ordered list of stops
-up front; Sherpa then walks that list stop-by-stop. Navigation is
-mechanical (`:SherpaNext` increments an index, `:SherpaNext!` accepts the
+up front; Strider then walks that list stop-by-stop. Navigation is
+mechanical (`:StriderNext` increments an index, `:StriderNext!` accepts the
 current stop before advancing); explanations render into the
-`sherpa://review` pane as each stop becomes active.
+`strider://review` pane as each stop becomes active.
 
 This is the smwyg-browser pattern: plan first, navigate fast, deepen on
 demand.
@@ -23,7 +23,7 @@ user typed, and whether they had a visual range, are the only signals.
 
 | Scope | User signal | Coverage guarantee |
 |---|---|---|
-| `selection` | `:'<,'>SherpaReview ...` with a visual range | every line in the range appears in some stop |
+| `selection` | `:'<,'>StriderReview ...` with a visual range | every line in the range appears in some stop |
 | `diff` | prose mentions diff / PR / branch changes | every line in `git diff <base>...HEAD` appears in some stop |
 | `free` | anything else | none — the model picks what matters |
 
@@ -33,70 +33,70 @@ the original range or the diff. Gaps are auto-filled or surfaced as
 
 ## Lifecycle
 
-1. **User starts a review.** `:SherpaReview <prose>` with optional visual
+1. **User starts a review.** `:StriderReview <prose>` with optional visual
    range. The review pane opens immediately in `stop: planning...` state
    — the user sees activity from keystroke zero.
-2. **Sherpa sends `/plan <prose>`** to the extension. The extension's
+2. **Strider sends `/plan <prose>`** to the extension. The extension's
    `plan` command tells the model to produce a plan by calling the
-   `sherpa_plan` tool. No prose explanation yet.
-3. **Model reads what it needs** and calls `sherpa_plan` with
+   `strider_plan` tool. No prose explanation yet.
+3. **Model reads what it needs** and calls `strider_plan` with
    `{ scope, base?, stops: [{ path, startLine, endLine, title, why }] }`.
-4. **Sherpa ingests the plan.** Stops are normalized (cwd-relative paths
+4. **Strider ingests the plan.** Stops are normalized (cwd-relative paths
    made absolute), coverage is checked, `current_index` is set to 1, the
    first stop is focused in the code window, and the TOC renders in the
    review pane.
-5. **Sherpa focuses stop 1.** The explanation was already written by
-   the planner as part of `sherpa_plan`'s payload — it's already in
+5. **Strider focuses stop 1.** The explanation was already written by
+   the planner as part of `strider_plan`'s payload — it's already in
    `items[1].explanation` and renders in the review pane. No second
    model round-trip happens on plan completion.
-6. **User navigates.** `:SherpaNext` / `:SherpaPrev` increment/decrement
-   `current_index`. `:SherpaNext!` marks the current stop accepted and
+6. **User navigates.** `:StriderNext` / `:StriderPrev` increment/decrement
+   `current_index`. `:StriderNext!` marks the current stop accepted and
    then advances. Navigation is a local index change plus a buffer jump
-   — no model call. `:SherpaReviewItems` opens a picker over the plan.
-7. **Mid-review questions.** `:SherpaReview <question>` with an active
+   — no model call. `:StriderReviewItems` opens a picker over the plan.
+7. **Mid-review questions.** `:StriderReview <question>` with an active
    review sends a `/review` scoped to the current stop, carrying the
    question as the user focus. This is the one place per-stop model
    round-trips happen.
 8. **Mid-review plan growth (free scope only).** The model may call
-   `sherpa_append_stops` during a `/review` turn to add more stops.
+   `strider_append_stops` during a `/review` turn to add more stops.
    Append-only — no reorder, no deletion. Selection/diff plans are fixed.
 9. **End of review.** Walking past the last stop ends the review in the
-   `sherpa://review` pane. The review log is not opened automatically. If any
-   comments are unresolved, Sherpa sends a final `/review` in the background
+   `strider://review` pane. The review log is not opened automatically. If any
+   comments are unresolved, Strider sends a final `/review` in the background
    that feeds the comments back to the agent for summary/follow-up; the final
    summary renders in the review pane and is forwarded into the main chat
    transcript.
 
 ## Tools (extension)
 
-- **`sherpa_plan`** — called by the model during `/plan`. Payload:
+- **`strider_plan`** — called by the model during `/plan`. Payload:
   `{ scope: "selection"|"diff"|"free", base?: string, stops: Stop[] }`.
   Rejects when scope is `"diff"` without a `base`. Rejects empty stops.
-- **`sherpa_append_stops`** — called by the model mid-`/review`. Payload:
+- **`strider_append_stops`** — called by the model mid-`/review`. Payload:
   `{ stops: Stop[] }`. Only honored when the active review has
-  `scope == "free"`; otherwise Sherpa drops it on the floor.
+  `scope == "free"`; otherwise Strider drops it on the floor.
 
 ## UI rules during review
 
-- The **review pane** (`sherpa://review`) is the primary surface. It
+- The **review pane** (`strider://review`) is the primary surface. It
   shows source, goal, current stop, scope, TOC (when >1 stops),
   explanation, excerpt, comments, and controls.
 - The **code window** stays on the active planned stop. The model's
   `read` / `bash` / etc. tool calls during `/plan` or `/review` do **not**
-  auto-jump the buffer. Jumps happen only on stop changes (`:SherpaNext`,
-  `:SherpaPrev`, picker selection).
-- The **review log buffer** (`sherpa://SherpaLogReview`) is secondary —
+  auto-jump the buffer. Jumps happen only on stop changes (`:StriderNext`,
+  `:StriderPrev`, picker selection).
+- The **review log buffer** (`strider://StriderLogReview`) is secondary —
   transcript and tool activity for debugging. Review start and review end do
   not open it automatically; users can toggle it explicitly with
-  `:SherpaLogReview`.
+  `:StriderLogReview`.
 
 Implementation boundary:
-- `lua/sherpa/review.lua` owns state changes: starting reviews, ingesting
+- `lua/strider/review.lua` owns state changes: starting reviews, ingesting
   plans, advancing stops, comments, summaries, and prompts.
-- `lua/sherpa/review/render.lua` owns the review pane markdown. It is
+- `lua/strider/review/render.lua` owns the review pane markdown. It is
   intentionally state-free: callers pass a review table and cwd, and it
-  returns the lines to write to `sherpa://review`.
-- `lua/sherpa/ui.lua` owns the Neovim buffer/window mechanics for showing
+  returns the lines to write to `strider://review`.
+- `lua/strider/ui.lua` owns the Neovim buffer/window mechanics for showing
   those lines and rendering code-buffer annotations.
 
 ## State shape
@@ -109,14 +109,14 @@ session.review = {
   source        = "review",
   goal          = "user's original prompt",
   planned       = true,
-  planning      = bool,                -- true until sherpa_plan lands
+  planning      = bool,                -- true until strider_plan lands
   coverage_ok   = bool,
 
   items         = { ...stops... },     -- the plan
   current_index = number,              -- 0 while planning, 1..N after
 
   comments      = { ...review comments... },
-  accepted_stops = {},                 -- stop ids accepted via :SherpaNext!
+  accepted_stops = {},                 -- stop ids accepted via :StriderNext!
   awaiting_summary = bool,
   summary       = string | nil,
   summary_forwarded = bool,
@@ -170,8 +170,8 @@ and cleared when the active stop changes or the review ends.
 
 ## Comments
 
-`:SherpaComment <text>` attaches a comment to the active stop, or to a
-visual sub-range inside it. Comments stay local to Sherpa — they are
+`:StriderComment <text>` attaches a comment to the active stop, or to a
+visual sub-range inside it. Comments stay local to Strider — they are
 **not** submitted anywhere. At end-of-review, any unresolved comments
 are gathered into a final `/review` prompt so the agent can summarize
 concerns and propose follow-ups.
@@ -181,12 +181,12 @@ integration; that integration is not implemented yet.
 
 ## Prompt shapes (extension)
 
-Each operation has a specific prompt. They live in `pi/sherpa-stepper.ts`:
+Each operation has a specific prompt. They live in `pi/strider-stepper.ts`:
 
-- **`/plan`** — tells the model to call `sherpa_plan`, self-label scope,
+- **`/plan`** — tells the model to call `strider_plan`, self-label scope,
   keep stops small, order pedagogically, provide a `why` per stop.
 - **`/review`** — only sent when the user asks a question with
-  `:SherpaReview <question>` on an active review. Built by
+  `:StriderReview <question>` on an active review. Built by
   `review.build_prompt` on the Lua side, carrying `file`, `line range`,
   `title`, `why`, `excerpt`, and the user's focus text. Default per-stop
   explanations are pre-computed by the planner, not fetched here.

@@ -304,16 +304,17 @@ about the current review item.
 
 ### To pi
 
-- `prompt` — user prompt message (slash-commands are passed through
 - `prompt` — user prompt message (extension commands like `/models`,
-  `/tree`, `/thinking` are passed through verbatim so pi routes them to
-  the matching extension command handler; other text is wrapped in
-  `/prompt`)
+  `/tree`, `/thinking`, `/sessions`, and `/resume` are passed through
+  verbatim so pi routes them to the matching extension command handler;
+  other text is wrapped in `/prompt`)
 - `new_session` — start a fresh session (`/new` in compose)
 - `fork` — fork the current session from an entry (`/fork [entryId]`)
 - `compact` — compact context (`/compact [instructions]`)
 - `export_html` — export session to HTML (`/export [path]`)
-- `switch_session` — resume a saved session (`/resume [path]`)
+- `switch_session` — raw RPC session switch remains available internally;
+  Strider's `/resume` and `/switch_session` slash commands go through the
+  prompt/extension path first so ids and paths can be resolved.
 - `steer` — mid-turn user redirect delivered after the current assistant
   turn's tool calls complete. Slash-commands are rejected as steers
   (pi forbids them).
@@ -363,9 +364,11 @@ Working today:
   `… +N lines` marker when middle lines are hidden; accent-colored file paths in
   tool headers; parallel tool results inserted next to their headers
   via extmark tracking
-- session management: `/new`, `/fork`, `/compact`, `/export`, `/resume`
-  route to their dedicated RPC message types; session changes render
-  a visual separator (`──── New session ────`) in the log
+- session management: `/new`, `/fork`, `/compact`, and `/export` route to
+  dedicated RPC message types; `/sessions`, `/resume`, and `/switch_session`
+  route to Strider extension commands that browse/resolve sessions before
+  switching. Session changes render a visual separator
+  (`──── New session ────`) in the log
 - fast fake-backend tmux e2e tests
 - optional real-pi smoke tests on bundled fixture projects
 

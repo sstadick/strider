@@ -1,7 +1,6 @@
 # Ready for work
 - Generally speed up the review process. Unsure how to do this. But for small reviews maybe steal some context from... somewhere?
 - When we run commands like /compact - show something to indicate that things are happening
-- sessions switching, see the plans
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on
@@ -18,7 +17,7 @@
 - The "strider_clarify" blocks so I can't see the plan that I'm asked to provide a response on
     - fixed: force vim.cmd("redraw") before vim.ui.select in plan proposal picker
 - Add a way to hard reset the agent
-    - /new sends the new_session RPC type; /fork, /compact, /export, /resume also routed
+    - /new sends the new_session RPC type; /fork, /compact, /export also route as raw RPC commands
     - session changes render a visual separator in the log
 - Running /compact does nothing - are we stripping commands or something?
     - fixed: /compact is a dedicated RPC type, not a prompt-routed extension command

@@ -149,6 +149,59 @@ class RpcCommandTests(unittest.TestCase):
                 alive = h.expr("1+1")
                 self.assertEqual("2", alive)
 
+    # ---- session extension command routing ------------------------------
+
+    def test_resume_routes_through_prompt_extension_command(self) -> None:
+        """/resume should be sent as a prompt so the extension can resolve ids."""
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
+                    timeout=3.0,
+                )
+                h.send("/resume abc123", "C-s", pause=0.5)
+                h.wait_until(
+                    lambda: "/resume abc123" in "\n".join(h.log_lines()),
+                    timeout=3.0,
+                )
+                alive = h.expr("1+1")
+                self.assertEqual("2", alive)
+
+    def test_sessions_routes_through_prompt_extension_command(self) -> None:
+        """/sessions should stay on the extension-command prompt path."""
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat")
+                h.wait_until(
+                    lambda: h.expr("bufexists('strider://compose')") == "1",
+                    timeout=3.0,
+                )
+                h.send("/sessions", "C-s", pause=0.5)
+                h.wait_until(
+                    lambda: "/sessions" in "\n".join(h.log_lines()),
+                    timeout=3.0,
+                )
+                alive = h.expr("1+1")
+                self.assertEqual("2", alive)
+
+    def test_session_vim_commands_send_main_lane_slash_commands(self) -> None:
+        """:StriderSessions and :StriderResume should dispatch to main chat."""
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderSessions")
+                h.wait_until(
+                    lambda: "/sessions" in "\n".join(h.log_lines()),
+                    timeout=3.0,
+                )
+                h.ex("StriderResume abc123")
+                h.wait_until(
+                    lambda: "/resume abc123" in "\n".join(h.log_lines()),
+                    timeout=3.0,
+                )
+                alive = h.expr("1+1")
+                self.assertEqual("2", alive)
+
     # ---- response callback mechanism ------------------------------------
 
     def test_response_callback_fires_on_success(self) -> None:

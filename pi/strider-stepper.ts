@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { browseSessions, resumeSession, sessionIdentity } from "./session-switching.js";
 
 type OperationKind = "search" | "review" | "patch" | "prompt" | "plan";
 
@@ -26,6 +27,7 @@ function collapseWhitespace(text?: string): string | undefined {
 	const collapsed = text.replace(/\s+/g, " ").trim();
 	return collapsed.length > 0 ? collapsed : undefined;
 }
+
 
 function explicitReviewRules(): string[] {
 	return [
@@ -168,6 +170,8 @@ export default function (pi: ExtensionAPI) {
 
 	function statusSuffix(ctx: any): string[] {
 		const lines: string[] = [];
+		const session = sessionIdentity(ctx);
+		if (session) lines.push(`Session: ${session}`);
 		const model = ctx.model;
 		const label = modelLabel(model);
 		// Attach thinking level to the model line — it's a property of
@@ -531,6 +535,37 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			sendOperationMessage("patch", ctx, patchPrompt(request));
+		},
+	});
+
+	pi.registerCommand("sessions", {
+		description: "Browse saved sessions for this project",
+		handler: async (_args: any, ctx: any) => {
+			await browseSessions(ctx, updateWidget);
+		},
+	});
+
+	pi.registerCommand("resume", {
+		description: "Resume a saved session by id prefix or path",
+		handler: async (args: any, ctx: any) => {
+			const input = args?.trim();
+			if (!input) {
+				await browseSessions(ctx, updateWidget);
+				return;
+			}
+			await resumeSession(input, ctx, updateWidget);
+		},
+	});
+
+	pi.registerCommand("switch_session", {
+		description: "Resume a saved session by id prefix or path",
+		handler: async (args: any, ctx: any) => {
+			const input = args?.trim();
+			if (!input) {
+				ctx.ui.notify("Usage: /switch_session <path-or-id>", "warning");
+				return;
+			}
+			await resumeSession(input, ctx, updateWidget);
 		},
 	});
 

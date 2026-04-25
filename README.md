@@ -51,6 +51,14 @@ Ask a side question on the flow lane:
 :'<,'>StriderQ why is this loop written this way?
 ```
 
+Browse or resume pi sessions:
+
+```vim
+:StriderSessions
+:StriderResume 0196f3a
+:StriderResume ./some-session.jsonl
+```
+
 Work, then review the diff:
 
 ```vim
@@ -78,7 +86,7 @@ prefills compose so you can edit before sending.
   output keeps syntax-highlighted code fences; command/search output uses
   compact rows that do not accidentally render as markdown.
 - pi controls in compose: `/models`, `/tree`, `/thinking`, `/compact`, `/new`,
-  `/fork`, `/export`, and `/resume`.
+  `/fork`, `/export`, `/sessions`, `/resume`, and `/switch_session`.
 - Status and control surfaces: `:StriderStatus` summarizes lane state, context,
   cost, review progress, pending controls, and recent errors.
 
@@ -125,9 +133,29 @@ require("strider").setup()
 | `:StriderComment [text]` | Record a review comment |
 | `:StriderStatus` | Show lane/status/control summary |
 | `:StriderStop` | Abort the active turn |
+| `:StriderSessions` | Browse saved pi sessions for this project |
+| `:StriderResume [id-or-path]` | Resume a saved pi session |
 
 See [docs/usage.md](docs/usage.md) for the full command list and workflow
 details.
+
+## Session storage
+
+Strider uses pi's existing JSONL session files. To keep sessions repo-local,
+add a pi project settings file:
+
+```json
+// .pi/settings.json
+{
+  "sessionDir": ".pi/sessions"
+}
+```
+
+Then `/sessions` or `:StriderSessions` browses saved sessions in that directory,
+and `/resume <id-or-path>` or `:StriderResume <id-or-path>` resumes one directly.
+Session files can contain prompts, file contents, command output, and secrets, so
+`.pi/sessions/` should usually be added to `.gitignore` unless you explicitly
+want to share them.
 
 ## Development
 
@@ -158,4 +186,5 @@ STRIDER_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
 - [docs/review-planning.md](docs/review-planning.md) - review planning design
 - [docs/clarify-plan.md](docs/clarify-plan.md) - clarify tool design notes
 - [docs/message-queue.md](docs/message-queue.md) - planned editable follow-up queue
+- [docs/saved-sessions.md](docs/saved-sessions.md) - session storage and resume flow
 - [recordings/README.md](recordings/README.md) - demo recording workflow

@@ -3,7 +3,7 @@
 ## Proposal
 
 - Date proposed: 2026-04-25
-- Implementation status: proposed
+- Implementation status: v1 implemented (pending manual session-switch validation)
 
 ## Goal
 

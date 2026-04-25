@@ -366,6 +366,24 @@ function M.stop()
   end
 end
 
+local function send_main_command(command)
+  return send(command, command, {
+    lane = MAIN_LANE,
+    operation = "command",
+    open_log = true,
+  })
+end
+
+function M.sessions()
+  return send_main_command("/sessions")
+end
+
+function M.resume(target)
+  target = trimmed(target)
+  local command = target ~= "" and ("/resume " .. target) or "/resume"
+  return send_main_command(command)
+end
+
 -- Slash-commands that pi routes to our /prompt etc. handlers which DO
 -- send a user message to the model — treat these as normal prompt turns
 -- (they produce message_end and need pending-request tracking).
@@ -383,13 +401,14 @@ local function is_prompt_slash(text)
   return name and strider_prompt_commands[name] or false
 end
 
--- Session-management and built-in commands that are dedicated RPC
--- message types, not extension commands routed through prompt.
+-- Built-in commands that are dedicated RPC message types, not extension
+-- commands routed through prompt. Session-browsing commands (/sessions,
+-- /resume, /switch_session) stay on the prompt path so the Strider pi
+-- extension can resolve ids and paths before switching.
 local rpc_commands = {
   new     = { type = "new_session" },
   compact = { type = "compact", args_key = "customInstructions" },
   export  = { type = "export_html", args_key = "outputPath" },
-  resume  = { type = "switch_session", args_key = "sessionPath" },
 }
 
 -- Aliases: common short-hands that map to the canonical command name

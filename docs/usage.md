@@ -26,6 +26,8 @@ README.
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:StriderStop` | Abort the current in-flight turn |
 | `:StriderStatus` | Open the current lane/status/control summary |
+| `:StriderSessions` | Browse saved pi sessions for this project |
+| `:StriderResume [id-or-path]` | Resume a saved pi session |
 | `:StriderRetry` | Re-dispatch a stalled plan turn |
 
 `:StriderSearch`, `:StriderReview`, `:StriderPatch`, `:StriderQ`, and
@@ -54,7 +56,9 @@ and related commands, compose supports:
 - `/new` - start a fresh session
 - `/fork [entryId]` - fork the session from a conversation point
 - `/export [path]` - export session to HTML
-- `/resume [sessionPath]` - switch to a saved session
+- `/sessions` - browse saved sessions for the current project/session directory
+- `/resume [id-or-path]` - browse sessions or resume by id prefix/path
+- `/switch_session <id-or-path>` - explicit alias for `/resume <id-or-path>`
 
 Some pi TUI commands (`/session`, `/copy`, `/share`, `/hotkeys`,
 `/changelog`, `/settings`) have no RPC equivalent and are not available in
@@ -68,6 +72,24 @@ clarify. Sending while a reply is streaming steers the running turn via pi's
 `:StriderStop` aborts the in-flight turn. `:StriderStatus` opens a compact
 summary of lane state, pending controls, review progress, model/context widget
 lines, and the last error.
+
+## Session Storage
+
+Strider uses pi's existing JSONL session files rather than a separate store.
+Projects can opt into repo-local sessions with:
+
+```json
+// .pi/settings.json
+{
+  "sessionDir": ".pi/sessions"
+}
+```
+
+Because Strider starts pi with the project as the working directory, pi will
+create and list sessions there. Use `/sessions` or `:StriderSessions` to browse
+saved sessions, and `/resume <id-or-path>` or `:StriderResume <id-or-path>` to
+resume directly. Session JSONL can include prompts, file contents, tool output,
+and secrets, so `.pi/sessions/` should usually be gitignored.
 
 ## Review Flow
 

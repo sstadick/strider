@@ -64,6 +64,14 @@ vim.api.nvim_create_user_command("StriderStop", function()
   require("strider").stop()
 end, { desc = "Abort the current in-flight Strider turn" })
 
+vim.api.nvim_create_user_command("StriderSessions", function()
+  require("strider").sessions()
+end, { desc = "Browse saved Strider/pi sessions" })
+
+vim.api.nvim_create_user_command("StriderResume", function(opts)
+  require("strider").resume(opts.args)
+end, { nargs = "*", complete = "file", desc = "Resume a Strider/pi session by id or path" })
+
 vim.api.nvim_create_user_command("StriderStatus", function()
   require("strider").status()
 end, { desc = "Open the Strider status surface" })

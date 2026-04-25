@@ -26,6 +26,16 @@ def assistant_message(text: str) -> dict:
     }
 
 
+def emit_session_start(reason: str) -> None:
+    emit({"type": "session_start", "reason": reason})
+    emit({
+        "type": "extension_ui_request",
+        "method": "setStatus",
+        "statusKey": "strider-session",
+        "statusText": reason,
+    })
+
+
 def emit_streaming_thinking(text: str) -> None:
     """Emit thinking_start/thinking_delta/thinking_end events."""
     if not text:
@@ -444,12 +454,12 @@ def handle_command(payload: dict) -> None:
                 text = msg["text"]
                 break
         emit(response_with_data(req_id, {"text": text, "cancelled": False}, cmd_type))
-        emit({"type": "session_start", "reason": "fork"})
+        emit_session_start("fork")
         return
 
     if cmd_type == "new_session":
         emit(response_with_data(req_id, {"cancelled": False}, cmd_type))
-        emit({"type": "session_start", "reason": "new"})
+        emit_session_start("new")
         return
 
     if cmd_type == "compact":
@@ -467,6 +477,7 @@ def handle_command(payload: dict) -> None:
 
     if cmd_type == "switch_session":
         emit(response_with_data(req_id, {"cancelled": False}, cmd_type))
+        emit_session_start("resume")
         return
 
     if cmd_type == "get_state":
@@ -500,6 +511,8 @@ def handle_prompt(payload: dict) -> None:
         emit_streaming_assistant(plan_response(message))
     elif message.startswith("/patch "):
         emit(assistant_message(patch_response(message)))
+    elif message.startswith(("/sessions", "/resume", "/switch_session")):
+        emit_session_start("resume")
     elif message.startswith("/prompt "):
         emit_streaming_thinking(prompt_thinking(message))
         emit(assistant_message(prompt_response(message)))

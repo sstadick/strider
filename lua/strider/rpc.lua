@@ -382,6 +382,10 @@ local function handle_message_update(event, lane)
   ui.ensure_live_block(lane)
   ui.update_live_block(session.message_text, lane)
 
+  if pending.operation == "q" then
+    ui.update_q_answer(session.message_text, lane)
+  end
+
   if pending.operation == "review" then
     review.capture_assistant_text(session.assistant_text, { partial = true })
   end
@@ -460,6 +464,9 @@ local function handle_message_end(event, lane)
     state.set_error(reason, lane)
     local level = stop_reason == "aborted" and "cancel" or "error"
     ui.finish_activity(reason, level, lane)
+    if pending and pending.operation == "q" then
+      ui.finish_q_answer(reason, "error", lane)
+    end
     if stop_reason == "error" then
       ui.notify(reason, vim.log.levels.ERROR)
     end
@@ -492,6 +499,9 @@ local function handle_message_end(event, lane)
 
   if not text then
     ui.finish_activity("Strider request complete (no text)", "success", lane)
+    if pending and pending.operation == "q" then
+      ui.finish_q_answer(nil, "success", lane)
+    end
     notify_turn_done(pending, lane)
     return
   end
@@ -516,6 +526,9 @@ local function handle_message_end(event, lane)
   end
 
   ui.finish_activity("Strider request complete", "success", lane)
+  if pending and pending.operation == "q" then
+    ui.finish_q_answer(text, "success", lane)
+  end
   notify_turn_done(pending, lane)
   if completing_review_summary then
     vim.schedule(function()
@@ -613,17 +626,6 @@ local function diff_stats(diff)
     end
   end
   return added, removed
-end
-
-local function read_range(event)
-  local start = tonumber(event.args and event.args.offset) or 1
-  local limit = tonumber(event.args and event.args.limit)
-  if not limit then
-    local text = event.result and event.result.content and event.result.content[1] and event.result.content[1].text
-    local line_count = text and #vim.split(text, "\n", { plain = true }) or 30
-    limit = math.min(math.max(line_count, 1), 40)
-  end
-  return start, start + limit - 1
 end
 
 local function handle_tool_start(event, lane)

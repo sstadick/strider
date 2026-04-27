@@ -1,4 +1,5 @@
 local picker = require("strider.picker")
+local plan_helpers = require("strider.review.plan")
 local render = require("strider.review.render")
 local state = require("strider.state")
 local ui = require("strider.ui")
@@ -6,11 +7,6 @@ local ui = require("strider.ui")
 local M = {}
 
 local REVIEW_LANE = "review"
-
-local git_run
-local relative_path
-
-local MAX_REVIEW_LINES = 40
 
 local function review_session()
   return state.get_session(REVIEW_LANE)
@@ -33,49 +29,6 @@ local function current_buffer_path()
     return nil
   end
   return path
-end
-
-local function file_stat(path)
-  if not path or path == "" then
-    return nil
-  end
-  return vim.uv.fs_stat(path)
-end
-
-local function is_reviewable_file(path)
-  if not path or path == "" or path:match("^%a+://") then
-    return false
-  end
-  local stat = file_stat(path)
-  return stat ~= nil and stat.type == "file"
-end
-
-local function read_lines(path, start_line, end_line)
-  local buf = vim.fn.bufnr(path)
-  if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
-    return vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
-  end
-  local all = vim.fn.readfile(path)
-  local lines = {}
-  for line = start_line, math.min(end_line, #all) do
-    table.insert(lines, all[line])
-  end
-  return lines
-end
-
-local function excerpt(path, start_line, end_line)
-  local final_line = math.min(end_line, start_line + 12)
-  local lines = read_lines(path, start_line, final_line)
-  return table.concat(lines, "\n")
-end
-
-git_run = function(cwd, args)
-  local cmd = string.format("git -C %s %s", vim.fn.shellescape(cwd), args)
-  local output = vim.fn.systemlist(cmd)
-  if vim.v.shell_error ~= 0 then
-    return nil
-  end
-  return output
 end
 
 local function current_item(review)
@@ -111,15 +64,6 @@ end
 local function review_state()
   local session = review_session()
   return session and session.review or nil
-end
-
-relative_path = function(path)
-  local session = review_session()
-  local cwd = session and session.cwd or nil
-  if cwd and vim.startswith(path, cwd .. "/") then
-    return path:sub(#cwd + 2)
-  end
-  return path
 end
 
 -- Deduplicates render calls within the same event loop tick. Multiple
@@ -287,280 +231,21 @@ function M.capture_ranged_question_answer(text, opts)
   return true
 end
 
--- Plan helpers. Each returns:
---   { scope = "selection"|"diff", stops = { { path, startLine, endLine, title, why, kind, excerpt, id, status } } }
--- Stops never exceed MAX_REVIEW_LINES. Coverage is validated so that the
--- union of stop ranges equals the input range(s).
-
-local function make_plan_stop(path, start_line, end_line, kind, why)
-  local stop_excerpt = excerpt(path, start_line, end_line)
-  local title = render.chunk_title(path, kind, stop_excerpt) or relative_path(path)
-  return {
-    id = string.format("%s:%d-%d", path, start_line, end_line),
-    path = path,
-    startLine = start_line,
-    endLine = end_line,
-    kind = kind,
-    title = title,
-    why = why,
-    excerpt = stop_excerpt,
-    status = "pending",
-  }
-end
-
-local function chunk_range(path, start_line, end_line, kind, why_fn)
-  local stops = {}
-  local chunk_start = start_line
-  while chunk_start <= end_line do
-    local chunk_end = math.min(chunk_start + MAX_REVIEW_LINES - 1, end_line)
-    local why = why_fn and why_fn(chunk_start, chunk_end) or nil
-    table.insert(stops, make_plan_stop(path, chunk_start, chunk_end, kind, why))
-    chunk_start = chunk_end + 1
-  end
-  return stops
-end
-
-local function ranges_cover(target_ranges, stop_ranges)
-  -- target_ranges and stop_ranges are each arrays of { path, startLine, endLine }.
-  -- Returns (ok, gaps). gaps is an array of uncovered { path, startLine, endLine } entries.
-  local covered = {}
-  for _, stop in ipairs(stop_ranges) do
-    local list = covered[stop.path] or {}
-    table.insert(list, { stop.startLine, stop.endLine })
-    covered[stop.path] = list
-  end
-
-  local gaps = {}
-  for _, target in ipairs(target_ranges) do
-    local list = covered[target.path] or {}
-    table.sort(list, function(a, b) return a[1] < b[1] end)
-    local cursor = target.startLine
-    for _, seg in ipairs(list) do
-      if seg[1] > target.endLine then break end
-      if seg[2] < cursor then
-        -- segment ends before the cursor; skip
-      else
-        if seg[1] > cursor then
-          table.insert(gaps, { path = target.path, startLine = cursor, endLine = seg[1] - 1 })
-        end
-        if seg[2] >= cursor then
-          cursor = seg[2] + 1
-        end
-      end
-    end
-    if cursor <= target.endLine then
-      table.insert(gaps, { path = target.path, startLine = cursor, endLine = target.endLine })
-    end
-  end
-  return #gaps == 0, gaps
-end
-
+-- Plan helpers. Deterministic selection/diff plans and model-produced
+-- stop normalization live in strider.review.plan so review.lua can focus
+-- on review state transitions and UI orchestration.
 function M.plan_from_range(path, start_line, end_line)
-  if not path or not start_line or not end_line or start_line > end_line then
-    return nil
-  end
-  local stops = chunk_range(path, start_line, end_line, "selection", function(s, e)
-    return string.format("Selected range %d-%d", s, e)
-  end)
-  local ok = ranges_cover({ { path = path, startLine = start_line, endLine = end_line } }, stops)
-  return {
-    scope = "selection",
-    stops = stops,
-    coverage_ok = ok,
-  }
-end
-
-local function parse_diff_hunks(diff_text)
-  -- Returns a map of path -> array of { startLine, endLine } (new-file line numbers
-  -- of added or context regions — any line that the user should see on the new side).
-  local files = {}
-  local current = nil
-  for _, line in ipairs(vim.split(diff_text or "", "\n", { plain = true })) do
-    local new_path = line:match("^%+%+%+ b/(.+)$") or line:match("^%+%+%+ (.+)$")
-    if new_path and new_path ~= "/dev/null" then
-      current = { path = new_path, hunks = {} }
-      files[new_path] = current
-    else
-      local hunk_start, hunk_len = line:match("^@@ %-%d+,?%d* %+(%d+),?(%d*)")
-      if hunk_start and current then
-        local s = tonumber(hunk_start)
-        local l = tonumber(hunk_len)
-        if l == nil or l == 0 then l = 1 end
-        table.insert(current.hunks, { s, s + l - 1 })
-      end
-    end
-  end
-  local result = {}
-  for path, entry in pairs(files) do
-    result[path] = entry.hunks
-  end
-  return result
+  local session = review_session()
+  local cwd = session and session.cwd or vim.fn.getcwd()
+  return plan_helpers.plan_from_range(cwd, path, start_line, end_line)
 end
 
 function M.plan_from_diff(cwd, base)
-  if not cwd or not base or base == "" then
-    return nil
-  end
-  local diff = git_run(cwd, string.format("diff --unified=0 %s...HEAD", vim.fn.shellescape(base)))
-  if not diff then
-    return { scope = "diff", base = base, stops = {}, coverage_ok = true }
-  end
-  local diff_text = table.concat(diff, "\n")
-  local per_file = parse_diff_hunks(diff_text)
-
-  local stops = {}
-  local target_ranges = {}
-  local sorted_paths = {}
-  for path in pairs(per_file) do table.insert(sorted_paths, path) end
-  table.sort(sorted_paths)
-
-  for _, rel_path in ipairs(sorted_paths) do
-    local abs_path = vim.fs.joinpath(cwd, rel_path)
-    local hunks = per_file[rel_path]
-    table.sort(hunks, function(a, b) return a[1] < b[1] end)
-    for _, hunk in ipairs(hunks) do
-      local hs, he = hunk[1], hunk[2]
-      table.insert(target_ranges, { path = abs_path, startLine = hs, endLine = he })
-      local chunked = chunk_range(abs_path, hs, he, "diff", function(s, e)
-        return string.format("Changed lines %d-%d in %s", s, e, rel_path)
-      end)
-      for _, stop in ipairs(chunked) do
-        table.insert(stops, stop)
-      end
-    end
-  end
-
-  local ok = ranges_cover(target_ranges, stops)
-  return {
-    scope = "diff",
-    base = base,
-    stops = stops,
-    coverage_ok = ok,
-  }
+  return plan_helpers.plan_from_diff(cwd, base)
 end
 
 function M._ranges_cover(target_ranges, stop_ranges)
-  return ranges_cover(target_ranges, stop_ranges)
-end
-
--- Search `path` for the line whose trimmed content equals `needle` and
--- whose position is closest to `hint_line`. Returns the found line
--- (1-based) or nil. Used to self-correct plans whose absolute line
--- numbers are slightly off — a common LLM failure mode.
-local function find_anchor_line(path, needle, hint_line)
-  if not path or not needle or needle == "" then
-    return nil
-  end
-  local trimmed_needle = vim.trim(needle)
-  if trimmed_needle == "" then
-    return nil
-  end
-
-  local line_count = 0
-  local all_lines
-  local buf = vim.fn.bufnr(path)
-  if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
-    all_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    line_count = #all_lines
-  else
-    local ok, lines = pcall(vim.fn.readfile, path)
-    if not ok then
-      return nil
-    end
-    all_lines = lines
-    line_count = #lines
-  end
-  if line_count == 0 then
-    return nil
-  end
-
-  local best_line = nil
-  local best_distance = math.huge
-  for index = 1, line_count do
-    if vim.trim(all_lines[index] or "") == trimmed_needle then
-      local distance = math.abs(index - (hint_line or index))
-      if distance < best_distance then
-        best_distance = distance
-        best_line = index
-      end
-    end
-  end
-  return best_line
-end
-
-local function normalize_plan_stop(cwd, raw)
-  if not raw or not raw.path or not raw.startLine or not raw.endLine then
-    return nil
-  end
-  local path = raw.path
-  if not path:match("^/") then
-    path = vim.fs.joinpath(cwd, path)
-  end
-  local start_line = tonumber(raw.startLine)
-  local end_line = tonumber(raw.endLine)
-  if not start_line or not end_line or start_line > end_line then
-    return nil
-  end
-
-  -- Self-correct the model's absolute line numbers using firstLineText.
-  -- LLMs frequently report line numbers that are off by several lines —
-  -- they get the content right but the position wrong. When we can find
-  -- an exact match for `firstLineText` elsewhere in the file, shift the
-  -- whole stop (and its annotation lines) by the offset so the block and
-  -- inline pins land where they should.
-  local offset = 0
-  if raw.firstLineText and raw.firstLineText ~= "" then
-    local anchor = find_anchor_line(path, raw.firstLineText, start_line)
-    if anchor and anchor ~= start_line then
-      offset = anchor - start_line
-      start_line = anchor
-      end_line = end_line + offset
-    end
-  end
-
-  local stop = make_plan_stop(path, start_line, end_line, raw.kind or "planned", raw.why)
-  if raw.title and raw.title ~= "" then
-    stop.title = raw.title
-  end
-  -- `summary` populates the sidebar's Explanation section. Fall back to
-  -- `why` (one-liner) if the planner didn't supply a summary.
-  if raw.summary and raw.summary ~= "" then
-    stop.summary = raw.summary
-  else
-    stop.summary = stop.why
-  end
-  if raw.explanation and raw.explanation ~= "" then
-    stop.explanation = raw.explanation
-  end
-  if type(raw.annotations) == "table" then
-    local clean = {}
-    for _, ann in ipairs(raw.annotations) do
-      if type(ann) == "table" and ann.text and ann.text ~= "" then
-        -- Apply the same offset found for the stop to any annotation
-        -- line numbers. The model picks annotation lines in the same
-        -- (wrong) frame as its startLine, so a uniform shift is correct.
-        local line_num = tonumber(ann.line)
-        local ann_start = tonumber(ann.startLine)
-        local ann_end = tonumber(ann.endLine)
-        if offset ~= 0 then
-          if line_num then line_num = line_num + offset end
-          if ann_start then ann_start = ann_start + offset end
-          if ann_end then ann_end = ann_end + offset end
-        end
-        table.insert(clean, {
-          kind = ann.kind == "line" and "line" or "block",
-          line = line_num,
-          startLine = ann_start,
-          endLine = ann_end,
-          text = tostring(ann.text),
-        })
-      end
-    end
-    if #clean > 0 then
-      stop.annotations = clean
-    end
-  end
-  return stop
+  return plan_helpers.ranges_cover(target_ranges, stop_ranges)
 end
 
 -- Start a free-scope review in "planning" state. The plan itself arrives
@@ -619,7 +304,7 @@ function M.ingest_plan(args)
 
   local stops = {}
   for _, raw in ipairs(args.stops or {}) do
-    local stop = normalize_plan_stop(session.cwd, raw)
+    local stop = plan_helpers.normalize_stop(session.cwd, raw)
     if stop then
       table.insert(stops, stop)
     end
@@ -666,7 +351,7 @@ function M.ingest_append_stops(args)
 
   local added = 0
   for _, raw in ipairs(args.stops or {}) do
-    local stop = normalize_plan_stop(session.cwd, raw)
+    local stop = plan_helpers.normalize_stop(session.cwd, raw)
     if stop then
       table.insert(review.items, stop)
       added = added + 1

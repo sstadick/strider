@@ -17,7 +17,8 @@ Supporting navigation and control:
 - `:StriderComment {text}`
 - `:StriderComments`
 - `:StriderReviewItems`
-- `:StriderStop` — abort the in-flight turn (maps to pi's `abort` RPC)
+- `:StriderStop` — abort the main-lane in-flight turn (maps to pi's `abort` RPC)
+- `:StriderStopFlow` — abort the flow-lane Q/Search/Patch turn
 
 The main product is no longer centered on a linear `Q` loop.
 Review is the primary walkthrough surface.
@@ -134,9 +135,13 @@ quick questions without interrupting a running chat turn.
 2. plugin opens the floating editor, prefilled when inline args were given
 3. on submit, plugin dispatches the question as `/prompt ...` on the
    flow lane (with an excerpt block when a range was given)
-4. the question runs in the background: answers land in `:StriderLogFlow`,
-   chat is not auto-opened
-5. no tree anchoring needed — the flow lane has its own independent
+4. the question runs in the background: the focused answer opens in a
+   non-focus-stealing bottom-right `strider://StriderQAnswer` window; it stays
+   compact until the user focuses/selects it, then expands to near full height
+   while focused
+5. the full transcript still lands in `:StriderLogFlow`, including reasoning,
+   tool calls, and tool output; chat is not auto-opened
+6. no tree anchoring needed — the flow lane has its own independent
    session
 
 ### Chat
@@ -326,7 +331,8 @@ request and start `Working` indicators in the compose and log winbars until the
 - `abort` — cancel the in-flight turn. No body (`{"type":"abort"}`).
   Pi finishes the current model stream and emits a `message_end` with
   `stopReason = "aborted"`, which renders as a cancel-flavored
-  `[error]` block. Driven by `:StriderStop`.
+  `[error]` block. Driven by `:StriderStop` for main and
+  `:StriderStopFlow` for the flow lane.
 - `extension_ui_response` — reply to an awaiting `extension_ui_request`
   (carries the request `id` plus `value` / `confirmed` / `cancelled`)
 
@@ -348,13 +354,14 @@ Working today:
 - local review comments
 - selection-scoped patching
 - plain-prompt agent turns with clarify available
-- side questions via `:StriderQ` on a dedicated flow lane (answers land
-  in `:StriderLogFlow`)
+- side questions via `:StriderQ` on a dedicated flow lane (focused answers
+  open in `strider://StriderQAnswer`; full transcripts land in
+  `:StriderLogFlow`)
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
 - `:StriderStatus` for a compact lane/status/control summary
 - accepted review stops via `:StriderNext!`
-- `:StriderStop` to abort in-flight turns
+- `:StriderStop` / `:StriderStopFlow` to abort in-flight turns
 - inline red `[error]` blocks for provider / model / transport errors
   (no more silent hangs)
 - cycle thinking level via `<S-Tab>` in compose (mirrors pi's TUI);

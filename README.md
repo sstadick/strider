@@ -94,28 +94,30 @@ prefills compose so you can edit before sending.
 
 ## Install
 
-Lazy:
+Strider supports Neovim 0.12+ and the built-in `vim.pack` package manager.
+That is the only supported install path.
 
 ```lua
-{
-  dir = "~/dev/strider", -- or your clone path / plugin spec
-  config = function()
-    require("strider").setup()
-  end,
-}
+vim.pack.add({
+  "https://github.com/nvim-treesitter/nvim-treesitter",
+  "https://github.com/MeanderingProgrammer/render-markdown.nvim",
+  "https://github.com/sstadick/strider",
+}, { load = true })
+
+require("strider").setup()
 ```
 
-Manual:
+Install the Tree-sitter parsers you expect Strider to render in logs and review
+panes:
 
-```lua
-vim.opt.rtp:append(vim.fn.expand("~/dev/strider"))
-vim.cmd("runtime plugin/strider.lua")
-require("strider").setup()
+```vim
+:TSInstall markdown markdown_inline lua typescript tsx javascript python bash
 ```
 
 ## Requirements
 
-- Neovim 0.10+
+- Neovim 0.12+
+- Git, used by Neovim's built-in `vim.pack`
 - `pi` on `$PATH` with at least one model/provider configured
 - `nvim-treesitter` with `markdown`, `markdown_inline`, and language parsers
   for files you expect to inspect
@@ -134,7 +136,8 @@ require("strider").setup()
 | `:StriderNext` / `:StriderPrev` | Move through review stops |
 | `:StriderComment [text]` | Record a review comment |
 | `:StriderStatus` | Show lane/status/control summary |
-| `:StriderStop` | Abort the active turn |
+| `:StriderStop` | Abort the main-lane turn |
+| `:StriderStopFlow` | Abort the flow-lane Q/Search/Patch turn |
 | `:StriderSessions` | Browse saved pi sessions for this project |
 | `:StriderResume [id-or-path]` | Resume a saved pi session |
 

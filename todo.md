@@ -1,5 +1,6 @@
 # Ready for work
 - Generally speed up the review process. Unsure how to do this. But for small reviews maybe steal some context from... somewhere?
+- steering and follow up prompts hsould have their own color line start indicator
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on

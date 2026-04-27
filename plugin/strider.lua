@@ -62,7 +62,11 @@ end, { desc = "Re-dispatch the Strider plan turn if it stalled" })
 
 vim.api.nvim_create_user_command("StriderStop", function()
   require("strider").stop()
-end, { desc = "Abort the current in-flight Strider turn" })
+end, { desc = "Abort the current main-lane Strider turn" })
+
+vim.api.nvim_create_user_command("StriderStopFlow", function()
+  require("strider").stop_flow()
+end, { desc = "Abort the current flow-lane Strider turn" })
 
 vim.api.nvim_create_user_command("StriderSessions", function()
   require("strider").sessions()

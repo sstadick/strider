@@ -175,6 +175,13 @@ class RpcCommandTests(unittest.TestCase):
                     lambda: h.expr("bufexists('strider://compose')") == "1",
                     timeout=3.0,
                 )
+                h.lua(
+                    "(function() "
+                    "  require('strider.state').set_widget({ 'Model: fake', 'Context: 1k / 2k (50.0%)' }, 'main'); "
+                    "  require('strider.ui').refresh_log_winbar('main'); "
+                    "  return true "
+                    "end)()"
+                )
                 h.send("/compact __strider_delay__", "C-s", pause=0.05)
                 h.wait_until(
                     lambda: h.lua_bool("require('strider.state').peek_pending_request() ~= nil"),
@@ -186,6 +193,7 @@ class RpcCommandTests(unittest.TestCase):
                 log_active = _winbar_for_buffer(h, "strider://log")
                 self.assertIn("Working (", log_active)
                 self.assertIn("Compacting Strider context", log_active)
+                self.assertIn("Context: 1k / 2k (50.0%)", log_active)
                 self.assertIn(":StriderStop to interrupt", log_active)
                 self.assertIn("/compact __strider_delay__", "\n".join(h.log_lines()))
                 h.wait_until(

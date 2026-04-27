@@ -28,10 +28,6 @@ local function current_cwd()
   return cached_cwd
 end
 
-local function invalidate_cwd_cache()
-  cached_cwd = nil
-end
-
 local function ensure_backend(lane)
   lane = state.normalize_lane(lane)
   local cwd = current_cwd()
@@ -63,6 +59,9 @@ local function activity_title(operation)
 end
 
 local function activity_target(operation, lane)
+  if lane == FLOW_LANE and operation == "q" then
+    return "q"
+  end
   if lane == REVIEW_LANE and (operation == "review" or operation == "plan")
       and (review.has_active_review() or review.is_awaiting_summary()) then
     return "review"
@@ -109,6 +108,9 @@ local function send(command, user_text, opts)
   local operation = opts.operation or nil
   state.clear_error(lane)
   state.set_pending_request(operation, opts.metadata, lane)
+  if operation == "q" then
+    ui.open_q_answer(user_text, lane)
+  end
   if operation then
     ui.start_activity(activity_title(operation), activity_target(operation, lane), operation, lane)
   end
@@ -118,6 +120,9 @@ local function send(command, user_text, opts)
   if not ok then
     state.set_pending_request(nil, nil, lane)
     ui.finish_activity("Strider request failed to start", "error", lane)
+    if operation == "q" then
+      ui.finish_q_answer("Strider request failed to start", "error", lane)
+    end
     ui.refresh_compose_hint()
     return false
   end
@@ -351,20 +356,28 @@ function M.cycle_thinking()
   rpc.send_prompt(MAIN_LANE, "/thinking")
 end
 
--- :StriderStop — cancel the current in-flight turn via pi's abort RPC.
+-- :StriderStop / :StriderStopFlow — cancel an in-flight turn via pi's abort RPC.
 -- The actual "[error] Turn aborted" block in the log and spinner reset
 -- happen when pi emits the final message_end (see handle_message_end's
 -- stopReason == "aborted" branch). We just fire the abort and give the
 -- user a quick notify so the interval between keypress and message_end
 -- doesn't feel like nothing happened.
-function M.stop()
-  if not state.peek_pending_request(MAIN_LANE) then
-    ui.notify("Strider is idle — nothing to stop", vim.log.levels.INFO)
+local function stop_lane(lane, idle_message, stopping_message)
+  if not state.peek_pending_request(lane) then
+    ui.notify(idle_message, vim.log.levels.INFO)
     return
   end
-  if rpc.abort(MAIN_LANE) then
-    ui.notify("Stopping Strider…", vim.log.levels.INFO)
+  if rpc.abort(lane) then
+    ui.notify(stopping_message, vim.log.levels.INFO)
   end
+end
+
+function M.stop()
+  stop_lane(MAIN_LANE, "Strider is idle — nothing to stop", "Stopping Strider…")
+end
+
+function M.stop_flow()
+  stop_lane(FLOW_LANE, "Strider flow is idle — nothing to stop", "Stopping Strider flow…")
 end
 
 local function send_main_command(command)

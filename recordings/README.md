@@ -10,6 +10,10 @@ Neovim session against the bundled fake pi backend and fixture projects.
 brew install vhs
 ```
 
+The renderer also expects `nvim`, `python3`, and `git` on `$PATH`. `ffprobe`
+from ffmpeg is optional; when present, the render script prints GIF metadata
+after each run.
+
 ## Render all demos
 
 ```bash
@@ -24,19 +28,29 @@ content.
 ## Render one demo
 
 ```bash
-vhs recordings/vhs/patch.tape
+recordings/vhs/render-all.sh patch
 ```
 
-Output gif lands next to the tape name, e.g. `recordings/patch.gif`.
+You can pass a demo name (`patch`) or a tape path
+(`recordings/vhs/patch.tape`). Output GIFs land under `recordings/`, e.g.
+`recordings/patch.gif`.
+
+Useful render options:
+
+```bash
+VHS_VALIDATE=0 recordings/vhs/render-all.sh patch
+VHS_QUIET=1 recordings/vhs/render-all.sh search review-file
+VHS_BIN=/opt/homebrew/bin/vhs recordings/vhs/render-all.sh
+```
 
 ## Update a demo
 
 1. Edit the matching `recordings/vhs/*.tape` file.
-2. Run `vhs validate recordings/vhs/*.tape`.
-3. Render the changed tape with `vhs recordings/vhs/<name>.tape`.
-4. Open the GIF and check that it starts after setup, has no error prompts,
+2. Render the changed tape with `recordings/vhs/render-all.sh <name>`.
+   The script validates selected tapes before rendering.
+3. Open the GIF and check that it starts after setup, has no error prompts,
    and ends on the intended Strider surface.
-5. Run `recordings/vhs/render-all.sh` before committing a full refresh.
+4. Run `recordings/vhs/render-all.sh` before committing a full refresh.
 
 ## Demos
 

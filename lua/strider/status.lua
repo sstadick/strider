@@ -54,6 +54,9 @@ function M.pending_action(lane)
     end
     return "type to steer this turn; :StriderStop cancels it"
   end
+  if pending and lane == "flow" then
+    return ":StriderStopFlow cancels the flow turn"
+  end
   if pending then
     return ":StriderStop cancels the main chat turn; wait for this lane to finish"
   end
@@ -128,6 +131,7 @@ function M.lines()
 
   table.insert(lines, "## Controls")
   table.insert(lines, "- `:StriderStop` aborts the main in-flight turn.")
+  table.insert(lines, "- `:StriderStopFlow` aborts Q/Search/Patch on the flow lane.")
   table.insert(lines, "- Empty compose text shows whether `<C-s>` will send, steer, or answer clarify.")
   table.insert(lines, "- `:StriderNext!` accepts the current review stop and advances.")
   table.insert(lines, "- `:StriderRetry` retries a stalled review plan.")

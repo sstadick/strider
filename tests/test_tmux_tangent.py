@@ -10,6 +10,24 @@ from tests.support.project_copy import FixtureProject
 from tests.support.tmux_nvim import TmuxNvimHarness
 
 
+def _winbar_for_buffer(h, name: str) -> str:
+    return h.lua(
+        "(function() "
+        f"  local buf = vim.fn.bufnr('{name}'); "
+        "  if buf <= 0 then return '' end; "
+        "  for _, win in ipairs(vim.fn.win_findbuf(buf)) do "
+        "    if vim.api.nvim_win_is_valid(win) then "
+        "      local value = vim.wo[win].winbar or ''; "
+        "      local ok, evaluated = pcall(vim.api.nvim_eval_statusline, value, { winid = win, maxwidth = 10000 }); "
+        "      if ok and evaluated and evaluated.str then return evaluated.str end; "
+        "      return value "
+        "    end "
+        "  end; "
+        "  return '' "
+        "end)()"
+    )
+
+
 class TmuxTangentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[1]
@@ -52,6 +70,124 @@ class TmuxTangentTests(unittest.TestCase):
                     timeout=5.0,
                 )
                 self.assertFalse(h.lua_bool("require('strider.ui').chat_is_visible()"))
+
+    def test_q_answer_surface_opens_without_focus_and_filters_transcript(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("edit src/main.tsx")
+                h.ex("StriderQ what does this flag do")
+                h.wait_until(lambda: h.popup_open(), timeout=3.0)
+                h.submit_popup()
+
+                h.wait_until(
+                    lambda: "strider://StriderQAnswer" in h.json_expr(
+                        "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+                    ),
+                    timeout=3.0,
+                )
+                self.assertNotEqual("strider://StriderQAnswer", h.expr("bufname('%')"))
+
+                h.wait_until(
+                    lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://StriderQAnswer")),
+                    timeout=5.0,
+                )
+                folded = "\n".join(h.buffer_lines("strider://StriderQAnswer"))
+                self.assertIn("what does this flag do", folded)
+                self.assertIn("Answer ready", folded)
+                self.assertNotIn("Finished a broader work pass", folded)
+
+                h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  vim.api.nvim_set_current_win(win); "
+                    "  require('strider.ui').refresh_q_answer_layouts(); "
+                    "  return true "
+                    "end)()"
+                )
+                answer = "\n".join(h.buffer_lines("strider://StriderQAnswer"))
+                self.assertIn("Finished a broader work pass", answer)
+                self.assertNotIn("Checking the relevant files first", answer)
+                self.assertNotIn("Explored", answer)
+
+                flow_log = "\n".join(h.flow_log_lines())
+                self.assertIn("Checking the relevant files first", flow_log)
+                self.assertIn("Finished a broader work pass", flow_log)
+
+    def test_q_answer_winbar_uses_flow_stop_command(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui'); "
+                    "  state.ensure_session('flow', vim.fn.getcwd()); "
+                    "  ui.open_q_answer('slow question', 'flow'); "
+                    "  ui.start_activity('Strider Q running...', 'q', 'q', 'flow'); "
+                    "  return true "
+                    "end)()"
+                )
+                h.wait_until(
+                    lambda: "strider://StriderQAnswer" in h.json_expr(
+                        "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+                    ),
+                    timeout=3.0,
+                )
+                h.wait_until(
+                    lambda: "Working (" in _winbar_for_buffer(h, "strider://StriderQAnswer"),
+                    timeout=3.0,
+                )
+                winbar = _winbar_for_buffer(h, "strider://StriderQAnswer")
+                self.assertIn(":StriderStopFlow to interrupt", winbar)
+
+    def test_q_answer_surface_starts_compact_bottom_right_and_expands_on_focus(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                initial_height, initial_row, initial_col = map(int, h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui'); "
+                    "  state.ensure_session('flow', vim.fn.getcwd()); "
+                    "  ui.open_q_answer('where does this render?', 'flow'); "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  local cfg = vim.api.nvim_win_get_config(win); "
+                    "  local row = type(cfg.row) == 'table' and (cfg.row[false] or cfg.row[1]) or cfg.row; "
+                    "  local col = type(cfg.col) == 'table' and (cfg.col[false] or cfg.col[1]) or cfg.col; "
+                    "  return string.format('%d,%d,%d', vim.api.nvim_win_get_height(win), row, col); "
+                    "end)()"
+                ).split(","))
+                self.assertLessEqual(initial_height, 3)
+                self.assertGreater(initial_col, 0)
+
+                folded_height, folded_row = map(int, h.lua(
+                    "(function() "
+                    "  require('strider.ui').update_q_answer('Here is the focused answer text.', 'flow'); "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  local cfg = vim.api.nvim_win_get_config(win); "
+                    "  local row = type(cfg.row) == 'table' and (cfg.row[false] or cfg.row[1]) or cfg.row; "
+                    "  return string.format('%d,%d', vim.api.nvim_win_get_height(win), row); "
+                    "end)()"
+                ).split(","))
+                self.assertEqual(folded_height, initial_height)
+                self.assertEqual(folded_row, initial_row)
+
+                expanded_height, expanded_row, ui_height = map(int, h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  vim.api.nvim_set_current_win(win); "
+                    "  require('strider.ui').refresh_q_answer_layouts(); "
+                    "  local cfg = vim.api.nvim_win_get_config(win); "
+                    "  local row = type(cfg.row) == 'table' and (cfg.row[false] or cfg.row[1]) or cfg.row; "
+                    "  local ui_info = vim.api.nvim_list_uis()[1]; "
+                    "  return string.format('%d,%d,%d', vim.api.nvim_win_get_height(win), row, ui_info.height); "
+                    "end)()"
+                ).split(","))
+                self.assertGreater(expanded_height, folded_height)
+                self.assertGreaterEqual(expanded_height, ui_height - 4)
+                self.assertGreater(folded_row, expanded_row)
 
     def test_q_completion_clears_pending_request(self) -> None:
         with FixtureProject(self.project_root) as project_root:

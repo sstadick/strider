@@ -1,52 +1,47 @@
 local clipboard = require("strider.clipboard")
+local flow_cards = require("strider.ui.flow_cards")
+local highlights = require("strider.ui.highlights")
 local log_diff = require("strider.log.diff")
 local log_pin = require("strider.log_pin")
+local marks = require("strider.ui.marks")
 local state = require("strider.state")
 local status = require("strider.status")
 
 local M = {}
 
-local chunk_namespace = vim.api.nvim_create_namespace("strider-chunk")
-local comment_namespace = vim.api.nvim_create_namespace("strider-comments")
-local annotation_namespace = vim.api.nvim_create_namespace("strider-annotations")
 local log_namespace = vim.api.nvim_create_namespace("strider-log")
-local added_chunk_hl = "StriderChunkAddedGutter"
-local removed_chunk_hl = "StriderChunkRemovedGutter"
-local comment_hl = "StriderCommentGutter"
-local annotation_hl = "StriderAnnotation"
-local log_assistant_hl = "StriderLogAssistant"
-local log_user_hl = "StriderLogUser"
-local log_tool_hl = "StriderLogTool"
-local log_thinking_hl = "StriderLogThinking"
-local log_rule_hl = "StriderLogRule"
-local log_error_hl = "StriderLogError"
-local log_path_hl = "StriderLogPath"
-local log_muted_hl = "StriderLogMuted"
-local log_tool_output_hl = "StriderLogToolOutput"
-local log_tool_output_ellipsis_hl = "StriderLogToolOutputEllipsis"
-local log_tool_output_gutter_hl = "StriderLogToolOutputGutter"
-local log_tool_output_meta_hl = "StriderLogToolOutputMeta"
-local log_tool_output_error_hl = "StriderLogToolOutputError"
+local G = highlights.groups
+local ensure_chunk_style = highlights.ensure
+local log_assistant_hl = G.log_assistant
+local log_user_hl = G.log_user
+local log_tool_hl = G.log_tool
+local log_thinking_hl = G.log_thinking
+local log_rule_hl = G.log_rule
+local log_error_hl = G.log_error
+local log_path_hl = G.log_path
+local log_muted_hl = G.log_muted
+local log_tool_output_hl = G.log_tool_output
+local log_tool_output_ellipsis_hl = G.log_tool_output_ellipsis
+local log_tool_output_gutter_hl = G.log_tool_output_gutter
+local log_tool_output_meta_hl = G.log_tool_output_meta
+local log_tool_output_error_hl = G.log_tool_output_error
 local log_user_prefix = "› "
 local log_user_continuation = "  "
-local log_assistant_bg_hl = "StriderLogAssistantBg"
-local log_user_bg_hl = "StriderLogUserBg"
-local log_error_bg_hl = "StriderLogErrorBg"
-local log_diff_add_hl = "StriderLogDiffAdd"
-local log_diff_remove_hl = "StriderLogDiffRemove"
-local log_diff_context_hl = "StriderLogDiffContext"
-local log_diff_stats_hl = "StriderLogDiffStats"
-local log_diff_add_sign_hl = "StriderLogDiffAddSign"
-local log_diff_remove_sign_hl = "StriderLogDiffRemoveSign"
-local log_diff_line_number_hl = "StriderLogDiffLineNumber"
-local log_diff_gutter_hl = "StriderLogDiffGutter"
-local compose_working_hl = "StriderComposeWorking"
-local compose_working_soft_hl = "StriderComposeWorkingSoft"
-local compose_working_shine_hl = "StriderComposeWorkingShine"
+local log_user_bg_hl = G.log_user_bg
+local log_error_bg_hl = G.log_error_bg
+local log_diff_add_hl = G.log_diff_add
+local log_diff_remove_hl = G.log_diff_remove
+local log_diff_context_hl = G.log_diff_context
+local log_diff_stats_hl = G.log_diff_stats
+local log_diff_add_sign_hl = G.log_diff_add_sign
+local log_diff_remove_sign_hl = G.log_diff_remove_sign
+local log_diff_line_number_hl = G.log_diff_line_number
+local log_diff_gutter_hl = G.log_diff_gutter
+local compose_working_hl = G.compose_working
+local compose_working_soft_hl = G.compose_working_soft
+local compose_working_shine_hl = G.compose_working_shine
 local close_windows_for_buffer
 local target_window
--- Forward declaration — defined later, referenced by append_block.
-local ensure_chunk_style
 
 local spin_states = {}
 
@@ -136,6 +131,18 @@ local function compose_working_label(prefix, lane)
   return table.concat(pieces)
 end
 
+local function stop_command(lane)
+  lane = normalize_lane(lane)
+  if lane == "flow" then
+    return ":StriderStopFlow"
+  end
+  return ":StriderStop"
+end
+
+local function stop_hint(lane)
+  return stop_command(lane) .. " to interrupt"
+end
+
 local function compose_status_line(progress, lane)
   local session = state.get_session(lane)
   local statuses = session and session.status or {}
@@ -167,7 +174,7 @@ local function compose_status_line(progress, lane)
   -- Active: animate `Working`, keep elapsed time beside it, and leave the stop hint on the right.
   local elapsed = format_elapsed(progress.started_at) or "0s"
   local left = compose_working_label(prefix, lane) .. escape_status_text(string.format(" (%s)", elapsed))
-  local right = ":StriderStop to interrupt"
+  local right = stop_hint(lane)
   return left, right, true
 end
 
@@ -207,6 +214,9 @@ local function spin_tick(lane)
     M.refresh_compose_winbar(lane)
   end
   M.refresh_log_winbar(lane)
+  if M.refresh_q_answer_winbar then
+    M.refresh_q_answer_winbar(lane)
+  end
 end
 
 local function start_spin(progress, lane)
@@ -215,6 +225,9 @@ local function start_spin(progress, lane)
   spin.index = 0
   M.refresh_compose_winbar(lane)
   M.refresh_log_winbar(lane)
+  if M.refresh_q_answer_winbar then
+    M.refresh_q_answer_winbar(lane)
+  end
   spin.timer = vim.uv.new_timer()
   spin.timer:start(SPIN_INTERVAL_MS, SPIN_INTERVAL_MS, vim.schedule_wrap(function()
     spin_tick(lane)
@@ -519,6 +532,14 @@ end
 -- via setWidget("strider", [...]). We flatten meaningful lines (Model,
 -- Context, Cost, last response, etc.) joined with ` · `. Empty widget
 -- renders a minimal idle label.
+local function context_widget_line(parts)
+  for _, part in ipairs(parts) do
+    if part:lower():match("^context") then
+      return part
+    end
+  end
+end
+
 local function format_log_winbar(lane)
   local session = state.get_session(lane)
   local widget = session and session.widget or {}
@@ -532,7 +553,11 @@ local function format_log_winbar(lane)
   if session and session.progress then
     local elapsed = format_elapsed(session.progress.started_at) or "0s"
     local title = session.progress.title or "Strider running..."
-    return escape_status_text(string.format("Working (%s) · %s · :StriderStop to interrupt", elapsed, title))
+    local active_parts = { string.format("Working (%s)", elapsed), title }
+    local context = context_widget_line(parts)
+    if context then table.insert(active_parts, context) end
+    table.insert(active_parts, stop_hint(lane))
+    return escape_status_text(table.concat(active_parts, " · "))
   end
   if #parts == 0 then
     return "Strider"
@@ -998,107 +1023,88 @@ function M.append_diff(text, lane, opts)
   scroll_log_windows(buf)
 end
 
-function M.append_block(label, text, lane, opts)
-  opts = opts or {}
-  ensure_chunk_style()
-  local buf = M.ensure_log_buffer(lane)
-
-  -- Codex-style: bullet + bold verb labels plus rule-separated model
-  -- turns. User/error turns get subtle panels; assistant text stays plain.
-  local lines = {}
-  local verb = block_verbs[label]
-  if label == "assistant" then
-    -- Assistant text flows with no header. When there is already log
-    -- content, insert a Codex-style rule to separate model turns.
-    if log_has_content(buf) then
-      table.insert(lines, "")
-      table.insert(lines, log_turn_rule(buf))
-      table.insert(lines, "")
-    else
-      table.insert(lines, "")
-    end
-  elseif label == "user" then
-    -- User input uses a non-markdown prompt glyph. Avoid `>` so the
-    -- markdown renderer doesn't turn prompts into blockquotes/code-like
-    -- panels or wrap long @image lines strangely.
-    table.insert(lines, "")
-    local first = true
-    for _, l in ipairs(vim.split(text, "\n", { plain = true })) do
-      if l == "" then
-        table.insert(lines, "")
-      else
-        table.insert(lines, (first and log_user_prefix or log_user_continuation) .. l)
-        first = false
-      end
-    end
-    table.insert(lines, "")
-    local items = log_lines(lines)
-    if #items == 0 then return end
-    local start_line
-    if opts.insert_at then
-      start_line = opts.insert_at
-      vim.api.nvim_buf_set_lines(buf, start_line, start_line, false, items)
-    else
-      start_line = vim.api.nvim_buf_line_count(buf)
-      vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
-    end
-    local end_line = start_line + #items - 1
-    log_pin.record_user_message(lane, text, buf, start_line, end_line)
-    -- Give the whole user turn a subtle theme-derived panel, then
-    -- keep the quoted text foreground stronger above it.
-    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
-      end_row = start_line + #items,
-      hl_group = log_user_bg_hl,
-      hl_eol = true,
-      priority = 3,
-    })
-    for offset = 1, #items - 1 do
-      local row = start_line + offset
-      local line_text = items[offset + 1] or ""
-      if vim.trim(line_text) ~= "" then
-        pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
-          end_row = row + 1,
-          hl_group = log_user_hl,
-          priority = 10,
-        })
-      end
-    end
-    scroll_log_windows(buf)
-    return
-  else
-    -- Everything else: • Verb header, body indented below.
-    local header = verb and verb ~= "" and ("• " .. verb) or ("• " .. label)
-    table.insert(lines, "")
-    table.insert(lines, header)
+local function insert_log_items(buf, items, opts)
+  if #items == 0 then return nil end
+  if opts.insert_at then
+    vim.api.nvim_buf_set_lines(buf, opts.insert_at, opts.insert_at, false, items)
+    return opts.insert_at
   end
+  local start_line = vim.api.nvim_buf_line_count(buf)
+  vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+  return start_line
+end
 
-  if label ~= "user" then
-    local body_lines = label == "diff" and diff_content_lines(text)
-      or vim.split(text, "\n", { plain = true })
-    for _, l in ipairs(body_lines) do
-      table.insert(lines, label == "assistant" and l or ("  " .. l))
+local function user_block_lines(text)
+  local lines = { "" }
+  local first = true
+  for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
+    if line == "" then
+      table.insert(lines, "")
+    else
+      table.insert(lines, (first and log_user_prefix or log_user_continuation) .. line)
+      first = false
     end
   end
   table.insert(lines, "")
+  return lines
+end
 
-  local items = log_lines(lines)
-  if #items == 0 then return end
+local function highlight_user_block(buf, start_line, items)
+  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
+    end_row = start_line + #items,
+    hl_group = log_user_bg_hl,
+    hl_eol = true,
+    priority = 3,
+  })
+  for offset = 1, #items - 1 do
+    local row = start_line + offset
+    local line_text = items[offset + 1] or ""
+    if vim.trim(line_text) ~= "" then
+      pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+        end_row = row + 1,
+        hl_group = log_user_hl,
+        priority = 10,
+      })
+    end
+  end
+end
 
-  local start_line
-  if opts.insert_at then
-    start_line = opts.insert_at
-    vim.api.nvim_buf_set_lines(buf, start_line, start_line, false, items)
+local function append_user_block(buf, text, lane, opts)
+  local items = log_lines(user_block_lines(text))
+  local start_line = insert_log_items(buf, items, opts)
+  if not start_line then return false end
+  log_pin.record_user_message(lane, text, buf, start_line, start_line + #items - 1)
+  highlight_user_block(buf, start_line, items)
+  scroll_log_windows(buf)
+  return true
+end
+
+local function block_lines(label, text, buf)
+  local lines = {}
+  if label == "assistant" then
+    if log_has_content(buf) then
+      vim.list_extend(lines, { "", log_turn_rule(buf), "" })
+    else
+      table.insert(lines, "")
+    end
   else
-    start_line = vim.api.nvim_buf_line_count(buf)
-    vim.api.nvim_buf_set_lines(buf, -1, -1, false, items)
+    local verb = block_verbs[label]
+    table.insert(lines, "")
+    table.insert(lines, verb and verb ~= "" and ("• " .. verb) or ("• " .. label))
   end
 
-  local end_line = start_line + #items - 1
+  local body_lines = label == "diff" and diff_content_lines(text)
+    or vim.split(text, "\n", { plain = true })
+  for _, line in ipairs(body_lines) do
+    table.insert(lines, label == "assistant" and line or ("  " .. line))
+  end
+  table.insert(lines, "")
+  return lines
+end
 
-  -- Highlight any turn separator line.
+local function highlight_rule_line(buf, start_line, items)
   for offset = 0, #items - 1 do
-    local line_text = items[offset + 1] or ""
-    if line_text:match("^%-%-%-+$") then
+    if (items[offset + 1] or ""):match("^%-%-%-+$") then
       local row = start_line + offset
       pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
         end_row = row + 1,
@@ -1106,53 +1112,62 @@ function M.append_block(label, text, lane, opts)
         hl_eol = true,
         priority = 6,
       })
-      break
+      return
     end
   end
+end
 
-  -- Highlight the • header line with the label's color.
-  local hl = log_label_hl[label]
-  if label ~= "assistant" and label ~= "user" then
-    -- Find the header row (first non-blank line after start_line)
-    for offset = 0, #items - 1 do
-      local line_text = items[offset + 1] or ""
-      if line_text:sub(1, 3) == "• " then
-        local row = start_line + offset
-        pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
-          end_row = row + 1,
-          hl_group = hl or log_tool_hl,
-          priority = 10,
-        })
-        break
-      end
+local function highlight_header_line(buf, label, start_line, items)
+  if label == "assistant" or label == "user" then return end
+  for offset = 0, #items - 1 do
+    if (items[offset + 1] or ""):sub(1, 3) == "• " then
+      local row = start_line + offset
+      pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+        end_row = row + 1,
+        hl_group = log_label_hl[label] or log_tool_hl,
+        priority = 10,
+      })
+      return
     end
   end
+end
 
-  -- Thinking gets faint italic on the whole block.
+local function highlight_block_bg(buf, start_line, end_line, group, priority)
+  pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
+    end_row = end_line + 1,
+    hl_group = group,
+    hl_eol = true,
+    priority = priority,
+  })
+end
+
+local function highlight_block(buf, label, start_line, end_line, items)
+  highlight_rule_line(buf, start_line, items)
+  highlight_header_line(buf, label, start_line, items)
   if label == "thinking" then
-    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
-      end_row = end_line + 1,
-      hl_group = log_thinking_hl,
-      hl_eol = true,
-      priority = 4,
-    })
-  end
-
-  -- Error gets a dim red background so it's unmissable.
-  if label == "error" then
-    pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
-      end_row = end_line + 1,
-      hl_group = log_error_bg_hl,
-      hl_eol = true,
-      priority = 5,
-    })
-  end
-
-  -- Diff line coloring (inside the body, after the header).
-  if label == "diff" then
+    highlight_block_bg(buf, start_line, end_line, log_thinking_hl, 4)
+  elseif label == "error" then
+    highlight_block_bg(buf, start_line, end_line, log_error_bg_hl, 5)
+  elseif label == "diff" then
     highlight_diff_rows(buf, start_line, items)
   end
+end
 
+function M.append_block(label, text, lane, opts)
+  opts = opts or {}
+  ensure_chunk_style()
+  local buf = M.ensure_log_buffer(lane)
+
+  if label == "user" then
+    append_user_block(buf, text, lane, opts)
+    return
+  end
+
+  local items = log_lines(block_lines(label, text, buf))
+  local start_line = insert_log_items(buf, items, opts)
+  if not start_line then return end
+
+  highlight_block(buf, label, start_line, start_line + #items - 1, items)
   scroll_log_windows(buf)
 end
 
@@ -1677,6 +1692,30 @@ function M.set_review_lines(lines)
   session.review_win = win
 end
 
+local function ensure_q_answer_buffer(lane)
+  return flow_cards.ensure_q_answer_buffer(lane)
+end
+
+function M.open_q_answer(prompt, lane)
+  return flow_cards.open_q_answer(prompt, lane)
+end
+
+function M.update_q_answer(text, lane)
+  return flow_cards.update_q_answer(text, lane)
+end
+
+function M.finish_q_answer(text, status, lane)
+  return flow_cards.finish_q_answer(text, status, lane)
+end
+
+function M.refresh_q_answer_winbar(lane)
+  return flow_cards.refresh_q_answer_winbar(lane)
+end
+
+function M.refresh_q_answer_layouts()
+  return flow_cards.refresh_q_answer_layouts()
+end
+
 local function set_buffer_busy(buf, busy)
   if buf and vim.api.nvim_buf_is_valid(buf) then
     pcall(function()
@@ -1690,8 +1729,12 @@ local function progress_buffers(target, lane)
   if target == "review" or target == "both" then
     table.insert(bufs, M.ensure_review_buffer())
   end
-  if target == "log" or target == "both" then
+  if target == "log" or target == "both" or target == "q" then
     table.insert(bufs, M.ensure_log_buffer(lane))
+  end
+  if target == "q" then
+    local q_buf = ensure_q_answer_buffer(lane)
+    if q_buf then table.insert(bufs, q_buf) end
   end
   return bufs
 end
@@ -1733,6 +1776,7 @@ function M.finish_activity(message, status, lane)
   stop_spin(lane)
   M.refresh_compose_winbar(lane)
   M.refresh_log_winbar(lane)
+  M.refresh_q_answer_winbar(lane)
   M.refresh_compose_hint()
 end
 
@@ -2033,171 +2077,6 @@ function M.hide_review()
   end
 end
 
--- Per-buffer checktime guard. checktime is expensive (stat + potential
--- reload). A single stop focus can call get_buffer 3–4 times for the same
--- buffer; skip re-checking within 500ms.
-local checktime_stamps = {}
-local CHECKTIME_DEBOUNCE_NS = 500e6  -- 500ms
-
-local function refresh_buffer(buf)
-  if buf <= 0 or not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].modified then
-    return
-  end
-  local now = vim.uv.hrtime()
-  local last = checktime_stamps[buf]
-  if last and (now - last) < CHECKTIME_DEBOUNCE_NS then
-    return
-  end
-  checktime_stamps[buf] = now
-  vim.api.nvim_buf_call(buf, function()
-    pcall(vim.cmd, "silent checktime")
-  end)
-end
-
-local function clear_chunk_highlight(session)
-  if not session then
-    return
-  end
-  local buf = session.highlight_buf
-  if buf and vim.api.nvim_buf_is_valid(buf) then
-    vim.api.nvim_buf_clear_namespace(buf, chunk_namespace, 0, -1)
-  end
-  session.chunk_lines = {}
-  session.chunk_path = nil
-  session.highlight_buf = nil
-end
-
-local function hl_attr(group, attr)
-  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = group, link = false })
-  if not ok or type(hl) ~= "table" then return nil end
-  local value = hl[attr]
-  return type(value) == "number" and value or nil
-end
-
-local function rgb_channels(color)
-  return {
-    r = math.floor(color / 65536) % 256,
-    g = math.floor(color / 256) % 256,
-    b = color % 256,
-  }
-end
-
-local function blend_to_hex(base, accent, amount)
-  local a = rgb_channels(base)
-  local b = rgb_channels(accent)
-  local function mix(from, to)
-    return math.floor(from + (to - from) * amount + 0.5)
-  end
-  return string.format(
-    "#%02x%02x%02x",
-    mix(a.r, b.r),
-    mix(a.g, b.g),
-    mix(a.b, b.b)
-  )
-end
-
-local function theme_user_log_bg()
-  local base = hl_attr("Normal", "bg") or hl_attr("NormalFloat", "bg")
-  if not base then return nil end
-  local candidates = {
-    { "Visual", "bg" },
-    { "PmenuSel", "bg" },
-    { "CursorLine", "bg" },
-    { "Search", "bg" },
-    { "Question", "fg" },
-    { "Identifier", "fg" },
-    { "Normal", "fg" },
-  }
-  for _, item in ipairs(candidates) do
-    local accent = hl_attr(item[1], item[2])
-    if accent and accent ~= base then
-      return blend_to_hex(base, accent, 0.10)
-    end
-  end
-end
-
-local chunk_style_done = false
-ensure_chunk_style = function()
-  if chunk_style_done then return end
-  chunk_style_done = true
-  vim.api.nvim_set_hl(0, added_chunk_hl, { default = true, fg = "#73C991" })
-  vim.api.nvim_set_hl(0, removed_chunk_hl, { default = true, fg = "#F14C4C" })
-  vim.api.nvim_set_hl(0, comment_hl, { default = true, fg = "#D7BA7D" })
-  vim.api.nvim_set_hl(0, annotation_hl, { default = true, link = "Comment" })
-  -- Compose winbar activity shimmer. Keep the base text theme-native,
-  -- then sweep muted + bright accents across `Working` while a turn runs.
-  vim.api.nvim_set_hl(0, compose_working_hl, { default = true, link = "WinBar" })
-  vim.api.nvim_set_hl(0, compose_working_soft_hl, { default = true, fg = "#9CA3AF" })
-  vim.api.nvim_set_hl(0, compose_working_shine_hl, { default = true, fg = "#73C991", bold = true })
-  -- Log pane hierarchy: user messages stand out in blue; assistant
-  -- blocks are green so replies are visually distinct from tool output
-  -- and rules; tool blocks use normal text.
-  vim.api.nvim_set_hl(0, log_assistant_hl, { default = true, fg = "#73C991", bold = true })
-  vim.api.nvim_set_hl(0, log_user_hl, { default = true, fg = "#7BB5FF", bold = true })
-  vim.api.nvim_set_hl(0, log_tool_hl, { default = true, link = "Normal" })
-  vim.api.nvim_set_hl(0, log_thinking_hl, { default = true, fg = "#6B7280", italic = true })
-  vim.api.nvim_set_hl(0, log_rule_hl, { default = true, link = "NonText" })
-  -- Error header stands out: bright red + bold, paired with a dim red
-  -- block background so the error block is hard to miss when scanning
-  -- the log. Colors match the removed-chunk red already in use above.
-  vim.api.nvim_set_hl(0, log_error_hl, { default = true, fg = "#F14C4C", bold = true })
-  -- Subtle backgrounds for user and error blocks; assistant blocks
-  -- blend in. User bg is derived from the active colorscheme so it
-  -- reads like a theme-native panel instead of a fixed color.
-  vim.api.nvim_set_hl(0, log_assistant_bg_hl, { default = true, link = "Normal" })
-  local user_bg = theme_user_log_bg()
-  if user_bg then
-    vim.api.nvim_set_hl(0, log_user_bg_hl, { default = true, bg = user_bg })
-  else
-    vim.api.nvim_set_hl(0, log_user_bg_hl, { default = true, link = "Normal" })
-  end
-  vim.api.nvim_set_hl(0, log_error_bg_hl, { default = true, bg = "#361a1a" })
-  -- Diff rows should read like Codex's transcript diffs: changed lines
-  -- get quiet full-width red/green bands, while context stays on the
-  -- normal log background instead of inheriting noisy syntax colors.
-  vim.api.nvim_set_hl(0, log_diff_add_hl, { default = true, bg = "#1f3326" })
-  vim.api.nvim_set_hl(0, log_diff_remove_hl, { default = true, bg = "#3a2024" })
-  vim.api.nvim_set_hl(0, log_diff_context_hl, { default = true, link = "NonText" })
-  vim.api.nvim_set_hl(0, log_diff_stats_hl, { default = true, link = "NonText" })
-  vim.api.nvim_set_hl(0, log_diff_add_sign_hl, { default = true, fg = "#73C991", bold = true })
-  vim.api.nvim_set_hl(0, log_diff_remove_sign_hl, { default = true, fg = "#F14C4C", bold = true })
-  vim.api.nvim_set_hl(0, log_diff_line_number_hl, { default = true, link = "LineNr" })
-  vim.api.nvim_set_hl(0, log_diff_gutter_hl, { default = true, link = "NonText" })
-  -- Paths in tool headers (e.g. after `[tool] read`) stand out so the
-  -- eye finds the target quickly when scanning the transcript.
-  vim.api.nvim_set_hl(0, log_path_hl, { default = true, fg = "#7BB5FF" })
-  -- Muted annotations like `(+N more lines)` / `Took 0.8s`.
-  vim.api.nvim_set_hl(0, log_muted_hl, { default = true, link = "NonText" })
-  -- Tool output reads as secondary text — quieter than the thinking/rule
-  -- tones but still legible. Italicize the `… N more lines …` separator
-  -- so it stands out from the surrounding content at the same muted
-  -- intensity.
-  vim.api.nvim_set_hl(0, log_tool_output_hl, { default = true, fg = "#9CA3AF" })
-  vim.api.nvim_set_hl(0, log_tool_output_ellipsis_hl, {
-    default = true, fg = "#6B7280", italic = true,
-  })
-  vim.api.nvim_set_hl(0, log_tool_output_gutter_hl, { default = true, fg = "#6B7280" })
-  vim.api.nvim_set_hl(0, log_tool_output_meta_hl, { default = true, link = "NonText" })
-  vim.api.nvim_set_hl(0, log_tool_output_error_hl, { default = true, fg = "#F14C4C" })
-end
-
-local highlight_augroup = vim.api.nvim_create_augroup("StriderHighlights", { clear = true })
-vim.api.nvim_create_autocmd("ColorScheme", {
-  group = highlight_augroup,
-  callback = function()
-    chunk_style_done = false
-    ensure_chunk_style()
-  end,
-})
-
-local function get_buffer(path)
-  local buf = vim.fn.bufnr(path)
-  if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
-    refresh_buffer(buf)
-    return buf
-  end
-end
-
 function M.jump_to_file(path, line)
   if not state.get_config().auto_jump or path == "" then
     return
@@ -2213,11 +2092,11 @@ function M.jump_to_file(path, line)
   vim.api.nvim_set_current_win(win)
   if buf > 0 then
     vim.api.nvim_win_set_buf(win, buf)
-    refresh_buffer(buf)
+    marks.refresh_buffer(buf)
   else
     pcall(vim.cmd, "silent edit " .. vim.fn.fnameescape(path))
     buf = vim.api.nvim_get_current_buf()
-    refresh_buffer(buf)
+    marks.refresh_buffer(buf)
   end
 
   local target = tonumber(line) or 1
@@ -2230,206 +2109,27 @@ function M.jump_to_file(path, line)
 end
 
 function M.highlight_lines(path, lines, lane)
-  local session = state.get_session(lane) or state.ensure_session(lane or "main", vim.fn.getcwd())
-  local buf = get_buffer(path)
-  if not buf then
-    return
-  end
-
-  clear_chunk_highlight(session)
-  ensure_chunk_style()
-
-  local max_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
-  local marks_by_line = {}
-  local ordered = {}
-
-  for _, item in ipairs(lines or {}) do
-    local line = type(item) == "table" and item.line or item
-    local kind = type(item) == "table" and item.kind or "added"
-    local target = math.min(math.max(tonumber(line) or 1, 1), max_line)
-    if not marks_by_line[target] then
-      marks_by_line[target] = kind
-      table.insert(ordered, target)
-    elseif marks_by_line[target] ~= "removed" and kind == "removed" then
-      marks_by_line[target] = kind
-    end
-  end
-
-  table.sort(ordered)
-  for _, target in ipairs(ordered) do
-    local removed = marks_by_line[target] == "removed"
-    vim.api.nvim_buf_set_extmark(buf, chunk_namespace, target - 1, 0, {
-      priority = removed and 11 or 10,
-      sign_hl_group = removed and removed_chunk_hl or added_chunk_hl,
-      sign_text = removed and "-" or "▎",
-    })
-  end
-
-  session.chunk_lines = ordered
-  session.chunk_path = path
-  session.highlight_buf = buf
+  marks.highlight_lines(path, lines, lane)
 end
 
 function M.highlight_range(path, first_line, last_line, lane)
-  local buf = get_buffer(path)
-  if not buf then
-    return
-  end
-
-  local max_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
-  local start_line = math.min(math.max(tonumber(first_line) or 1, 1), max_line)
-  local end_line = math.min(math.max(tonumber(last_line) or max_line, start_line), max_line)
-  local lines = {}
-  for line = start_line, end_line do
-    table.insert(lines, { line = line, kind = "added" })
-  end
-  M.highlight_lines(path, lines, lane)
+  marks.highlight_range(path, first_line, last_line, lane)
 end
-
--- Wrap a text blob into roughly `width`-char lines. Splits on whitespace;
--- a single long word stays unbroken rather than getting arbitrarily cut.
-local function wrap_text(text, width)
-  width = width or 78
-  local out = {}
-  for raw_line in string.gmatch(text or "", "[^\n]*") do
-    if raw_line == "" then
-      table.insert(out, "")
-    else
-      local current = ""
-      for word in string.gmatch(raw_line, "%S+") do
-        if current == "" then
-          current = word
-        elseif #current + 1 + #word <= width then
-          current = current .. " " .. word
-        else
-          table.insert(out, current)
-          current = word
-        end
-      end
-      if current ~= "" then
-        table.insert(out, current)
-      end
-    end
-  end
-  return out
-end
-
--- Buffers that received annotation extmarks. Tracked so clear only touches
--- the 1–2 buffers that actually have marks instead of every loaded buffer.
-local annotated_bufs = {}
 
 function M.clear_stop_annotations()
-  for buf in pairs(annotated_bufs) do
-    if vim.api.nvim_buf_is_valid(buf) then
-      pcall(vim.api.nvim_buf_clear_namespace, buf, annotation_namespace, 0, -1)
-    end
-  end
-  annotated_bufs = {}
+  marks.clear_stop_annotations()
 end
 
--- Render annotations for a single plan stop. `item` is a stop from the
--- review plan; it may carry `explanation` (rendered as a block above the
--- stop's startLine) and `annotations` (optional extras). See stop schema
--- in pi/strider-stepper.ts for the shape.
---
--- Caller is responsible for clearing prior annotations first.
 function M.set_stop_annotations(item)
-  if not item or not item.path then
-    return
-  end
-  local buf = get_buffer(item.path)
-  if not buf then
-    return
-  end
-  ensure_chunk_style()
-  annotated_bufs[buf] = true
-
-  local max_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
-  local stop_start = math.min(math.max(tonumber(item.startLine) or 1, 1), max_line)
-  local stop_end = math.min(math.max(tonumber(item.endLine) or stop_start, stop_start), max_line)
-
-  -- Default block: the stop's `explanation`, usually pinned above the
-  -- stop's first line. For line-1 anchors, render below instead: an
-  -- above-the-first-line block exists in extmark data but does not become
-  -- visible in the window, so the first stop in a file appears to have no
-  -- inline help.
-  local function render_block(anchor_line, text)
-    if not text or text == "" then
-      return
-    end
-    local virt_lines = {}
-    table.insert(virt_lines, { { "┌─ strider ─────────────────────", annotation_hl } })
-    for _, line in ipairs(wrap_text(text, 78)) do
-      table.insert(virt_lines, { { "│ " .. line, annotation_hl } })
-    end
-    table.insert(virt_lines, { { "└──────────────────────────────", annotation_hl } })
-    pcall(vim.api.nvim_buf_set_extmark, buf, annotation_namespace, anchor_line - 1, 0, {
-      virt_lines = virt_lines,
-      virt_lines_above = anchor_line > 1,
-      priority = 40,
-    })
-  end
-
-  local function render_line_annotation(line_no, text)
-    if not text or text == "" then
-      return
-    end
-    local target = math.min(math.max(tonumber(line_no) or stop_start, stop_start), stop_end)
-    pcall(vim.api.nvim_buf_set_extmark, buf, annotation_namespace, target - 1, 0, {
-      virt_text = { { "  ◂ " .. text, annotation_hl } },
-      virt_text_pos = "eol",
-      priority = 40,
-    })
-  end
-
-  if item.explanation and item.explanation ~= "" then
-    render_block(stop_start, item.explanation)
-  end
-
-  for _, ann in ipairs(item.annotations or {}) do
-    if ann.kind == "block" then
-      local s = tonumber(ann.startLine)
-      if s then
-        local anchor = math.min(math.max(s, stop_start), stop_end)
-        render_block(anchor, ann.text)
-      end
-    elseif ann.kind == "line" then
-      render_line_annotation(ann.line, ann.text)
-    end
-  end
+  marks.set_stop_annotations(item)
 end
 
 function M.clear_comment_markers()
-  local session = state.get_session("review")
-  if not session then
-    return
-  end
-  for _, buf in ipairs(session.comment_buffers or {}) do
-    if vim.api.nvim_buf_is_valid(buf) then
-      vim.api.nvim_buf_clear_namespace(buf, comment_namespace, 0, -1)
-    end
-  end
-  session.comment_buffers = {}
+  marks.clear_comment_markers()
 end
 
 function M.add_comment_marker(path, line)
-  local session = state.get_session("review")
-  local buf = get_buffer(path)
-  if not buf then
-    return
-  end
-  ensure_chunk_style()
-  local max_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
-  local target = math.min(math.max(tonumber(line) or 1, 1), max_line)
-  vim.api.nvim_buf_set_extmark(buf, comment_namespace, target - 1, 0, {
-    priority = 20,
-    sign_hl_group = comment_hl,
-    sign_text = "●",
-  })
-  session.comment_buffers = session.comment_buffers or {}
-  if not vim.tbl_contains(session.comment_buffers, buf) then
-    table.insert(session.comment_buffers, buf)
-  end
+  marks.add_comment_marker(path, line)
 end
 
 function M.set_quickfix(title, items, open)

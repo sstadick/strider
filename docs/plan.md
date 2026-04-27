@@ -17,12 +17,13 @@ Supporting UX:
 - local review comments summarized back to the agent at review end
 - accepted review stops via `:StriderNext!` without adding another
   top-level review command
-- `[Tangent]` badge in the compose winbar while a `:StriderQ` branch is
-  active; any other `:Strider*` command implicitly ends it
+- `:StriderQ` focused answers in a non-focus-stealing bottom-right
+  `strider://StriderQAnswer` window that stays compact until focused, then
+  expands to near full height; full flow transcript remains in `:StriderLogFlow`
 - clarify and plan-proposal flows in the chat log (no popups);
   compose hijacked for replies with a `[Clarify]` badge
 - `:StriderStatus` for a compact lane/status/control summary
-- `:StriderStop` to abort in-flight turns (pi `abort` RPC)
+- `:StriderStop` / `:StriderStopFlow` to abort in-flight turns (pi `abort` RPC)
 - inline red `[error]` blocks surface provider / model / transport
   errors that used to silently hang the log
 - `<S-Tab>` in compose cycles the pi thinking level; active level

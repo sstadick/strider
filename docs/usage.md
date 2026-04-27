@@ -24,7 +24,8 @@ README.
 | `:'<,'>StriderQ [prompt]` | Open the Q popup with a selection-scoped flow-lane question |
 | `:StriderChat` | Toggle the chat log + compose buffers |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
-| `:StriderStop` | Abort the current in-flight turn |
+| `:StriderStop` | Abort the current main-lane turn |
+| `:StriderStopFlow` | Abort the current flow-lane Q/Search/Patch turn |
 | `:StriderStatus` | Open the current lane/status/control summary |
 | `:StriderSessions` | Browse saved pi sessions for this project |
 | `:StriderResume [id-or-path]` | Resume a saved pi session |
@@ -36,11 +37,18 @@ README.
 
 `:StriderChat` keeps the persistent main log and compose buffers.
 `:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on a separate flow lane
-whose transcript lives in `:StriderLogFlow`. When those flow-lane operations
-finish, Strider always leaves a bottom-left green-dot completion cue; if the
-flow log is hidden, it also sends a notification. `:StriderReview` runs on a
-dedicated review lane whose transcript lives in `:StriderLogReview`; that review
-log is manual/diagnostic and does not open on review start or review end.
+whose transcript lives in `:StriderLogFlow`. `:StriderQ` also opens a
+non-focus-stealing `strider://StriderQAnswer` window in the bottom-right. It
+stays as a compact three-line card while waiting and after the answer is ready;
+select/focus it to expand into a near full-height right-side answer panel, then
+leave it to fold again. The question stays pinned at the top, and only assistant answer text is shown below
+it. Reasoning, tool calls, and tool output remain in `:StriderLogFlow`. When
+flow-lane operations finish, Strider always leaves a bottom-left green-dot
+completion cue; if the flow log is hidden, it also sends a notification.
+`:StriderStopFlow`
+aborts the active flow-lane turn. `:StriderReview` runs on a dedicated review
+lane whose transcript lives in `:StriderLogReview`; that review log is
+manual/diagnostic and does not open on review start or review end.
 
 ## Chat Compose
 
@@ -71,9 +79,9 @@ and `/export`, also set the main lane busy and show `Working` in the compose
 and log winbars until pi replies. Sending while a reply is streaming steers the
 running turn via pi's `steer` command. Slash commands are rejected mid-turn.
 
-`:StriderStop` aborts the in-flight turn. `:StriderStatus` opens a compact
-summary of lane state, pending controls, review progress, model/context widget
-lines, and the last error.
+`:StriderStop` aborts the main-lane turn; `:StriderStopFlow` aborts the
+flow-lane turn. `:StriderStatus` opens a compact summary of lane state, pending
+controls, review progress, model/context widget lines, and the last error.
 
 ## Session Storage
 
@@ -155,8 +163,11 @@ cancellation.
 
 `:StriderQ` opens a floating editor for a one-shot side question. Submitting it
 asks on Strider's separate flow lane without popping open main chat. Range-based
-Q includes the selected excerpt in the prompt. Answers land in
-`:StriderLogFlow`.
+Q includes the selected excerpt in the prompt. The focused answer opens in a
+non-focus-stealing `strider://StriderQAnswer` window at the bottom-right. It
+stays compact while waiting and after the answer is ready; select/focus it to
+expand into a near full-height right-side answer panel, then leave it to fold again. The full transcript,
+including reasoning and tool calls, still lands in `:StriderLogFlow`.
 
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It
 requires a visual range or an active review item, embeds the excerpt and range

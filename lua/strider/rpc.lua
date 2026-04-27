@@ -473,6 +473,11 @@ local function handle_message_end(event, lane)
     ui.finish_activity(reason, level, lane)
     if pending and pending.operation == "q" then
       ui.finish_q_answer(reason, "error", lane)
+    elseif pending and pending.operation == "patch" then
+      local status = stop_reason == "aborted" and "cancelled" or "error"
+      ui.finish_patch_card(pending.metadata and pending.metadata.card_id, status, {
+        assistant_summary = reason,
+      }, lane)
     end
     if stop_reason == "error" then
       ui.notify(reason, vim.log.levels.ERROR)
@@ -508,6 +513,10 @@ local function handle_message_end(event, lane)
     ui.finish_activity("Strider request complete (no text)", "success", lane)
     if pending and pending.operation == "q" then
       ui.finish_q_answer(nil, "success", lane)
+    elseif pending and pending.operation == "patch" then
+      ui.finish_patch_card(pending.metadata and pending.metadata.card_id, "success", {
+        assistant_summary = "Patch completed with no final summary.",
+      }, lane)
     end
     notify_turn_done(pending, lane)
     return
@@ -535,6 +544,10 @@ local function handle_message_end(event, lane)
   ui.finish_activity("Strider request complete", "success", lane)
   if pending and pending.operation == "q" then
     ui.finish_q_answer(text, "success", lane)
+  elseif pending and pending.operation == "patch" then
+    ui.finish_patch_card(pending.metadata and pending.metadata.card_id, "success", {
+      assistant_summary = text,
+    }, lane)
   end
   notify_turn_done(pending, lane)
   if completing_review_summary then
@@ -633,6 +646,17 @@ local function diff_stats(diff)
     end
   end
   return added, removed
+end
+
+local function patch_card_id(lane)
+  local pending = state.peek_pending_request(lane)
+  if not pending or pending.operation ~= "patch" then return nil end
+  return pending.metadata and pending.metadata.card_id
+end
+
+local function record_patch_tool(lane, tool)
+  local id = patch_card_id(lane)
+  if id then ui.record_patch_card_tool(id, tool, lane) end
 end
 
 local function handle_tool_start(event, lane)
@@ -804,6 +828,7 @@ local function handle_tool_end(event, lane)
   end
   if event.toolName == "read" then
     state.record_file(path, lane)
+    record_patch_tool(lane, { kind = "read", path = path })
     return
   end
   if event.toolName == "edit" then
@@ -812,9 +837,10 @@ local function handle_tool_end(event, lane)
     -- not move the user's window to follow model tool use.
     local lines = changed_lines(event)
     ui.highlight_lines(path, lines, lane)
+    local added, removed = 0, 0
     local diff_text = event.result and event.result.details and event.result.details.diff
     if diff_text and diff_text ~= "" then
-      local added, removed = diff_stats(diff_text)
+      added, removed = diff_stats(diff_text)
       local suffix = string.format(" (+%d -%d)", added, removed)
       ui.update_tool_line(insert_row and (insert_row - 1) or nil, "edit", path, suffix, lane)
       local diff_opts = vim.tbl_extend("force", insert_opts, {
@@ -823,10 +849,12 @@ local function handle_tool_end(event, lane)
       })
       ui.append_diff(diff_text, lane, diff_opts)
     end
+    record_patch_tool(lane, { kind = "edit", path = path, diff = diff_text, added = added, removed = removed })
     return
   end
   if event.toolName == "write" then
     state.record_file(path, lane)
+    record_patch_tool(lane, { kind = "write", path = path })
     -- Same rule as edits: annotate opportunistically, never steal focus.
     ui.highlight_range(path, 1, nil, lane)
   end

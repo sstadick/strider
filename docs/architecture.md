@@ -124,8 +124,10 @@ Important UX rule:
 2. user runs `:StriderPatch [prompt]`
 3. plugin opens the floating patch editor, prefilled when inline args were given
 4. on submit, plugin sends `/patch ...` with file, line range, and excerpt context
-5. tool events update the file jump and edit highlighting
-6. edited ranges remain highlighted after the patch
+5. a non-focus-stealing patch flow card opens in the bottom-right
+6. tool events update the card with inspected/touched files and diff blocks
+7. tool events update the file jump and edit highlighting
+8. edited ranges remain highlighted after the patch
 
 ### Tangent
 
@@ -361,9 +363,8 @@ Working today:
 - local review comments
 - selection-scoped patching
 - plain-prompt agent turns with clarify available
-- side questions via `:StriderQ` on a dedicated flow lane (focused answers
-  open in `strider://StriderQAnswer`; full transcripts land in
-  `:StriderLogFlow`)
+- side questions and patches on the flow lane; Q and patch results open in
+  compact flow cards while full transcripts land in `:StriderLogFlow`
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
 - `:StriderStatus` for a compact lane/status/control summary

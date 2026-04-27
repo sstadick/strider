@@ -17,9 +17,10 @@ Supporting UX:
 - local review comments summarized back to the agent at review end
 - accepted review stops via `:StriderNext!` without adding another
   top-level review command
-- `:StriderQ` focused answers in a non-focus-stealing bottom-right
-  `strider://StriderQAnswer` window that stays compact until focused, then
-  expands to near full height; full flow transcript remains in `:StriderLogFlow`
+- `:StriderQ` focused answers and `:StriderPatch` summaries in
+  non-focus-stealing bottom-right flow cards that stay compact until focused,
+  then expand to near full height; full flow transcripts remain in
+  `:StriderLogFlow`
 - clarify and plan-proposal flows in the chat log (no popups);
   compose hijacked for replies with a `[Clarify]` badge
 - `:StriderStatus` for a compact lane/status/control summary

@@ -32,12 +32,9 @@ local function format_elapsed(start_ns)
   return string.format("%dh%02dm", math.floor(elapsed_s / 3600), math.floor((elapsed_s % 3600) / 60))
 end
 local function stop_command(lane)
-  lane = normalize_lane(lane)
-  return lane == "flow" and ":StriderStopFlow" or ":StriderStop"
+  return normalize_lane(lane) == "flow" and ":StriderStopFlow" or ":StriderStop"
 end
-local function stop_hint(lane)
-  return stop_command(lane) .. " to interrupt"
-end
+local function stop_hint(lane) return stop_command(lane) .. " to interrupt" end
 local function working_label()
   highlights.ensure()
   return string.format("%%#%s#%s%%*", compose_working_hl, WORKING_LABEL)
@@ -47,15 +44,11 @@ local function configure_scratch_buffer(buf, filetype)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = true
-  if filetype then
-    vim.bo[buf].filetype = filetype
-  end
+  if filetype then vim.bo[buf].filetype = filetype end
 end
 local function q_answer_name(lane)
   lane = normalize_lane(lane)
-  if lane == "flow" then
-    return "strider://StriderQAnswer"
-  end
+  if lane == "flow" then return "strider://StriderQAnswer" end
   return "strider://StriderQAnswer-" .. lane
 end
 local function ensure_card_state(session)
@@ -289,11 +282,13 @@ local function card_winbar(card, lane)
     local left = working_label() .. escape_status_text(string.format(" (%s) · %s", elapsed, title))
     return left .. "%=" .. escape_status_text(stop_hint(lane))
   end
-  if card.kind == "q" and card.status ~= "running" then
-    if card.status ~= "success" then
-      return escape_status_text("StriderQ stopped")
+  if card.status ~= "running" then
+    if card.kind == "q" then
+      return escape_status_text(card.status == "success" and "StriderQ answer ready" or "StriderQ stopped")
     end
-    return escape_status_text("StriderQ answer ready")
+    if card.kind == "patch" then
+      return escape_status_text(card.status == "success" and "StriderPatch complete" or "StriderPatch stopped")
+    end
   end
   return escape_status_text(card.title or "Strider flow")
 end
@@ -371,6 +366,21 @@ local function ensure_autocmds()
       end)
     end,
   })
+end
+function M.get_card(id, lane)
+  lane = normalize_lane(lane)
+  return card_by_id(state.get_session(lane), id)
+end
+function M.open_card(id, lane)
+  ensure_autocmds()
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  local card = card_by_id(session, id)
+  if not card then return nil end
+  render_card(session, card)
+  local win = open_card_window(session, card)
+  M.reflow(lane)
+  return win
 end
 function M.create_card(kind, opts, lane)
   ensure_autocmds()
@@ -480,10 +490,6 @@ function M.finish_q_answer(text, status, lane)
   if text ~= nil then fields.answer_text = text end
   M.finish_card(card.id, status or "success", fields, lane)
 end
-function M.refresh_q_answer_winbar(lane)
-  M.refresh_winbars(lane)
-end
-function M.refresh_q_answer_layouts()
-  M.refresh_layouts()
-end
+function M.refresh_q_answer_winbar(lane) M.refresh_winbars(lane) end
+function M.refresh_q_answer_layouts() M.refresh_layouts() end
 return M

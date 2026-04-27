@@ -80,8 +80,9 @@ prefills compose so you can edit before sending.
   have their own transcript and in-flight state.
 - Scoped guardrails: review/search/plan are read-only; patch prompts are
   selection-scoped and intended for small local edits.
-- Native Neovim UI: logs, compose buffers, floating editors, quickfix/pickers,
-  inline review annotations, comments, and touched-file navigation.
+- Native Neovim UI: logs, compose buffers, floating editors, flow cards for
+  Q/patch results, quickfix/pickers, inline review annotations, comments, and
+  touched-file navigation.
 - Useful transcript rendering: edit tools show inline diff rows; read/write
   output keeps syntax-highlighted code fences; command/search output uses
   compact rows that do not accidentally render as markdown.

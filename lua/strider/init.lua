@@ -106,8 +106,12 @@ local function send(command, user_text, opts)
     ui.open_log({ preserve_focus = true }, lane)
   end
   local operation = opts.operation or nil
+  local metadata = opts.metadata or {}
   state.clear_error(lane)
-  state.set_pending_request(operation, opts.metadata, lane)
+  if operation == "patch" then
+    metadata.card_id = ui.open_patch_card(user_text, { target = metadata.target }, lane)
+  end
+  state.set_pending_request(operation, metadata, lane)
   if operation == "q" then
     ui.open_q_answer(user_text, lane)
   end
@@ -122,6 +126,10 @@ local function send(command, user_text, opts)
     ui.finish_activity("Strider request failed to start", "error", lane)
     if operation == "q" then
       ui.finish_q_answer("Strider request failed to start", "error", lane)
+    elseif operation == "patch" then
+      ui.finish_patch_card(metadata.card_id, "error", {
+        assistant_summary = "Strider request failed to start",
+      }, lane)
     end
     ui.refresh_compose_hint()
     return false
@@ -786,6 +794,13 @@ local function dispatch_patch(prompt, range)
   send("/patch " .. table.concat(lines, "\n"), prompt, {
     lane = FLOW_LANE,
     operation = "patch",
+    metadata = {
+      target = {
+        endLine = range.endLine,
+        path = range.path,
+        startLine = range.startLine,
+      },
+    },
   })
 end
 

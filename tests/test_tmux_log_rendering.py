@@ -81,6 +81,19 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 )
                 self.assertTrue(has_diff_hl, "expected diff line/gutter highlighting extmarks in the log")
 
+                has_tsx_parser = h.lua_bool(
+                    "(function() "
+                    "  local scratch = vim.api.nvim_create_buf(false, true); "
+                    "  vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {'return <main>Hello</main>'}); "
+                    "  local ok_parser = pcall(vim.treesitter.get_parser, scratch, 'tsx'); "
+                    "  local ok_query, query = pcall(function() return vim.treesitter.query.get('tsx', 'highlights') end); "
+                    "  pcall(vim.api.nvim_buf_delete, scratch, { force = true }); "
+                    "  return ok_parser and ok_query and query ~= nil "
+                    "end)()"
+                )
+                if not has_tsx_parser:
+                    self.skipTest("tsx treesitter parser/query unavailable")
+
                 has_syntax_hl = h.lua_bool(
                     "(function() "
                     "  local buf = vim.fn.bufnr('strider://log'); "

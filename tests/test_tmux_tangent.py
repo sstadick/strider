@@ -215,6 +215,48 @@ class TmuxTangentTests(unittest.TestCase):
                     timeout=5.0,
                 )
 
+    def test_patch_card_opens_without_focus_and_shows_patch_summary(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("edit src/App.tsx")
+                h.ex("1,3StriderPatch change the greeting literal")
+                h.submit_popup()
+
+                card_names_expr = (
+                    "filter(map(getwininfo(), {_, v -> bufname(v.bufnr)}), "
+                    "{_, n -> stridx(n, 'strider://flow-card/patch/') == 0})"
+                )
+                h.wait_until(lambda: len(h.json_expr(card_names_expr)) == 1, timeout=3.0)
+                card_name = h.json_expr(card_names_expr)[0]
+                self.assertNotEqual(card_name, h.expr("bufname('%')"))
+
+                h.wait_until(lambda: "Patch complete" in "\n".join(h.buffer_lines(card_name)), timeout=5.0)
+                folded = "\n".join(h.buffer_lines(card_name))
+                self.assertIn("change the greeting literal", folded)
+                self.assertIn("Patch complete", folded)
+                self.assertNotIn("Hello from patched fixture app", folded)
+
+                h.lua(
+                    "(function() "
+                    f"  local buf = vim.fn.bufnr({card_name!r}); "
+                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  vim.api.nvim_set_current_win(win); "
+                    "  require('strider.ui').refresh_q_answer_layouts(); "
+                    "  return true "
+                    "end)()"
+                )
+                expanded = "\n".join(h.buffer_lines(card_name))
+                self.assertIn("Target: src/App.tsx:1-3", expanded)
+                self.assertIn("Files touched", expanded)
+                self.assertIn("src/App.tsx", expanded)
+                self.assertIn("```diff", expanded)
+                self.assertIn("Hello from patched fixture app", expanded)
+                self.assertIn("Applied the requested local patch.", expanded)
+
+                flow_log = "\n".join(h.flow_log_lines())
+                self.assertIn("Applied the requested local patch.", flow_log)
+                self.assertIn("Hello from patched fixture app", flow_log)
+
     def test_flow_lane_rejects_new_request_while_busy(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

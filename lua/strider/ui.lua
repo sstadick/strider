@@ -3,6 +3,7 @@ local flow_cards = require("strider.ui.flow_cards")
 local highlights = require("strider.ui.highlights")
 local log_diff = require("strider.log.diff")
 local log_pin = require("strider.log_pin")
+local patch_cards = require("strider.ui.patch_cards")
 local marks = require("strider.ui.marks")
 local state = require("strider.state")
 local status = require("strider.status")
@@ -1706,6 +1707,18 @@ end
 
 function M.finish_q_answer(text, status, lane)
   return flow_cards.finish_q_answer(text, status, lane)
+end
+
+function M.open_patch_card(prompt, opts, lane)
+  return patch_cards.open(prompt, opts, lane)
+end
+
+function M.record_patch_card_tool(id, tool, lane)
+  return patch_cards.record_tool(id, tool, lane)
+end
+
+function M.finish_patch_card(id, status, fields, lane)
+  return patch_cards.finish(id, status, fields, lane)
 end
 
 function M.refresh_q_answer_winbar(lane)

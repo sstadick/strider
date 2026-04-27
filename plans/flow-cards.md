@@ -3,7 +3,7 @@
 ## Proposal
 
 - Date proposed: 2026-04-27
-- Implementation status: phase 1 implemented (Q answer surface extracted to flow-card manager)
+- Implementation status: phase 1 implemented (Q answer surface extracted to flow-card manager); patch cards implemented in-process for `:StriderPatch`
 
 ## Goal
 
@@ -111,11 +111,9 @@ Expanded body, v1 target:
 - final assistant summary
 - enough tool/log context to understand what changed
 
-Open decision: whether the patch card should literally mirror the full
-`StriderLogFlow` slice for that patch, including read/tool output, or use a
-curated patch transcript that excludes thinking and low-value tool noise. The
-initial recommendation is **curated patch log**: include request, tool headers,
-edits/diffs, and final summary; keep thinking and verbose read output in
+Implemented decision: patch cards use a **curated patch log**. They include the
+request, target, inspected/touched files, edit activity, diff blocks, and final
+summary. Thinking, verbose read output, and full tool details remain in
 `:StriderLogFlow`.
 
 ### Search card (later)
@@ -228,21 +226,15 @@ functions plus a plugin-prefixed augroup are the normal pattern.
 
 ### Phase 3 — Patch cards
 
-1. Create a patch card when `:StriderPatch` submits.
-2. Capture enough per-request transcript data to render an expanded patch card.
-   Options:
-   - v1-simple: record flow log start/end rows and copy that slice into the
-     card on completion.
-   - v1-polished: record structured patch events and render a curated patch
-     transcript with existing diff renderer components.
-3. Recommended first implementation:
-   - request header + target file/range
-   - tool headers for relevant reads/edits
-   - inline diff rows from edit result details
-   - final assistant summary
-   - error/cancel block when applicable
-4. Keep verbose read output and reasoning in `:StriderLogFlow` unless we decide
-   the patch card should literally mirror the full flow-log slice.
+Status: implemented in-process for `:StriderPatch`.
+
+1. A patch card is created when `:StriderPatch` submits.
+2. The pending patch request stores the card id in metadata.
+3. Tool-end events record inspected/touched files and edit diff blocks on the
+   card.
+4. Message completion finalizes the card with success/error/cancel state and the
+   assistant summary.
+5. Verbose read output and reasoning stay in `:StriderLogFlow`.
 
 ### Phase 4 — Navigation and history controls
 
@@ -302,17 +294,14 @@ Update:
 
 ## Open Questions
 
-1. Should patch cards literally include thinking/reasoning if the user says
-   "full patch log", or should they remain curated and leave reasoning in
-   `:StriderLogFlow`?
-2. How many folded cards should remain visible before older cards collapse into
+1. How many folded cards should remain visible before older cards collapse into
    history? Initial guess: fit as many 3-line cards as the editor height allows,
    but cap at 5–7 to avoid visual clutter.
-3. Should card state persist across Neovim restarts? Recommendation: no for v1.
-4. Should expanded cards stay floats, or should focusing a card eventually snap
+2. Should card state persist across Neovim restarts? Recommendation: no for v1.
+3. Should expanded cards stay floats, or should focusing a card eventually snap
    into a real right-side split/drawer? Recommendation: float first; split mode
    later only if the float feels unstable.
-5. Should search use cards, or are picker/quickfix enough?
+4. Should search use cards, or are picker/quickfix enough?
 
 ## Validation Commands
 

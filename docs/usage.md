@@ -8,8 +8,10 @@ README.
 | Command | What it does |
 |---|---|
 | `:StriderSearch {prompt}` | Structured code search with picker and quickfix output |
-| `:StriderSearches` | Reopen recent flow-lane search result sets |
-| `:StriderLogFlow` | Toggle the flow log used by Q/Search/Patch |
+| `:StriderSearches` | Reopen recent search result sets |
+| `:StriderLogFlow` | Toggle the search/flow log |
+| `:StriderLogQ` | Toggle the dedicated Q worker log |
+| `:StriderLogPatch` | Toggle the dedicated patch worker log |
 | `:StriderReview [prompt]` | Open the review popup; submit to start a dedicated review-lane walkthrough or ask about the current stop |
 | `:StriderLogReview` | Toggle the dedicated review log |
 | `:'<,'>StriderReview [prompt]` | Open the review popup scoped to the selected range |
@@ -20,12 +22,12 @@ README.
 | `:StriderComments` | Browse recorded review comments |
 | `:StriderPatch [prompt]` | Open the patch popup for the current review item |
 | `:'<,'>StriderPatch [prompt]` | Open the patch popup for a visual selection |
-| `:StriderQ [prompt]` | Open the Q popup and run a background flow-lane question |
-| `:'<,'>StriderQ [prompt]` | Open the Q popup with a selection-scoped flow-lane question |
+| `:StriderQ [prompt]` | Open the Q popup and run a background Q-worker question |
+| `:'<,'>StriderQ [prompt]` | Open the Q popup with a selection-scoped Q-worker question |
 | `:StriderChat` | Toggle the chat log + compose buffers |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:StriderStop` | Abort the current main-lane turn |
-| `:StriderStopFlow` | Abort the current flow-lane Q/Search/Patch turn |
+| `:StriderStopFlow` | Abort active Q/Search/Patch worker turns |
 | `:StriderStatus` | Open the current lane/status/control summary |
 | `:StriderSessions` | Browse saved pi sessions for this project |
 | `:StriderResume [id-or-path]` | Resume a saved pi session |
@@ -36,17 +38,20 @@ README.
 `<Esc><Esc>`.
 
 `:StriderChat` keeps the persistent main log and compose buffers.
-`:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on a separate flow lane
-whose transcript lives in `:StriderLogFlow`. `:StriderQ` and `:StriderPatch`
-also open non-focus-stealing flow cards in the bottom-right. Cards stay compact
-while running and after completion; select/focus one to expand it into a near
-full-height right-side panel, then leave it to fold again. Q cards show the
-question plus assistant answer only. Patch cards show the request, target,
-touched files, diffs, and final summary. Reasoning, tool calls, and full tool
-output remain in `:StriderLogFlow`. When flow-lane operations finish, Strider
-always leaves a bottom-left green-dot completion cue; if the flow log is hidden,
-it also sends a notification. `:StriderStopFlow`
-aborts the active flow-lane turn. `:StriderReview` runs on a dedicated review
+`:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on separate flow-worker
+processes, so Q and patch can proceed independently of each other and main chat.
+Search transcript lives in `:StriderLogFlow`, Q in `:StriderLogQ`, and patch in
+`:StriderLogPatch`. `:StriderQ` and `:StriderPatch` also open non-focus-stealing
+flow cards in the bottom-right. Cards stay compact while running and after
+completion; select/focus one to expand it into a near full-height right-side
+panel. Expanded cards stay open when you return to code; press `q` or `<Esc>`
+inside the card to fold it. Q cards show the question plus assistant answer
+only. Patch cards show the request, target, touched files, diffs, and
+final summary. Reasoning, tool calls, and full tool output remain in the
+operation's log. When flow-worker operations finish, Strider always leaves a
+bottom-left green-dot completion cue; if that worker's log is hidden, it also
+sends a notification. `:StriderStopFlow` aborts active flow-worker turns.
+`:StriderReview` runs on a dedicated review
 lane whose transcript lives in `:StriderLogReview`; that review log is
 manual/diagnostic and does not open on review start or review end.
 
@@ -79,9 +84,10 @@ and `/export`, also set the main lane busy and show `Working` in the compose
 and log winbars until pi replies. Sending while a reply is streaming steers the
 running turn via pi's `steer` command. Slash commands are rejected mid-turn.
 
-`:StriderStop` aborts the main-lane turn; `:StriderStopFlow` aborts the
-flow-lane turn. `:StriderStatus` opens a compact summary of lane state, pending
-controls, review progress, model/context widget lines, and the last error.
+`:StriderStop` aborts the main-lane turn; `:StriderStopFlow` aborts active
+Q/search/patch worker turns. `:StriderStatus` opens a compact summary of lane
+state, pending controls, review progress, model/context widget lines, and the
+last error.
 
 ## Live Neovim Tool
 
@@ -179,8 +185,8 @@ clarifying question, propose a plan, or confirm a destructive action via the
 On main chat, questions and plan bodies render inline in the chat log and the
 compose buffer is used for the reply. `<C-s>` submits and `<Esc><Esc>` rejects.
 
-On the flow lane (`:StriderQ`, `:StriderSearch`, `:StriderPatch`), clarify prompts
-stay popup-based and their transcript lands in `:StriderLogFlow`.
+On flow workers (`:StriderQ`, `:StriderSearch`, `:StriderPatch`), clarify
+prompts stay popup-based and their transcript lands in that worker's log.
 
 Plan proposals pair the `[plan]` body block with an Accept / Modify / Reject
 picker. Modify opens an editor seeded with the proposal body; Reject sends
@@ -189,17 +195,17 @@ cancellation.
 ## Tangents And Patch
 
 `:StriderQ` opens a floating editor for a one-shot side question. Submitting it
-asks on Strider's separate flow lane without popping open main chat. Range-based
+asks on Strider's dedicated Q worker without popping open main chat. Range-based
 Q includes the selected excerpt in the prompt. The focused answer opens in a
 non-focus-stealing `strider://StriderQAnswer` window at the bottom-right. It
 stays compact while waiting and after the answer is ready; select/focus it to
-expand into a near full-height right-side answer panel, then leave it to fold
-again. The full transcript, including reasoning and tool calls, still lands in
-`:StriderLogFlow`.
+expand into a near full-height right-side answer panel. It stays expanded when
+you return to code; press `q` or `<Esc>` inside the card to fold it. The full
+transcript, including reasoning and tool calls, lands in `:StriderLogQ`.
 
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It
 requires a visual range or an active review item, embeds the excerpt and range
 in the prompt, and instructs the model to stay inside the selection. Patch runs
-on the flow lane and opens a compact flow card; focusing it shows the patch
-request, target, touched files, diff blocks, and final summary while the full
-transcript remains in `:StriderLogFlow`.
+on the dedicated patch worker and opens a compact flow card; focusing it shows
+the patch request, target, touched files, diff blocks, and final summary while
+the full transcript remains in `:StriderLogPatch`.

@@ -131,6 +131,12 @@ class TmuxNvimHarness:
     def flow_log_lines(self):
         return self.json_expr('getbufline("strider://StriderLogFlow", 1, "$")')
 
+    def q_log_lines(self):
+        return self.json_expr('getbufline("strider://StriderLogQ", 1, "$")')
+
+    def patch_log_lines(self):
+        return self.json_expr('getbufline("strider://StriderLogPatch", 1, "$")')
+
     def review_log_lines(self):
         return self.json_expr('getbufline("strider://StriderLogReview", 1, "$")')
 

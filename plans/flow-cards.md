@@ -8,18 +8,21 @@
 ## Goal
 
 Turn the current single `strider://StriderQAnswer` surface into a reusable
-**flow card** system for flow-lane work (`Q`, patch, and later search). Flow
-cards should make flow-lane results visible without forcing the user into the
-full `:StriderLogFlow` transcript.
+**flow card** system for flow-worker work (`Q`, patch, and later search). Flow
+cards should make flow-worker results visible without forcing the user into the
+full worker transcript.
 
 The working model:
 
-- Flow work still runs on the dedicated flow lane.
-- `:StriderLogFlow` remains the complete audit/debug transcript.
+- Flow work runs on dedicated worker lanes: search (`flow`), Q (`q`), and patch
+  (`patch`).
+- `:StriderLogFlow`, `:StriderLogQ`, and `:StriderLogPatch` are the complete
+  audit/debug transcripts.
 - Each completed or running flow request gets a compact card on the right.
 - Cards stay folded until the user focuses/selects one.
 - Focusing a card expands it into a near full-height right-side panel.
-- Leaving the card folds it back down.
+- Expanded cards remain open when focus returns to code.
+- Pressing `q` or `<Esc>` in a card folds it back down.
 
 ## Target UX
 
@@ -91,7 +94,7 @@ Expanded body:
 - no thinking/reasoning
 - no tool calls or tool output
 
-`StriderLogFlow` still contains the full Q transcript.
+`:StriderLogQ` still contains the full Q transcript.
 
 ### Patch card
 
@@ -114,7 +117,7 @@ Expanded body, v1 target:
 Implemented decision: patch cards use a **curated patch log**. They include the
 request, target, inspected/touched files, edit activity, diff blocks, and final
 summary. Thinking, verbose read output, and full tool details remain in
-`:StriderLogFlow`.
+`:StriderLogPatch`.
 
 ### Search card (later)
 
@@ -180,11 +183,12 @@ Expanded layout:
 - row: top margin, e.g. `1`
 - col: right edge
 - all other cards remain folded behind/above/below as practical
-- leaving the expanded card reflows it back into the folded stack
+- leaving the expanded card preserves expansion; explicit `q` / `<Esc>` folds it
 
 Autocmds:
 
-- `WinEnter`, `WinLeave`, `BufEnter`: expand/fold cards based on focused window
+- `WinEnter`, `BufEnter`: pin the focused card as expanded
+- `WinLeave`, `WinClosed`, `VimResized`: reflow without auto-folding the pinned card
 - `WinClosed`: clear dead window handles and reflow
 - `VimResized`: recompute all card positions
 
@@ -222,7 +226,7 @@ functions plus a plugin-prefixed augroup are the normal pattern.
    - Store `card_id` in `pending_request.metadata` or directly on pending state.
 5. Add basic card dismissal inside focused cards:
    - `q` or `d` closes/dismisses the focused card
-   - optional `o` opens `:StriderLogFlow`
+   - optional `o` opens the card's worker log
 
 ### Phase 3 — Patch cards
 
@@ -234,7 +238,7 @@ Status: implemented in-process for `:StriderPatch`.
    card.
 4. Message completion finalizes the card with success/error/cancel state and the
    assistant summary.
-5. Verbose read output and reasoning stay in `:StriderLogFlow`.
+5. Verbose read output and reasoning stay in `:StriderLogPatch`.
 
 ### Phase 4 — Navigation and history controls
 
@@ -246,7 +250,7 @@ Add commands only once multiple cards exist:
 - Optional mappings inside card buffers:
   - `q` / `<Esc>`: fold or close focused card
   - `d`: dismiss card
-  - `o`: open `:StriderLogFlow`
+  - `o`: open the card's worker log
   - `]c` / `[c`: focus next/previous card
 
 ## Tests
@@ -257,20 +261,21 @@ Add tmux tests around the card manager:
    - Run two Q requests sequentially.
    - Assert two card buffers/windows exist.
    - Assert both are folded and newest is lower/rightmost in the stack.
-2. Q focus expands.
+2. Q focus expands and stays pinned.
    - Focus a folded Q card.
    - Assert height is near full editor height.
-   - Move focus away and assert it folds back.
+   - Move focus away and assert it remains expanded.
+   - Press `q` or `<Esc>` in the card and assert it folds back.
 3. Q answer remains answer-only.
    - Assert folded card only previews readiness.
    - Assert expanded card contains assistant answer.
    - Assert expanded card does not contain thinking/tool text.
-   - Assert `:StriderLogFlow` still contains full transcript.
+   - Assert `:StriderLogQ` still contains full transcript.
 4. Patch card completion.
    - Run a selection-scoped patch.
    - Assert a folded patch card appears.
    - Focus it and assert request, target, diff rows, and summary are visible.
-   - Assert `:StriderLogFlow` still contains full patch transcript.
+   - Assert `:StriderLogPatch` still contains full patch transcript.
 5. Stop behavior.
    - Start a slow Q/Patch fake backend request.
    - Run `:StriderStopFlow`.
@@ -285,9 +290,9 @@ Update:
 
 - `docs/usage.md`
   - Describe flow cards as the visible result surface for Q/Patch.
-  - Clarify that `:StriderLogFlow` is still the complete transcript.
+  - Clarify that worker logs are still the complete transcripts.
 - `docs/architecture.md`
-  - Add `flow_cards` as flow-lane UI state.
+  - Add `flow_cards` as flow-worker UI state.
   - Explain card lifecycle and relationship to pending requests.
 - `README.md`
   - Mention flow cards briefly in the feature list once patch cards land.

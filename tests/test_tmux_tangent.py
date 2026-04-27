@@ -48,7 +48,7 @@ class TmuxTangentTests(unittest.TestCase):
 
                 h.submit_popup()
                 h.wait_until(
-                    lambda: "what does this flag do" in "\n".join(h.flow_log_lines()),
+                    lambda: "what does this flag do" in "\n".join(h.q_log_lines()),
                     timeout=5.0,
                 )
                 h.wait_until(
@@ -66,7 +66,7 @@ class TmuxTangentTests(unittest.TestCase):
 
                 h.submit_popup()
                 h.wait_until(
-                    lambda: "why is this bootstrapped here?" in "\n".join(h.flow_log_lines()),
+                    lambda: "why is this bootstrapped here?" in "\n".join(h.q_log_lines()),
                     timeout=5.0,
                 )
                 self.assertFalse(h.lua_bool("require('strider.ui').chat_is_visible()"))
@@ -110,9 +110,9 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertNotIn("Checking the relevant files first", answer)
                 self.assertNotIn("Explored", answer)
 
-                flow_log = "\n".join(h.flow_log_lines())
-                self.assertIn("Checking the relevant files first", flow_log)
-                self.assertIn("Finished a broader work pass", flow_log)
+                q_log = "\n".join(h.q_log_lines())
+                self.assertIn("Checking the relevant files first", q_log)
+                self.assertIn("Finished a broader work pass", q_log)
 
     def test_q_answer_winbar_uses_flow_stop_command(self) -> None:
         with FixtureProject(self.project_root) as project_root:
@@ -121,9 +121,9 @@ class TmuxTangentTests(unittest.TestCase):
                     "(function() "
                     "  local state = require('strider.state'); "
                     "  local ui = require('strider.ui'); "
-                    "  state.ensure_session('flow', vim.fn.getcwd()); "
-                    "  ui.open_q_answer('slow question', 'flow'); "
-                    "  ui.start_activity('Strider Q running...', 'q', 'q', 'flow'); "
+                    "  state.ensure_session('q', vim.fn.getcwd()); "
+                    "  ui.open_q_answer('slow question', 'q'); "
+                    "  ui.start_activity('Strider Q running...', 'q', 'q', 'q'); "
                     "  return true "
                     "end)()"
                 )
@@ -147,8 +147,8 @@ class TmuxTangentTests(unittest.TestCase):
                     "(function() "
                     "  local state = require('strider.state'); "
                     "  local ui = require('strider.ui'); "
-                    "  state.ensure_session('flow', vim.fn.getcwd()); "
-                    "  ui.open_q_answer('where does this render?', 'flow'); "
+                    "  state.ensure_session('q', vim.fn.getcwd()); "
+                    "  ui.open_q_answer('where does this render?', 'q'); "
                     "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
                     "  local win = vim.fn.win_findbuf(buf)[1]; "
                     "  local cfg = vim.api.nvim_win_get_config(win); "
@@ -162,7 +162,7 @@ class TmuxTangentTests(unittest.TestCase):
 
                 folded_height, folded_row = map(int, h.lua(
                     "(function() "
-                    "  require('strider.ui').update_q_answer('Here is the focused answer text.', 'flow'); "
+                    "  require('strider.ui').update_q_answer('Here is the focused answer text.', 'q'); "
                     "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
                     "  local win = vim.fn.win_findbuf(buf)[1]; "
                     "  local cfg = vim.api.nvim_win_get_config(win); "
@@ -189,22 +189,55 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertGreaterEqual(expanded_height, ui_height - 4)
                 self.assertGreater(folded_row, expanded_row)
 
+                sticky_height = int(h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  for _, candidate in ipairs(vim.api.nvim_list_wins()) do "
+                    "    if candidate ~= win and vim.api.nvim_win_get_config(candidate).relative == '' then "
+                    "      vim.api.nvim_set_current_win(candidate); break "
+                    "    end "
+                    "  end; "
+                    "  require('strider.ui').refresh_q_answer_layouts(); "
+                    "  return tostring(vim.api.nvim_win_get_height(win)); "
+                    "end)()"
+                ))
+                self.assertEqual(expanded_height, sticky_height)
+
+                h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  vim.api.nvim_set_current_win(vim.fn.win_findbuf(buf)[1]); "
+                    "  return true "
+                    "end)()"
+                )
+                h.send("q", pause=0.3)
+                folded_after_explicit_action = int(h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  require('strider.ui').refresh_q_answer_layouts(); "
+                    "  return tostring(vim.api.nvim_win_get_height(win)); "
+                    "end)()"
+                ))
+                self.assertEqual(folded_height, folded_after_explicit_action)
+
     def test_q_completion_clears_pending_request(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("StriderQ what does this flag do")
                 h.submit_popup()
                 h.wait_until(
-                    lambda: h.lua_bool("require('strider.state').peek_pending_request() == nil"),
+                    lambda: h.lua_bool("require('strider.state').peek_pending_request('q') == nil"),
                     timeout=5.0,
                 )
 
-    def test_q_completion_echoes_green_dot_even_when_flow_log_visible(self) -> None:
+    def test_q_completion_echoes_green_dot_even_when_q_log_visible(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.ex("StriderLogFlow")
+                h.ex("StriderLogQ")
                 h.wait_until(
-                    lambda: "strider://StriderLogFlow" in h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})'),
+                    lambda: "strider://StriderLogQ" in h.json_expr('map(getwininfo(), {_, v -> bufname(v.bufnr)})'),
                     timeout=3.0,
                 )
 
@@ -253,37 +286,61 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertIn("Hello from patched fixture app", expanded)
                 self.assertIn("Applied the requested local patch.", expanded)
 
-                flow_log = "\n".join(h.flow_log_lines())
-                self.assertIn("Applied the requested local patch.", flow_log)
-                self.assertIn("Hello from patched fixture app", flow_log)
+                patch_log = "\n".join(h.patch_log_lines())
+                self.assertIn("Applied the requested local patch.", patch_log)
+                self.assertIn("Hello from patched fixture app", patch_log)
 
-    def test_flow_lane_rejects_new_request_while_busy(self) -> None:
+    def test_q_and_patch_use_distinct_workers(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderQ what does this flag do")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: h.lua_bool("require('strider.state').get_session('q') ~= nil"),
+                    timeout=5.0,
+                )
+
+                h.ex("edit src/App.tsx")
+                h.ex("1,3StriderPatch change the greeting literal")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: h.lua_bool("require('strider.state').get_session('patch') ~= nil"),
+                    timeout=5.0,
+                )
+
+                job_ids = h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local q = state.get_session('q'); "
+                    "  local p = state.get_session('patch'); "
+                    "  return tostring(q and q.job_id or '') .. ',' .. tostring(p and p.job_id or '') "
+                    "end)()"
+                ).split(",")
+                self.assertTrue(job_ids[0])
+                self.assertTrue(job_ids[1])
+                self.assertNotEqual(job_ids[0], job_ids[1])
+
+    def test_q_lane_rejects_new_q_while_busy(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.lua(
                     "(function() "
                     "  local state = require('strider.state'); "
-                    "  state.ensure_session('flow', vim.fn.getcwd()); "
-                    "  state.set_pending_request('q', {}, 'flow'); "
+                    "  state.ensure_session('q', vim.fn.getcwd()); "
+                    "  state.set_pending_request('q', {}, 'q'); "
                     "  return true "
                     "end)()"
                 )
-                h.ex("StriderSearch where is the main entrypoint?")
+                h.ex("StriderQ second question")
+                h.submit_popup()
 
                 pending = h.lua(
                     "(function() "
-                    "  local pending = require('strider.state').peek_pending_request('flow'); "
+                    "  local pending = require('strider.state').peek_pending_request('q'); "
                     "  return pending and pending.operation or '' "
                     "end)()"
                 )
-                job_id = h.lua(
-                    "(function() "
-                    "  local session = require('strider.state').get_session('flow'); "
-                    "  return session and tostring(session.job_id or '') or '' "
-                    "end)()"
-                )
                 self.assertEqual("q", pending)
-                self.assertEqual("", job_id)
 
 
 if __name__ == "__main__":

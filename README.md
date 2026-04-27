@@ -44,7 +44,7 @@ Patch a small selected range:
 :'<,'>StriderPatch change the greeting literal from hi to hello
 ```
 
-Ask a side question on the flow lane:
+Ask a side question on the dedicated Q worker:
 
 ```vim
 :StriderQ what does this flag actually do?
@@ -76,8 +76,8 @@ prefills compose so you can edit before sending.
 - Planned reviews: `:StriderReview` builds a full ordered set of stops up front.
   `:StriderNext` and `:StriderPrev` navigate mechanically; `:StriderNext!`
   accepts the current stop before advancing.
-- Dedicated lanes: main chat, flow work (`Q`/search/patch), and review each
-  have their own transcript and in-flight state.
+- Dedicated lanes: main chat, search, Q, patch, and review each have their own
+  transcript, in-flight state, and pi worker process.
 - Scoped guardrails: review/search/plan are read-only; patch prompts are
   selection-scoped and intended for small local edits.
 - Native Neovim UI: logs, compose buffers, floating editors, flow cards for
@@ -136,13 +136,13 @@ panes:
 | `:StriderChat [prompt]` | Main chat log + compose |
 | `:StriderReview [prompt]` | Planned review walkthrough or current-stop question |
 | `:StriderSearch {prompt}` | Structured code search |
-| `:StriderQ [prompt]` | One-shot flow-lane side question |
+| `:StriderQ [prompt]` | One-shot side question on the Q worker |
 | `:'<,'>StriderPatch [prompt]` | Selection-scoped patch |
 | `:StriderNext` / `:StriderPrev` | Move through review stops |
 | `:StriderComment [text]` | Record a review comment |
 | `:StriderStatus` | Show lane/status/control summary |
 | `:StriderStop` | Abort the main-lane turn |
-| `:StriderStopFlow` | Abort the flow-lane Q/Search/Patch turn |
+| `:StriderStopFlow` | Abort active Q/Search/Patch worker turns |
 | `:StriderSessions` | Browse saved pi sessions for this project |
 | `:StriderResume [id-or-path]` | Resume a saved pi session |
 

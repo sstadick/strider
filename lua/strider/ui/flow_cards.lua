@@ -32,7 +32,7 @@ local function format_elapsed(start_ns)
   return string.format("%dh%02dm", math.floor(elapsed_s / 3600), math.floor((elapsed_s % 3600) / 60))
 end
 local function stop_command(lane)
-  return normalize_lane(lane) == "flow" and ":StriderStopFlow" or ":StriderStop"
+  return state.is_flow_lane(lane) and ":StriderStopFlow" or ":StriderStop"
 end
 local function stop_hint(lane) return stop_command(lane) .. " to interrupt" end
 local function working_label()
@@ -48,7 +48,7 @@ local function configure_scratch_buffer(buf, filetype)
 end
 local function q_answer_name(lane)
   lane = normalize_lane(lane)
-  if lane == "flow" then return "strider://StriderQAnswer" end
+  if lane == "q" or lane == "flow" then return "strider://StriderQAnswer" end
   return "strider://StriderQAnswer-" .. lane
 end
 local function ensure_card_state(session)
@@ -88,9 +88,15 @@ local function ensure_card_buffer(card, lane)
   vim.bo[buf].bufhidden = "hide"
   vim.b[buf].strider_flow_card = card.id
   vim.b[buf].strider_flow_card_kind = card.kind
-  if card.kind == "q" then
-    vim.b[buf].strider_q_answer = true
+  if card.kind == "q" then vim.b[buf].strider_q_answer = true end
+  local function fold_card()
+    local session = state.get_session(lane); if session then session.active_flow_card_id = nil end
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_buf(win) ~= buf and vim.api.nvim_win_get_config(win).relative == "" then pcall(vim.api.nvim_set_current_win, win); break end
+    end
+    M.reflow(lane)
   end
+  for _, lhs in ipairs({ "q", "<Esc>" }) do vim.keymap.set("n", lhs, fold_card, { buffer = buf, nowait = true, silent = true, desc = "Fold Strider flow card" }) end
   card.buf = buf
   return buf
 end
@@ -130,9 +136,7 @@ local function current_card_id(session)
   end
   return nil
 end
-local function card_is_expanded(session, card)
-  return session and card and current_card_id(session) == card.id
-end
+local function card_is_expanded(session, card) return session and card and session.active_flow_card_id == card.id end
 local function ui_size()
   return vim.api.nvim_list_uis()[1] or { width = 120, height = 30 }
 end
@@ -143,15 +147,17 @@ local function folded_row(ui_height, stack_index)
   local step = FOLDED_HEIGHT + 2 + STACK_GAP
   return math.max(ui_height - FOLDED_HEIGHT - STACK_MARGIN_BOTTOM - step * (stack_index - 1), 0)
 end
+local lane_stack_offsets = { patch = 1 }
 local function card_config(session, card, stack_index)
   local info = ui_size()
   local expanded = card_is_expanded(session, card)
   local width = card_width(info.width)
   local height = expanded and math.max(FOLDED_HEIGHT, info.height - EXPANDED_BOTTOM_MARGIN - 1) or FOLDED_HEIGHT
+  local folded_index = (stack_index or 1) + (lane_stack_offsets[session.lane] or 0)
   return {
     relative = "editor",
     anchor = "NW",
-    row = expanded and EXPANDED_TOP_MARGIN or folded_row(info.height, stack_index or 1),
+    row = expanded and EXPANDED_TOP_MARGIN or folded_row(info.height, folded_index),
     col = math.max(info.width - width - 1, 0),
     width = width,
     height = height,
@@ -207,7 +213,6 @@ local function q_card_lines(card, expanded)
       q_compact_status(card),
     }, 1, 1, 2
   end
-
   local question = vim.trim(card.prompt or "")
   local question_lines = vim.split(question ~= "" and question or "(no question)", "\n", { plain = true })
   local lines = {}
@@ -282,13 +287,12 @@ local function card_winbar(card, lane)
     local left = working_label() .. escape_status_text(string.format(" (%s) · %s", elapsed, title))
     return left .. "%=" .. escape_status_text(stop_hint(lane))
   end
+  local expanded = card_is_expanded(session, card)
   if card.status ~= "running" then
-    if card.kind == "q" then
-      return escape_status_text(card.status == "success" and "StriderQ answer ready" or "StriderQ stopped")
-    end
-    if card.kind == "patch" then
-      return escape_status_text(card.status == "success" and "StriderPatch complete" or "StriderPatch stopped")
-    end
+    local text = card.title or "Strider flow"
+    if card.kind == "q" then text = card.status == "success" and "StriderQ answer ready" or "StriderQ stopped" end
+    if card.kind == "patch" then text = card.status == "success" and "StriderPatch complete" or "StriderPatch stopped" end
+    return escape_status_text(text) .. (expanded and "%=" .. escape_status_text("q/Esc fold") or "")
   end
   return escape_status_text(card.title or "Strider flow")
 end
@@ -318,7 +322,10 @@ function M.reflow(lane)
   lane = normalize_lane(lane)
   local session = state.get_session(lane)
   if not session then return end
-  session.active_flow_card_id = current_card_id(session)
+  local focused = current_card_id(session)
+  if focused then session.active_flow_card_id = focused end
+  local active = card_by_id(session, session.active_flow_card_id)
+  if active and not card_window(active) then session.active_flow_card_id = nil end
   local stack_index = 1
   local cards = sorted_cards(session)
   for i = #cards, 1, -1 do
@@ -340,9 +347,7 @@ function M.reflow(lane)
   end
 end
 function M.refresh_layouts()
-  for _, lane in ipairs(state.lanes()) do
-    M.reflow(lane)
-  end
+  for _, lane in ipairs(state.lanes()) do M.reflow(lane) end
 end
 function M.refresh_winbars(lane)
   lane = normalize_lane(lane)

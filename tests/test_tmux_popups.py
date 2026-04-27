@@ -340,6 +340,8 @@ class TmuxPopupTests(unittest.TestCase):
                 status_text = "\n".join(h.buffer_lines("strider://status"))
                 self.assertIn("## main", status_text)
                 self.assertIn("## flow", status_text)
+                self.assertIn("## q", status_text)
+                self.assertIn("## patch", status_text)
                 self.assertIn("## review", status_text)
                 self.assertIn(":StriderStop", status_text)
                 self.assertIn(":StriderNext!", status_text)

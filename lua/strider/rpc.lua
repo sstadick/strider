@@ -423,7 +423,7 @@ local function notify_turn_done(pending, lane)
       patch = "StriderPatch complete",
     }
     ui.notify_flow_done(messages[op] or "Strider flow complete", {
-      notify = not ui.log_is_visible("flow"),
+      notify = not ui.log_is_visible(lane),
     })
     return
   end

@@ -46,7 +46,15 @@ end, { desc = "Open recent Strider flow searches" })
 
 vim.api.nvim_create_user_command("StriderLogFlow", function()
   require("strider").flow_log()
-end, { desc = "Toggle the Strider flow log" })
+end, { desc = "Toggle the Strider search/flow log" })
+
+vim.api.nvim_create_user_command("StriderLogQ", function()
+  require("strider").q_log()
+end, { desc = "Toggle the Strider Q log" })
+
+vim.api.nvim_create_user_command("StriderLogPatch", function()
+  require("strider").patch_log()
+end, { desc = "Toggle the Strider patch log" })
 
 vim.api.nvim_create_user_command("StriderLogReview", function()
   require("strider").review_log()

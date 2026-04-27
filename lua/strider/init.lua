@@ -9,7 +9,10 @@ local M = {}
 
 local MAIN_LANE = "main"
 local FLOW_LANE = "flow"
+local Q_LANE = "q"
+local PATCH_LANE = "patch"
 local REVIEW_LANE = "review"
+local FLOW_LANES = { FLOW_LANE, Q_LANE, PATCH_LANE }
 
 -- Cached CWD + hrtime to short-circuit ensure_backend's per-lane cwd check.
 -- CWD changes are user-initiated and rare; avoid calling getcwd() + comparing
@@ -59,7 +62,7 @@ local function activity_title(operation)
 end
 
 local function activity_target(operation, lane)
-  if lane == FLOW_LANE and operation == "q" then
+  if operation == "q" then
     return "q"
   end
   if lane == REVIEW_LANE and (operation == "review" or operation == "plan")
@@ -70,12 +73,10 @@ local function activity_target(operation, lane)
 end
 
 local function lane_title(lane)
-  if lane == FLOW_LANE then
-    return "Strider flow"
-  end
-  if lane == REVIEW_LANE then
-    return "Strider review"
-  end
+  if lane == Q_LANE then return "Strider Q" end
+  if lane == PATCH_LANE then return "Strider patch" end
+  if lane == FLOW_LANE then return "Strider flow" end
+  if lane == REVIEW_LANE then return "Strider review" end
   return "Strider chat"
 end
 
@@ -385,7 +386,15 @@ function M.stop()
 end
 
 function M.stop_flow()
-  stop_lane(FLOW_LANE, "Strider flow is idle — nothing to stop", "Stopping Strider flow…")
+  local stopped = false
+  for _, lane in ipairs(FLOW_LANES) do
+    if state.peek_pending_request(lane) and rpc.abort(lane) then stopped = true end
+  end
+  if stopped then
+    ui.notify("Stopping Strider flow…", vim.log.levels.INFO)
+  else
+    ui.notify("Strider flow is idle — nothing to stop", vim.log.levels.INFO)
+  end
 end
 
 local function send_main_command(command)
@@ -792,7 +801,7 @@ local function dispatch_patch(prompt, range)
     "User request: " .. prompt,
   }
   send("/patch " .. table.concat(lines, "\n"), prompt, {
-    lane = FLOW_LANE,
+    lane = PATCH_LANE,
     operation = "patch",
     metadata = {
       target = {
@@ -833,7 +842,7 @@ local function dispatch_q(prompt, range)
     message = prompt
   end
   send("/prompt " .. message, prompt, {
-    lane = FLOW_LANE,
+    lane = Q_LANE,
     operation = "q",
   })
 end
@@ -843,7 +852,7 @@ local function submit_q_request(prompt, range)
   if prompt == "" then
     return
   end
-  if not ensure_backend(FLOW_LANE) then
+  if not ensure_backend(Q_LANE) then
     return
   end
   dispatch_q(prompt, range)
@@ -854,7 +863,7 @@ function M.q(prompt, opts)
   local range = range_from_opts(opts)
   local hint_lines = {
     "Ask a side question without opening chat.",
-    "Answers land in StriderLogFlow.",
+    "Answers land in StriderLogQ.",
   }
   local pointer = range_pointer(range)
   if pointer then
@@ -967,13 +976,25 @@ function M.searches()
   search.history_picker(FLOW_LANE)
 end
 
-function M.flow_log()
-  if ui.log_is_visible(FLOW_LANE) then
-    ui.hide_log(FLOW_LANE)
+local function toggle_lane_log(lane)
+  if ui.log_is_visible(lane) then
+    ui.hide_log(lane)
     return
   end
-  ensure_session(FLOW_LANE)
-  ui.open_log({}, FLOW_LANE)
+  ensure_session(lane)
+  ui.open_log({}, lane)
+end
+
+function M.flow_log()
+  toggle_lane_log(FLOW_LANE)
+end
+
+function M.q_log()
+  toggle_lane_log(Q_LANE)
+end
+
+function M.patch_log()
+  toggle_lane_log(PATCH_LANE)
 end
 
 function M.review_log()

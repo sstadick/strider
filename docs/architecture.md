@@ -18,7 +18,7 @@ Supporting navigation and control:
 - `:StriderComments`
 - `:StriderReviewItems`
 - `:StriderStop` — abort the main-lane in-flight turn (maps to pi's `abort` RPC)
-- `:StriderStopFlow` — abort the flow-lane Q/Search/Patch turn
+- `:StriderStopFlow` — abort active Q/Search/Patch flow-worker turns
 
 The main product is no longer centered on a linear `Q` loop.
 Review is the primary walkthrough surface.
@@ -124,30 +124,31 @@ Important UX rule:
 2. user runs `:StriderPatch [prompt]`
 3. plugin opens the floating patch editor, prefilled when inline args were given
 4. on submit, plugin sends `/patch ...` with file, line range, and excerpt context
+   on the dedicated patch worker process
 5. a non-focus-stealing patch flow card opens in the bottom-right
 6. tool events update the card with inspected/touched files and diff blocks
-7. tool events update the file jump and edit highlighting
-8. edited ranges remain highlighted after the patch
+7. full transcript lands in `:StriderLogPatch`
+8. tool events update the file jump and edit highlighting
+9. edited ranges remain highlighted after the patch
 
 ### Tangent
 
 `:StriderQ` opens a floating editor for a one-shot side question that
-runs on Strider's dedicated flow lane — a separate pi process from the
-main chat. This keeps the main session clean and lets the user ask
-quick questions without interrupting a running chat turn.
+runs on Strider's dedicated Q worker — a separate pi process from main chat,
+search, patch, and review. This keeps the main session clean and lets the user
+ask quick questions without interrupting a running chat or patch turn.
 
 1. user runs `:StriderQ [prompt]` (optionally with a visual range)
 2. plugin opens the floating editor, prefilled when inline args were given
 3. on submit, plugin dispatches the question as `/prompt ...` on the
-   flow lane (with an excerpt block when a range was given)
+   Q worker (with an excerpt block when a range was given)
 4. the question runs in the background: the focused answer opens in a
    non-focus-stealing bottom-right `strider://StriderQAnswer` window; it stays
    compact until the user focuses/selects it, then expands to near full height
-   while focused
-5. the full transcript still lands in `:StriderLogFlow`, including reasoning,
-   tool calls, and tool output; chat is not auto-opened
-6. no tree anchoring needed — the flow lane has its own independent
-   session
+   and remains expanded until `q` or `<Esc>` is pressed in the card
+5. the full transcript lands in `:StriderLogQ`, including reasoning, tool calls,
+   and tool output; chat is not auto-opened
+6. no tree anchoring needed — the Q worker has its own independent session
 
 ### Chat
 
@@ -341,7 +342,7 @@ request and start `Working` indicators in the compose and log winbars until the
   Pi finishes the current model stream and emits a `message_end` with
   `stopReason = "aborted"`, which renders as a cancel-flavored
   `[error]` block. Driven by `:StriderStop` for main and
-  `:StriderStopFlow` for the flow lane.
+  `:StriderStopFlow` for flow workers.
 - `extension_ui_response` — reply to an awaiting `extension_ui_request`
   (carries the request `id` plus `value` / `confirmed` / `cancelled`)
 
@@ -363,8 +364,9 @@ Working today:
 - local review comments
 - selection-scoped patching
 - plain-prompt agent turns with clarify available
-- side questions and patches on the flow lane; Q and patch results open in
-  compact flow cards while full transcripts land in `:StriderLogFlow`
+- side questions, search, and patches on separate flow-worker processes; Q and
+  patch results open in compact flow cards while full transcripts land in their
+  worker logs (`:StriderLogQ`, `:StriderLogPatch`, `:StriderLogFlow`)
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
 - `:StriderStatus` for a compact lane/status/control summary

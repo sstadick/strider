@@ -134,9 +134,7 @@ end
 
 local function stop_command(lane)
   lane = normalize_lane(lane)
-  if lane == "flow" then
-    return ":StriderStopFlow"
-  end
+  if state.is_flow_lane(lane) then return ":StriderStopFlow" end
   return ":StriderStop"
 end
 
@@ -241,12 +239,10 @@ end
 
 local function log_name(lane)
   lane = normalize_lane(lane)
-  if lane == "flow" then
-    return "strider://StriderLogFlow"
-  end
-  if lane == "review" then
-    return "strider://StriderLogReview"
-  end
+  if lane == "flow" then return "strider://StriderLogFlow" end
+  if lane == "q" then return "strider://StriderLogQ" end
+  if lane == "patch" then return "strider://StriderLogPatch" end
+  if lane == "review" then return "strider://StriderLogReview" end
   return state.get_config().log_buffer_name
 end
 

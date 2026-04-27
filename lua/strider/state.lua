@@ -1,11 +1,12 @@
 local M = {}
 
-local lane_order = { "main", "flow", "review" }
+local lane_order = { "main", "flow", "q", "patch", "review" }
 local lane_set = {}
 for _, lane in ipairs(lane_order) do
   lane_set[lane] = true
 end
 
+local flow_lanes = {flow = true, q = true, patch = true}
 local flow_operations = {q = true, search = true, patch = true}
 
 local function plugin_root()
@@ -290,6 +291,10 @@ end
 function M.review_acceptances(lane)
   local session = M.get_session(lane or "review")
   return session and session.review_acceptances or {}
+end
+
+function M.is_flow_lane(lane)
+  return flow_lanes[normalize_lane(lane)] == true
 end
 
 function M.is_flow_operation(op)

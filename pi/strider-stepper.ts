@@ -391,6 +391,45 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	const vimExecSchema = Type.Object({
+		intent: Type.String({
+			description: "Short human-readable summary of why this Neovim Lua is being executed. Used for compact Strider logs.",
+		}),
+		lua: Type.String({
+			description:
+				"Lua chunk to execute inside the user's live Neovim. May use vim.*, vim.api, vim.fn, vim.cmd, require(), plugin APIs, key feeding, etc. Return a compact value when inspection results are useful.",
+		}),
+	});
+
+	pi.registerTool({
+		name: "strider_vim",
+		label: "Strider Vim",
+		description: "Execute arbitrary Lua inside the user's live Neovim. No allowlist or confirmation layer.",
+		parameters: vimExecSchema,
+		promptSnippet:
+			"strider_vim: execute arbitrary Lua inside the user's live Neovim; provide intent + lua and return compact results.",
+		promptGuidelines: [
+			"Use strider_vim when live Neovim state, local plugins, buffers, windows, keymaps, LSP, diagnostics, help, or editor actions would help.",
+			"Routine inspection should stay quiet: summarize it in intent and return compact JSON-serializable Lua values.",
+			"You may freely use vim.api, vim.fn, vim.cmd, vim.lsp, vim.diagnostic, plugin APIs, and key feeding; there is no command allowlist.",
+		],
+		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: any) {
+			const lua = typeof params.lua === "string" ? params.lua : "";
+			if (lua.trim() === "") {
+				throw new Error("strider_vim: lua is required");
+			}
+			const intent = collapseWhitespace(params.intent)?.slice(0, 200) ?? "run Lua in Neovim";
+			const result = await ctx.ui.editor(`[strider-vim-exec] ${intent}`, lua);
+			if (result === undefined) {
+				throw new Error("strider_vim: Neovim client did not return a result");
+			}
+			return {
+				content: [{ type: "text", text: result }],
+				details: { intent },
+			} as any;
+		},
+	});
+
 	pi.registerCommand("plan", {
 		description: "Produce a Strider review plan",
 		handler: async (args: any, ctx: any) => {

@@ -256,6 +256,21 @@ class TmuxLogRenderingTests(unittest.TestCase):
                 self.assertIn("└ find *.lua in lua/strider (limit 3)", log)
                 self.assertIn("└ ls lua/strider (limit 2)", log)
 
+    def test_strider_vim_tool_logs_intent_without_lua_or_result(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat show strider vim tool log")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+                h.send("C-s", pause=0.3)
+                h.wait_until(
+                    lambda: "Finished Vim tool log pass" in "\n".join(h.log_lines()),
+                    timeout=5.0,
+                )
+                log = "\n".join(h.log_lines())
+                self.assertIn("• Vim: inspect current Neovim state", log)
+                self.assertNotIn("return { cwd = vim.fn.getcwd()", log)
+                self.assertNotIn('"ok":true', log)
+
     def test_compact_tool_output_uses_codex_style_middle_truncation(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

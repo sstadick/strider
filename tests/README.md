@@ -9,7 +9,8 @@ These tests cover the Neovim UX layer that is hard to validate with pure unit te
 - using a fake pi RPC backend for repeatable UX tests
 - checking transcript rendering details such as fenced read/write output,
   compact command/search output, inline edit diffs, and log-follow behavior
-- checking review pane rendering with fast headless-Neovim unit tests
+- checking review pane rendering and the raw `strider_vim` Lua executor with
+  fast headless-Neovim unit tests
 
 ## Pieces
 
@@ -24,7 +25,7 @@ These tests cover the Neovim UX layer that is hard to validate with pure unit te
 From the repo root:
 
 ```bash
-python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_tmux_log_rendering tests.test_rpc_commands tests.test_plan_helpers tests.test_review_render tests.test_count_lines
+python3 -m unittest tests.test_vim_exec tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_tmux_log_rendering tests.test_rpc_commands tests.test_plan_helpers tests.test_review_render tests.test_count_lines
 ```
 
 These fake-backend tmux tests should stay cheap to run: seconds, not minutes.

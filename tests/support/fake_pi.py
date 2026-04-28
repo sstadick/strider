@@ -361,6 +361,17 @@ def prompt_response(message: str) -> str:
         )
         return "Finished compact tool output pass."
 
+    if "strider vim tool log" in message.lower():
+        emit_tool_output(
+            "strider_vim",
+            {
+                "intent": "inspect current Neovim state",
+                "lua": "return { cwd = vim.fn.getcwd(), mode = vim.api.nvim_get_mode() }",
+            },
+            '{"ok":true,"value":{"cwd":"/tmp/project","mode":{"mode":"n"}}}',
+        )
+        return "Finished Vim tool log pass."
+
     if "tool argument headers" in message.lower():
         emit_tool_output(
             "grep",

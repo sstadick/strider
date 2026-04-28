@@ -50,7 +50,7 @@ end, { desc = "Toggle the Strider search/flow log" })
 
 vim.api.nvim_create_user_command("StriderLogQ", function()
   require("strider").q_log()
-end, { desc = "Toggle the Strider Q log" })
+end, { desc = "Toggle the StriderQ log" })
 
 vim.api.nvim_create_user_command("StriderLogPatch", function()
   require("strider").patch_log()
@@ -62,7 +62,11 @@ end, { desc = "Toggle the Strider review log" })
 
 vim.api.nvim_create_user_command("StriderQ", function(opts)
   require("strider").q(opts.args, opts)
-end, { nargs = "*", range = true, desc = "Open the Strider Q editor for a background flow-lane question" })
+end, { bang = true, nargs = "*", range = true, desc = "Open the StriderQ editor; bare toggles the latest card, ! creates a new one" })
+
+vim.api.nvim_create_user_command("StriderCards", function()
+  require("strider").cards()
+end, { desc = "Pick a Strider card with telescope/fzf" })
 
 vim.api.nvim_create_user_command("StriderRetry", function()
   require("strider").retry()

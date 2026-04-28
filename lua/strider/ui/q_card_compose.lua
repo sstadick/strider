@@ -1,7 +1,7 @@
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("strider-q-card-compose")
-local HINT = "Type a Q follow-up · <C-s> send"
+local HINT = "Type a StriderQ follow-up · <C-s> send"
 
 local function trim_lines(lines)
   while #lines > 0 and lines[#lines] == "" do table.remove(lines) end
@@ -79,10 +79,10 @@ local function submit(card)
   end
   local ok, strider = pcall(require, "strider")
   if not ok or not strider.q_followup then
-    vim.notify("Strider Q follow-up is unavailable", vim.log.levels.ERROR)
+    vim.notify("StriderQ follow-up is unavailable", vim.log.levels.ERROR)
     return
   end
-  if strider.q_followup(text) ~= false then clear_buffer(card) end
+  if strider.q_followup(text, card.id) ~= false then clear_buffer(card) end
 end
 
 local function attach_buffer(card)
@@ -90,13 +90,13 @@ local function attach_buffer(card)
   if vim.b[buf].strider_q_compose_attached then return end
   vim.b[buf].strider_q_compose_attached = true
   vim.keymap.set({ "n", "i" }, "<C-s>", function() submit(card) end, {
-    buffer = buf, nowait = true, silent = true, desc = "Send Strider Q follow-up",
+    buffer = buf, nowait = true, silent = true, desc = "Send StriderQ follow-up",
   })
   vim.keymap.set("n", "q", function() fold(card) end, {
-    buffer = buf, nowait = true, silent = true, desc = "Fold Strider Q card",
+    buffer = buf, nowait = true, silent = true, desc = "Fold StriderQ card",
   })
   vim.keymap.set("n", "<Esc>", function() fold(card) end, {
-    buffer = buf, nowait = true, silent = true, desc = "Fold Strider Q card",
+    buffer = buf, nowait = true, silent = true, desc = "Fold StriderQ card",
   })
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     buffer = buf,
@@ -133,8 +133,8 @@ function M.attach_answer(card)
   if not card or not card.buf or vim.b[card.buf].strider_q_compose_answer_attached then return end
   vim.b[card.buf].strider_q_compose_answer_attached = true
   local function start() M.focus(card, { insert = true }) end
-  vim.keymap.set("n", "i", start, { buffer = card.buf, nowait = true, silent = true, desc = "Compose Strider Q follow-up" })
-  vim.keymap.set("n", "a", start, { buffer = card.buf, nowait = true, silent = true, desc = "Compose Strider Q follow-up" })
+  vim.keymap.set("n", "i", start, { buffer = card.buf, nowait = true, silent = true, desc = "Compose StriderQ follow-up" })
+  vim.keymap.set("n", "a", start, { buffer = card.buf, nowait = true, silent = true, desc = "Compose StriderQ follow-up" })
 end
 
 function M.open(card, config, opts)

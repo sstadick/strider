@@ -1727,20 +1727,24 @@ local function ensure_q_answer_buffer(lane)
   return flow_cards.ensure_q_answer_buffer(lane)
 end
 
-function M.open_q_answer(prompt, lane)
-  return flow_cards.open_q_answer(prompt, lane)
+function M.open_q_answer(prompt, lane, opts)
+  return flow_cards.open_q_answer(prompt, lane, opts)
 end
 
-function M.update_q_answer(text, lane)
-  return flow_cards.update_q_answer(text, lane)
+function M.update_q_answer(text, lane, card_id)
+  return flow_cards.update_q_answer(text, lane, card_id)
 end
 
-function M.finish_q_answer(text, status, lane)
-  return flow_cards.finish_q_answer(text, status, lane)
+function M.finish_q_answer(text, status, lane, card_id)
+  return flow_cards.finish_q_answer(text, status, lane, card_id)
 end
 
 function M.toggle_q_answer(lane)
   return flow_cards.toggle_q_answer(lane)
+end
+
+function M.focus_flow_card(id, lane)
+  return flow_cards.focus_card(id, lane)
 end
 
 function M.open_patch_card(prompt, opts, lane)

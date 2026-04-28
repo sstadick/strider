@@ -1,3 +1,5 @@
+local card_picker = require("strider.ui.card_picker")
+local picker = require("strider.picker")
 local review = require("strider.review")
 local rpc = require("strider.rpc")
 local search = require("strider.search")
@@ -52,7 +54,7 @@ local function activity_title(operation)
   local titles = {
     patch = "Strider patch running...",
     plan = "Strider planning review...",
-    q = "Strider Q running...",
+    q = "StriderQ running...",
     review = "Strider review running...",
     search = "Strider search running...",
     prompt = "Strider prompt running...",
@@ -73,7 +75,7 @@ local function activity_target(operation, lane)
 end
 
 local function lane_title(lane)
-  if lane == Q_LANE then return "Strider Q" end
+  if lane == Q_LANE then return "StriderQ" end
   if lane == PATCH_LANE then return "Strider patch" end
   if lane == FLOW_LANE then return "Strider flow" end
   if lane == REVIEW_LANE then return "Strider review" end
@@ -111,11 +113,14 @@ local function send(command, user_text, opts)
   state.clear_error(lane)
   if operation == "patch" then
     metadata.card_id = ui.open_patch_card(user_text, { target = metadata.target }, lane)
+  elseif operation == "q" then
+    metadata.card_id = ui.open_q_answer(user_text, lane, {
+      card_id = metadata.card_id,
+      new = metadata.card_id == nil,
+      preserve_name = metadata.card_id ~= nil,
+    })
   end
   state.set_pending_request(operation, metadata, lane)
-  if operation == "q" then
-    ui.open_q_answer(user_text, lane)
-  end
   if operation then
     ui.start_activity(activity_title(operation), activity_target(operation, lane), operation, lane)
   end
@@ -126,7 +131,7 @@ local function send(command, user_text, opts)
     state.set_pending_request(nil, nil, lane)
     ui.finish_activity("Strider request failed to start", "error", lane)
     if operation == "q" then
-      ui.finish_q_answer("Strider request failed to start", "error", lane)
+      ui.finish_q_answer("Strider request failed to start", "error", lane, metadata.card_id)
     elseif operation == "patch" then
       ui.finish_patch_card(metadata.card_id, "error", {
         assistant_summary = "Strider request failed to start",
@@ -666,6 +671,19 @@ function dispatch_compose(text)
   return true
 end
 
+local function open_chat_surface(prefill)
+  if not ensure_backend(MAIN_LANE) then return false end
+  ui.hide_chat_card()
+  ui.ensure_compose_buffer(function(text)
+    return dispatch_compose(text)
+  end)
+  if prefill and prefill ~= "" then ui.prefill_compose(prefill) end
+  ui.open_chat_float(function(text)
+    return dispatch_compose(text)
+  end)
+  return true
+end
+
 function M.chat(prompt, opts)
   prompt = trimmed(prompt)
   local range = range_from_opts(opts)
@@ -678,19 +696,19 @@ function M.chat(prompt, opts)
     return
   end
 
-  if not ensure_backend(MAIN_LANE) then
-    return
-  end
+  open_chat_surface(prefill)
+end
 
-  ui.hide_chat_card()
-  ui.ensure_compose_buffer(function(text)
-    return dispatch_compose(text)
-  end)
-  if prefill ~= "" then
-    ui.prefill_compose(prefill)
+function M.cards()
+  local items = card_picker.items()
+  if #items == 0 then
+    ui.notify("No Strider cards yet", vim.log.levels.INFO)
+    return false
   end
-  ui.open_chat_float(function(text)
-    return dispatch_compose(text)
+  return picker.select("Strider Cards", items, function(item)
+    local value = item and item.value or {}
+    if value.type == "chat" then open_chat_surface("") end
+    if value.type == "flow" then ui.focus_flow_card(value.id, value.lane) end
   end)
 end
 
@@ -824,7 +842,7 @@ local function resolve_patch_range(opts)
   return range
 end
 
-local function dispatch_q(prompt, range)
+local function dispatch_q(prompt, range, opts)
   local message
   if range then
     local lines = {
@@ -839,9 +857,11 @@ local function dispatch_q(prompt, range)
   else
     message = prompt
   end
+  opts = opts or {}
   return send("/prompt " .. message, prompt, {
     lane = Q_LANE,
     operation = "q",
+    metadata = { card_id = opts.card_id },
   })
 end
 
@@ -856,11 +876,11 @@ local function submit_q_request(prompt, range)
   dispatch_q(prompt, range)
 end
 
-function M.q_followup(prompt)
+function M.q_followup(prompt, card_id)
   prompt = trimmed(prompt)
   if prompt == "" then return false end
   if not ensure_backend(Q_LANE) then return false end
-  return dispatch_q(prompt, nil)
+  return dispatch_q(prompt, nil, { card_id = card_id })
 end
 
 local function toggle_existing_q_card()
@@ -871,8 +891,9 @@ end
 
 function M.q(prompt, opts)
   prompt = trimmed(prompt)
+  opts = opts or {}
   local range = range_from_opts(opts)
-  if prompt == "" and not range and toggle_existing_q_card() then return end
+  if not opts.bang and prompt == "" and not range and toggle_existing_q_card() then return end
   local hint_lines = {
     "Ask a side question without opening chat.",
     "Answers land in StriderLogQ.",
@@ -882,7 +903,7 @@ function M.q(prompt, opts)
     table.insert(hint_lines, string.format("Range: %s", pointer))
   end
 
-  ui.open_prompt_editor("Strider Q", function(text)
+  ui.open_prompt_editor("StriderQ", function(text)
     submit_q_request(text, range)
   end, {
     hint_lines = hint_lines,

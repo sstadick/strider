@@ -1,3 +1,4 @@
+local card_names = require("strider.ui.card_names")
 local chat_card = require("strider.ui.chat_card")
 local highlights = require("strider.ui.highlights")
 local q_cards = require("strider.ui.q_cards")
@@ -150,7 +151,7 @@ local function card_config(session, card, stack_index)
     width = width,
     height = height,
     border = "rounded",
-    title = " " .. (card.title or "Strider flow") .. " ",
+    title = " " .. (card.name or card.title or "Strider flow") .. " ",
     title_pos = "left",
     style = "minimal",
     focusable = true,
@@ -166,7 +167,7 @@ local function compose_config(answer_config)
     width = answer_config.width,
     height = Q_COMPOSE_HEIGHT,
     border = "rounded",
-    title = " Strider Q follow-up ",
+    title = " StriderQ follow-up ",
     title_pos = "left",
     style = "minimal",
     focusable = true,
@@ -269,11 +270,12 @@ local function open_card_window(session, card)
   return win
 end
 local function latest_card(session, kind)
-  for i = #ensure_card_state(session), 1, -1 do
-    local card = session.flow_cards[i]
-    if not card.dismissed and (not kind or card.kind == kind) then return card end
+  local best = nil
+  for _, card in ipairs(ensure_card_state(session)) do
+    local matches = not card.dismissed and (not kind or card.kind == kind)
+    if matches and (not best or (card.started_at or 0) > (best.started_at or 0)) then best = card end
   end
-  return nil
+  return best
 end
 local function sorted_cards(session)
   local cards = vim.tbl_filter(function(card)
@@ -364,9 +366,9 @@ function M.toggle_q_answer(lane)
   ensure_autocmds()
   lane = normalize_lane(lane)
   local session = state.get_session(lane)
-  if not session then return false, "No Strider Q card yet" end
+  if not session then return false, "No StriderQ card yet" end
   local card = latest_card(session, "q") or card_by_id(session, session.q_answer_card_id)
-  if not card then return false, "No Strider Q card yet" end
+  if not card then return false, "No StriderQ card yet" end
   local win = card_window(card)
   if card_is_expanded(session, card) and win then
     session.active_flow_card_id = nil
@@ -384,15 +386,29 @@ function M.toggle_q_answer(lane)
   end
   return true
 end
+function M.focus_card(id, lane)
+  ensure_autocmds(); lane = normalize_lane(lane)
+  local session = state.get_session(lane); local card = card_by_id(session, id)
+  if not card then return false end
+  session.active_flow_card_id = card.id; render_card(session, card)
+  local win = open_card_window(session, card); M.refresh_layouts()
+  if win and vim.api.nvim_win_is_valid(win) then vim.api.nvim_set_current_win(win) end
+  if card.kind == "q" then q_compose.focus(card, { insert = true }) end
+  return true
+end
 function M.create_card(kind, opts, lane)
   ensure_autocmds()
   lane = normalize_lane(lane)
   local session = state.get_session(lane)
   if not session then return nil end
   opts = opts or {}
+  local id = opts.id or next_card_id(session)
+  local seq = opts.seq or tonumber(tostring(id):match("(%d+)$")) or (#ensure_card_state(session) + 1)
   local card = vim.tbl_extend("force", {
-    id = opts.id or next_card_id(session),
+    id = id,
+    seq = seq,
     kind = kind,
+    name = opts.name or card_names.default(kind, seq, opts.prompt),
     operation = opts.operation or kind,
     title = opts.title or "Strider flow",
     prompt = opts.prompt or "",
@@ -414,44 +430,42 @@ function M.update_card(id, fields, lane)
   local session = state.get_session(lane)
   local card = card_by_id(session, id)
   if not card then return nil end
-  for key, value in pairs(fields or {}) do
-    card[key] = value
-  end
-  render_card(session, card)
-  sync_legacy_q(session, card)
-  M.reflow(lane)
+  for key, value in pairs(fields or {}) do card[key] = value end
+  render_card(session, card); sync_legacy_q(session, card); M.reflow(lane)
   return card
 end
 function M.finish_card(id, status, fields, lane)
-  fields = fields or {}
-  fields.status = status or fields.status or "success"
-  fields.finished_at = fields.finished_at or vim.uv.hrtime()
+  fields = fields or {}; fields.status = status or fields.status or "success"; fields.finished_at = fields.finished_at or vim.uv.hrtime()
   return M.update_card(id, fields, lane)
 end
-local function ensure_q_card(prompt, lane)
-  lane = normalize_lane(lane)
-  local session = state.get_session(lane)
-  if not session then return nil end
-  local card = card_by_id(session, session.q_answer_card_id)
-  if card then
-    card.prompt = prompt or ""
-    card.answer_text = ""
-    q_compose.clear(card)
-    card.status = "running"
-    card.finished_at = nil
-    card.started_at = vim.uv.hrtime()
-    card.title = "Strider Q"
-    card.buffer_name = q_cards.answer_name(lane)
-    sync_legacy_q(session, card)
-    return card
-  end
+local function q_card_count(session)
+  local count = 0
+  for _, card in ipairs(ensure_card_state(session)) do if card.kind == "q" then count = count + 1 end end
+  return count
+end
+local function start_q_turn(card, prompt, opts)
+  opts = opts or {}; q_compose.clear(card); q_cards.start_turn(card, prompt); card.title = "StriderQ"
+  if not opts.preserve_name then card.name = card_names.default("q", card.seq, prompt) end
+  return card
+end
+local function create_q_card(prompt, lane, session)
+  local started = vim.uv.hrtime()
   local id = M.create_card("q", {
-    title = "Strider Q",
-    prompt = prompt or "",
-    operation = "q",
-    buffer_name = q_cards.answer_name(lane),
+    title = "StriderQ", prompt = prompt or "", operation = "q", started_at = started,
+    turns = { { prompt = prompt or "", answer_text = "", status = "running", started_at = started } }, current_turn_index = 1,
+    buffer_name = q_card_count(session) == 0 and q_cards.answer_name(lane) or nil,
   }, lane)
-  return card_by_id(session, id)
+  local card = card_by_id(session, id); session.q_answer_card_id = id; sync_legacy_q(session, card)
+  return card
+end
+local function ensure_q_card(prompt, lane, opts)
+  opts = opts or {}; lane = normalize_lane(lane)
+  local session = state.get_session(lane); if not session then return nil end
+  local card = opts.card_id and card_by_id(session, opts.card_id) or nil
+  if not card and not opts.new then card = card_by_id(session, session.q_answer_card_id) end
+  if not card then return create_q_card(prompt, lane, session) end
+  session.q_answer_card_id = card.id; start_q_turn(card, prompt, opts); sync_legacy_q(session, card)
+  return card
 end
 function M.ensure_q_answer_buffer(lane)
   lane = normalize_lane(lane)
@@ -459,39 +473,27 @@ function M.ensure_q_answer_buffer(lane)
   if not session then return nil end
   local card = card_by_id(session, session.q_answer_card_id) or ensure_q_card(session.q_answer_prompt, lane)
   if not card then return nil end
-  local buf = ensure_card_buffer(card, lane)
-  sync_legacy_q(session, card)
-  return buf
+  local buf = ensure_card_buffer(card, lane); sync_legacy_q(session, card); return buf
 end
-function M.open_q_answer(prompt, lane)
-  ensure_autocmds()
-  lane = normalize_lane(lane)
-  local session = state.get_session(lane)
-  if not session then return nil end
-  local card = ensure_q_card(prompt, lane)
-  if not card then return nil end
-  render_card(session, card)
-  local win = open_card_window(session, card)
-  M.refresh_layouts()
-  return win
+function M.open_q_answer(prompt, lane, opts)
+  ensure_autocmds(); lane = normalize_lane(lane)
+  local session = state.get_session(lane); if not session then return nil end
+  local card = ensure_q_card(prompt, lane, opts); if not card then return nil end
+  render_card(session, card); open_card_window(session, card); M.refresh_layouts()
+  return card.id
 end
-function M.update_q_answer(text, lane)
+local function q_card_for_update(session, card_id) return card_by_id(session, card_id) or card_by_id(session, session.q_answer_card_id) end
+function M.update_q_answer(text, lane, card_id)
   lane = normalize_lane(lane)
-  local session = state.get_session(lane)
-  if not session then return end
-  local card = card_by_id(session, session.q_answer_card_id)
-  if not card then return end
-  M.update_card(card.id, { answer_text = text or "", status = "running" }, lane)
+  local session = state.get_session(lane); if not session then return end
+  local card = q_card_for_update(session, card_id); if not card then return end
+  q_cards.update_turn(card, text); render_card(session, card); sync_legacy_q(session, card); M.reflow(lane)
 end
-function M.finish_q_answer(text, status, lane)
+function M.finish_q_answer(text, status, lane, card_id)
   lane = normalize_lane(lane)
-  local session = state.get_session(lane)
-  if not session then return end
-  local card = card_by_id(session, session.q_answer_card_id)
-  if not card then return end
-  local fields = {}
-  if text ~= nil then fields.answer_text = text end
-  M.finish_card(card.id, status or "success", fields, lane)
+  local session = state.get_session(lane); if not session then return end
+  local card = q_card_for_update(session, card_id); if not card then return end
+  q_cards.finish_turn(card, text, status or "success"); render_card(session, card); sync_legacy_q(session, card); M.reflow(lane)
 end
 function M.refresh_q_answer_winbar(lane) M.refresh_winbars(lane) end
 function M.refresh_q_answer_layouts() M.refresh_layouts() end

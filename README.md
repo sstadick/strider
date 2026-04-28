@@ -139,7 +139,8 @@ panes:
 | `:StriderChat [prompt]` | Main chat log + compose; bare command toggles the compact card |
 | `:StriderReview [prompt]` | Planned review walkthrough or current-stop question |
 | `:StriderSearch {prompt}` | Structured code search |
-| `:StriderQ [prompt]` | One-shot side question; bare command toggles an existing Q card |
+| `:StriderQ[!] [prompt]` | Named side-question card; bare toggles latest, `!` opens a new Q prompt |
+| `:StriderCards` | Pick an existing Chat/Q/Patch card with telescope/fzf |
 | `:'<,'>StriderPatch [prompt]` | Selection-scoped patch |
 | `:StriderNext` / `:StriderPrev` | Move through review stops |
 | `:StriderComment [text]` | Record a review comment |

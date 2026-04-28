@@ -153,6 +153,9 @@ class TmuxTangentTests(unittest.TestCase):
                     lambda: h.lua_bool("require('strider.state').peek_pending_request('q') == nil"),
                     timeout=5.0,
                 )
+                threaded = "\n".join(h.buffer_lines("strider://StriderQAnswer"))
+                self.assertIn("what does this flag do", threaded)
+                self.assertIn("what about follow ups?", threaded)
 
                 h.ex("StriderQ")
                 folded_height = int(h.lua(
@@ -177,7 +180,7 @@ class TmuxTangentTests(unittest.TestCase):
                     "  local ui = require('strider.ui'); "
                     "  state.ensure_session('q', vim.fn.getcwd()); "
                     "  ui.open_q_answer('slow question', 'q'); "
-                    "  ui.start_activity('Strider Q running...', 'q', 'q', 'q'); "
+                    "  ui.start_activity('StriderQ running...', 'q', 'q', 'q'); "
                     "  return true "
                     "end)()"
                 )
@@ -408,6 +411,71 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertTrue(job_ids[0])
                 self.assertTrue(job_ids[1])
                 self.assertNotEqual(job_ids[0], job_ids[1])
+
+    def test_multiple_striderq_cards_are_named_and_latest_toggles(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderQ first card question")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: h.lua_bool("require('strider.state').peek_pending_request('q') == nil"),
+                    timeout=5.0,
+                )
+
+                h.ex("StriderQ second card question")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://flow-card/q/2")),
+                    timeout=5.0,
+                )
+
+                names = h.lua(
+                    "(function() "
+                    "  local cards = require('strider.state').get_session('q').flow_cards; "
+                    "  local names = vim.tbl_map(function(card) return card.name end, cards); "
+                    "  return table.concat(names, '\\n') "
+                    "end)()"
+                ).split("\n")
+                self.assertEqual(["StriderQ #1: first card question", "StriderQ #2: second card question"], names)
+
+                h.ex("StriderQ")
+                h.wait_until(lambda: h.expr("bufname('%')") == "strider://flow-card/q-compose/2", timeout=3.0)
+                self.assertIn("second card question", "\n".join(h.buffer_lines("strider://flow-card/q/2")))
+
+    def test_striderq_bang_opens_new_prompt_instead_of_toggling_latest(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderQ existing card")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://StriderQAnswer")),
+                    timeout=5.0,
+                )
+
+                h.ex("StriderQ!")
+                h.wait_until(lambda: h.popup_open(), timeout=3.0)
+                self.assertEqual("strider://prompt", h.expr("bufname('%')"))
+
+    def test_card_picker_items_have_card_names(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                labels = h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui'); "
+                    "  state.ensure_session('main', vim.fn.getcwd()); "
+                    "  state.ensure_session('q', vim.fn.getcwd()); "
+                    "  state.ensure_session('patch', vim.fn.getcwd()); "
+                    "  ui.show_chat_card(); "
+                    "  ui.open_q_answer('why is this named?', 'q', { new = true }); "
+                    "  ui.open_patch_card('change the greeting', { target = { path = vim.fn.getcwd() .. '/src/App.tsx', startLine = 1, endLine = 3 } }, 'patch'); "
+                    "  local labels = vim.tbl_map(function(item) return item.label end, require('strider.ui.card_picker').items()); "
+                    "  return table.concat(labels, '\\n') "
+                    "end)()"
+                ).split("\n")
+                self.assertIn("StriderChat · collapsed", labels)
+                self.assertIn("StriderQ #1: why is this named? · running", labels)
+                self.assertIn("StriderPatch #1: change the greeting · running", labels)
 
     def test_q_lane_rejects_new_q_while_busy(self) -> None:
         with FixtureProject(self.project_root) as project_root:

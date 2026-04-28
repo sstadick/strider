@@ -124,7 +124,7 @@ function M.open(prompt, opts, lane)
   lane = normalize_lane(lane)
   opts = opts or {}
   local card = {
-    title = "Strider patch",
+    title = "StriderPatch",
     prompt = prompt or "",
     operation = "patch",
     status = "running",

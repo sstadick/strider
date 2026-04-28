@@ -36,7 +36,7 @@ The working model:
 Cards stack on the right edge, newest near the bottom:
 
 ```text
-┌─ Strider Q ───────────────────────┐
+┌─ StriderQ #1 ─────────────────────┐
 │ › why is this flag here?          │
 │ ───────────────────────────────── │
 │ Answer ready — focus to expand    │
@@ -64,7 +64,7 @@ When focused, the selected card snaps to the right side and expands to nearly th
 full editor height:
 
 ```text
-┌─ Strider Q ───────────────────────────────────────┐
+┌─ StriderQ #1 ─────────────────────────────────────┐
 │ Working/ready winbar or card status                │
 │                                                    │
 │ › why is this flag here?                           │
@@ -142,7 +142,7 @@ flow_cards = {
     id = "flow-card-1",
     kind = "q" | "patch" | "search",
     operation = "q" | "patch" | "search",
-    title = "Strider Q",
+    title = "StriderQ",
     prompt = "...",
     status = "running" | "success" | "error" | "cancelled",
     answer_text = "...",       -- Q only / assistant-only text
@@ -224,16 +224,23 @@ functions plus a plugin-prefixed augroup are the normal pattern.
 
 ### Phase 2 — Multiple Q cards
 
-1. On every `:StriderQ` submit, create a new card instead of reusing
-   `strider://StriderQAnswer`.
-2. Give each card its own scratch buffer name, e.g.
-   `strider://flow-card/q/1`.
-3. Stack folded cards bottom-right.
-4. Route text deltas and final text to the active request's card id.
-   - Store `card_id` in `pending_request.metadata` or directly on pending state.
-5. Add basic card dismissal inside focused cards:
-   - `q` or `d` closes/dismisses the focused card
-   - optional `o` opens the card's worker log
+Status: partially implemented for named StriderQ card history.
+
+Implemented:
+
+1. Each submitted `:StriderQ` prompt creates a named card instead of reusing the
+   previous card.
+2. The first card keeps the compatibility buffer `strider://StriderQAnswer`;
+   later cards use `strider://flow-card/q/N`.
+3. Folded Q cards stack in the shared right-edge stack.
+4. Text deltas and final text route through the pending request's `card_id`.
+5. Bare `:StriderQ` toggles the latest card; `:StriderQ!` opens a new prompt.
+6. `:StriderCards` opens a telescope/fzf/`vim.ui.select` picker for named cards.
+
+Still deferred:
+
+- explicit card dismissal/clear commands
+- optional `o` mapping to open the worker log
 
 ### Phase 3 — Patch cards
 
@@ -254,10 +261,8 @@ Implemented:
 - bare `:StriderQ` — toggles/focuses the latest Q card, or folds it when already
   expanded; if no card exists it opens the original Q prompt.
 
-Still deferred until multiple visible cards/history need it:
+Still deferred:
 
-- `:StriderFlowCards` — focus the newest visible flow card or open a picker of
-  cards if none is visible.
 - `:StriderFlowCardsClear` — dismiss completed cards.
 - Optional mappings inside card buffers:
   - `q` / `<Esc>`: fold or close focused card

@@ -24,8 +24,8 @@ The working model:
 - Expanded cards remain open when focus returns to code.
 - Pressing `q` or `<Esc>` in a card folds it back down; bare `:StriderQ` toggles
   the latest Q card up/down when a card exists.
-- Expanded Q cards include a small follow-up compose section; `<C-s>` submits
-  that draft on the Q worker.
+- Expanded Q cards open a separate follow-up compose float under the answer;
+  `<C-s>` submits that draft on the Q worker.
 
 ## Target UX
 
@@ -96,8 +96,8 @@ Expanded body:
 - assistant answer text only
 - no thinking/reasoning
 - no tool calls or tool output
-- follow-up compose section at the bottom; `<C-s>` sends the draft as another Q
-  prompt on the same worker
+- separate follow-up compose float beneath the answer; `<C-s>` sends the draft
+  as another Q prompt on the same worker
 
 `:StriderLogQ` still contains the full Q transcript.
 

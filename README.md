@@ -44,7 +44,7 @@ Patch a small selected range:
 :'<,'>StriderPatch change the greeting literal from hi to hello
 ```
 
-Ask a side question on the dedicated Q worker, then run bare `:StriderQ` again to reopen the answer card for follow-ups:
+Ask a side question on the dedicated Q worker, then run bare `:StriderQ` again to reopen the answer card with a compose split for follow-ups:
 
 ```vim
 :StriderQ what does this flag actually do?
@@ -82,8 +82,8 @@ prefills compose so you can edit before sending.
 - Scoped guardrails: review/search/plan are read-only; patch prompts are
   selection-scoped and intended for small local edits.
 - Native Neovim UI: logs, compose buffers, floating editors, flow cards for
-  Q/patch results, Q-card follow-up compose, quickfix/pickers, inline review
-  annotations, comments, and touched-file navigation.
+  Q/patch results, split-style Q-card follow-up compose, quickfix/pickers,
+  inline review annotations, comments, and touched-file navigation.
 - Useful transcript rendering: edit tools show inline diff rows; read/write
   output keeps syntax-highlighted code fences; command/search output uses
   compact rows that do not accidentally render as markdown.

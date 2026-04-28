@@ -14,14 +14,12 @@ local STACK_GAP = 1
 local STACK_MARGIN_BOTTOM = 2
 local EXPANDED_TOP_MARGIN = 1
 local EXPANDED_BOTTOM_MARGIN = 3
+local Q_COMPOSE_HEIGHT = 6
+local Q_SPLIT_GAP = 0
 local WORKING_LABEL = "Working"
 local augroup = nil
-local function normalize_lane(lane)
-  return state.normalize_lane(lane)
-end
-local function escape_status_text(text)
-  return (text or ""):gsub("%%", "%%%%")
-end
+local function normalize_lane(lane) return state.normalize_lane(lane) end
+local function escape_status_text(text) return (text or ""):gsub("%%", "%%%%") end
 local function format_elapsed(start_ns)
   if not start_ns then return nil end
   local elapsed_s = (vim.uv.hrtime() - start_ns) / 1e9
@@ -31,14 +29,9 @@ local function format_elapsed(start_ns)
   end
   return string.format("%dh%02dm", math.floor(elapsed_s / 3600), math.floor((elapsed_s % 3600) / 60))
 end
-local function stop_command(lane)
-  return state.is_flow_lane(lane) and ":StriderStopFlow" or ":StriderStop"
-end
+local function stop_command(lane) return state.is_flow_lane(lane) and ":StriderStopFlow" or ":StriderStop" end
 local function stop_hint(lane) return stop_command(lane) .. " to interrupt" end
-local function working_label()
-  highlights.ensure()
-  return string.format("%%#%s#%s%%*", compose_working_hl, WORKING_LABEL)
-end
+local function working_label() highlights.ensure(); return string.format("%%#%s#%s%%*", compose_working_hl, WORKING_LABEL) end
 local function configure_scratch_buffer(buf, filetype)
   vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].buftype = "nofile"
@@ -52,8 +45,7 @@ local function ensure_card_state(session)
   return session.flow_cards
 end
 local function next_card_id(session)
-  session.flow_card_seq = (session.flow_card_seq or 0) + 1
-  return string.format("flow-card-%d", session.flow_card_seq)
+  session.flow_card_seq = (session.flow_card_seq or 0) + 1; return string.format("flow-card-%d", session.flow_card_seq)
 end
 local function card_by_id(session, id)
   if not session or not id then return nil end
@@ -65,9 +57,7 @@ local function card_by_id(session, id)
   return nil
 end
 local function card_buffer_name(card, lane)
-  if card.buffer_name then
-    return card.buffer_name
-  end
+  if card.buffer_name then return card.buffer_name end
   local seq = card.seq or tostring(card.id):match("(%d+)$") or "1"
   return string.format("strider://flow-card/%s/%s", card.kind or "card", seq)
 end
@@ -86,7 +76,7 @@ local function ensure_card_buffer(card, lane)
   vim.b[buf].strider_flow_card_kind = card.kind
   if card.kind == "q" then
     vim.b[buf].strider_q_answer = true
-    q_compose.attach(card)
+    q_compose.attach_answer(card)
   end
   local function fold_card()
     local session = state.get_session(lane); if session then session.active_flow_card_id = nil end
@@ -133,22 +123,20 @@ local function current_card_id(session)
   return nil
 end
 local function card_is_expanded(session, card) return session and card and session.active_flow_card_id == card.id end
-local function ui_size()
-  return vim.api.nvim_list_uis()[1] or { width = 120, height = 30 }
-end
-local function card_width(width)
-  return math.min(88, math.max(42, math.floor(width * 0.42)))
-end
+local function ui_size() return vim.api.nvim_list_uis()[1] or { width = 120, height = 30 } end
+local function card_width(width) return math.min(88, math.max(42, math.floor(width * 0.42))) end
 local function folded_row(ui_height, stack_index)
   local step = FOLDED_HEIGHT + 2 + STACK_GAP
   return math.max(ui_height - FOLDED_HEIGHT - STACK_MARGIN_BOTTOM - step * (stack_index - 1), 0)
 end
 local lane_stack_offsets = { patch = 1 }
+local function expanded_height(info) return math.max(FOLDED_HEIGHT, info.height - EXPANDED_BOTTOM_MARGIN - 1) end
 local function card_config(session, card, stack_index)
   local info = ui_size()
   local expanded = card_is_expanded(session, card)
   local width = card_width(info.width)
-  local height = expanded and math.max(FOLDED_HEIGHT, info.height - EXPANDED_BOTTOM_MARGIN - 1) or FOLDED_HEIGHT
+  local height = expanded and expanded_height(info) or FOLDED_HEIGHT
+  if expanded and card.kind == "q" then height = math.max(6, height - Q_COMPOSE_HEIGHT - Q_SPLIT_GAP - 2) end
   local folded_index = (stack_index or 1) + (lane_stack_offsets[session.lane] or 0)
   return {
     relative = "editor",
@@ -163,6 +151,22 @@ local function card_config(session, card, stack_index)
     style = "minimal",
     focusable = true,
     zindex = expanded and 60 or 40,
+  }
+end
+local function compose_config(answer_config)
+  return {
+    relative = "editor",
+    anchor = "NW",
+    row = answer_config.row + answer_config.height + 2 + Q_SPLIT_GAP,
+    col = answer_config.col,
+    width = answer_config.width,
+    height = Q_COMPOSE_HEIGHT,
+    border = "rounded",
+    title = " Strider Q follow-up ",
+    title_pos = "left",
+    style = "minimal",
+    focusable = true,
+    zindex = 61,
   }
 end
 local function configure_card_window(win)
@@ -197,19 +201,15 @@ end
 local function render_card(session, card)
   local buf = ensure_card_buffer(card, session.lane)
   local expanded = card_is_expanded(session, card)
-  if card.kind == "q" then q_compose.capture(card) end
-  local lines, question_count, separator_row, body_row, compose_header_row, compose_start_row
+  local lines, question_count, separator_row, body_row
   if card.kind == "q" then
-    lines, question_count, separator_row, body_row, compose_header_row, compose_start_row = q_cards.lines(card, expanded)
+    lines, question_count, separator_row, body_row = q_cards.lines(card, expanded)
   else
     lines, question_count, separator_row, body_row = generic_card_lines(card, expanded)
   end
-  card.compose_start_row = compose_start_row
 
-  card._q_compose_rendering = true
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  card._q_compose_rendering = false
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   for row = 0, question_count - 1 do
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
@@ -223,14 +223,6 @@ local function render_card(session, card)
     hl_group = log_rule_hl,
     priority = 10,
   })
-  if compose_header_row then
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, compose_header_row, 0, {
-      end_row = compose_header_row + 1,
-      hl_group = log_rule_hl,
-      priority = 10,
-    })
-    q_compose.hint(card, ns)
-  end
   if card.status == "running" and vim.trim(card.answer_text or "") == "" then
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, body_row, 0, {
       end_row = body_row + 1,
@@ -238,7 +230,7 @@ local function render_card(session, card)
       priority = 10,
     })
   end
-  vim.bo[buf].modifiable = card.kind == "q" and expanded
+  vim.bo[buf].modifiable = false
   pcall(function() vim.bo[buf].modified = false end)
 end
 local function card_winbar(card, lane)
@@ -254,7 +246,7 @@ local function card_winbar(card, lane)
     local text = card.title or "Strider flow"
     if card.kind == "q" then text = card.status == "success" and "StriderQ answer ready" or "StriderQ stopped" end
     if card.kind == "patch" then text = card.status == "success" and "StriderPatch complete" or "StriderPatch stopped" end
-    local hint = card.kind == "q" and "i follow-up · <C-s> send · q/Esc fold" or "q/Esc fold"
+    local hint = card.kind == "q" and "i follow-up · q/Esc fold" or "q/Esc fold"
     return escape_status_text(text) .. (expanded and "%=" .. escape_status_text(hint) or "")
   end
   return escape_status_text(card.title or "Strider flow")
@@ -303,9 +295,15 @@ function M.reflow(lane)
     local win = card_window(card)
     if win and vim.api.nvim_win_is_valid(win) then
       render_card(session, card)
-      pcall(vim.api.nvim_win_set_config, win, card_config(session, card, stack_index))
+      local config = card_config(session, card, stack_index)
+      pcall(vim.api.nvim_win_set_config, win, config)
       if not (card.kind == "q" and card_is_expanded(session, card)) then
         pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
+      end
+      if card.kind == "q" and card_is_expanded(session, card) then
+        q_compose.open(card, compose_config(config))
+      elseif card.kind == "q" then
+        q_compose.close(card)
       end
       pcall(function() vim.wo[win].winbar = card_winbar(card, lane) end)
       sync_legacy_q(session, card)
@@ -313,14 +311,13 @@ function M.reflow(lane)
         stack_index = stack_index + 1
       end
     else
+      if card.kind == "q" then q_compose.close(card) end
       card.win = nil
       sync_legacy_q(session, card)
     end
   end
 end
-function M.refresh_layouts()
-  for _, lane in ipairs(state.lanes()) do M.reflow(lane) end
-end
+function M.refresh_layouts() for _, lane in ipairs(state.lanes()) do M.reflow(lane) end end
 function M.refresh_winbars(lane)
   lane = normalize_lane(lane)
   local session = state.get_session(lane)
@@ -435,7 +432,7 @@ local function ensure_q_card(prompt, lane)
   if card then
     card.prompt = prompt or ""
     card.answer_text = ""
-    card.compose_text = ""
+    q_compose.clear(card)
     card.status = "running"
     card.finished_at = nil
     card.started_at = vim.uv.hrtime()

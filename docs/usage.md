@@ -46,10 +46,11 @@ flow cards in the bottom-right. Cards stay compact while running and after
 completion; select/focus one to expand it into a near full-height right-side
 panel. Expanded cards stay open when you return to code; press `q` or `<Esc>`
 inside the card to fold it, or run bare `:StriderQ` to toggle the latest Q card.
-Expanded Q cards show the question plus assistant answer and include a follow-up
-compose section; type there and press `<C-s>` to ask on the same Q worker.
-Patch cards show the request, target, touched files, diffs, and final summary.
-Reasoning, tool calls, and full tool output remain in the operation's log. When flow-worker operations finish, Strider always leaves a
+Expanded Q cards show the question plus assistant answer above a separate
+follow-up compose float; type there and press `<C-s>` to ask on the same Q
+worker. Patch cards show the request, target, touched files, diffs, and final
+summary. Reasoning, tool calls, and full tool output remain in the operation's
+log. When flow-worker operations finish, Strider always leaves a
 bottom-left green-dot completion cue; if that worker's log is hidden, it also
 sends a notification. `:StriderStopFlow` aborts active flow-worker turns.
 `:StriderReview` runs on a dedicated review
@@ -202,10 +203,10 @@ non-focus-stealing `strider://StriderQAnswer` window at the bottom-right. It
 stays compact while waiting and after the answer is ready; select/focus it or
 run bare `:StriderQ` to expand it into a near full-height right-side answer
 panel. It stays expanded when you return to code; press `q` or `<Esc>` inside
-the card, or run `:StriderQ` again, to fold it. Expanded Q cards include a
-follow-up compose section; type there and press `<C-s>` to ask on the same Q
-worker. The full transcript, including reasoning and tool calls, lands in
-`:StriderLogQ`.
+the card, or run `:StriderQ` again, to fold it. Expanded Q cards place a
+separate follow-up compose float beneath the answer; type there and press
+`<C-s>` to ask on the same Q worker. The full transcript, including reasoning
+and tool calls, lands in `:StriderLogQ`.
 
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It
 requires a visual range or an active review item, embeds the excerpt and range

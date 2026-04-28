@@ -125,9 +125,10 @@ class TmuxTangentTests(unittest.TestCase):
                 )
 
                 h.ex("StriderQ")
-                h.wait_until(lambda: h.expr("bufname('%')") == "strider://StriderQAnswer", timeout=3.0)
-                expanded = "\n".join(h.buffer_lines("strider://StriderQAnswer"))
-                self.assertIn("Follow up", expanded)
+                h.wait_until(lambda: h.expr("bufname('%')") == "strider://StriderQCompose", timeout=3.0)
+                self.assertIn("strider://StriderQCompose", h.json_expr(
+                    "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+                ))
 
                 h.lua(
                     "(function() "
@@ -136,11 +137,10 @@ class TmuxTangentTests(unittest.TestCase):
                     "  local session = state.get_session('q'); "
                     "  local card = require('strider.ui.flow_cards').get_card(session.q_answer_card_id, 'q'); "
                     "  ui.refresh_q_answer_layouts(); "
-                    "  local buf = card.buf; "
-                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  local buf = card.compose_buf; "
+                    "  local win = card.compose_win; "
                     "  vim.api.nvim_set_current_win(win); "
-                    "  vim.bo[buf].modifiable = true; "
-                    "  vim.api.nvim_buf_set_lines(buf, card.compose_start_row, card.compose_start_row + 1, false, {'what about follow ups?'}); "
+                    "  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {'what about follow ups?'}); "
                     "  return true "
                     "end)()"
                 )
@@ -164,6 +164,9 @@ class TmuxTangentTests(unittest.TestCase):
                     "end)()"
                 ))
                 self.assertLessEqual(folded_height, 3)
+                self.assertNotIn("strider://StriderQCompose", h.json_expr(
+                    "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+                ))
 
     def test_q_answer_winbar_uses_flow_stop_command(self) -> None:
         with FixtureProject(self.project_root) as project_root:
@@ -224,7 +227,7 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertEqual(folded_height, initial_height)
                 self.assertEqual(folded_row, initial_row)
 
-                expanded_height, expanded_row, ui_height = map(int, h.lua(
+                expanded_height, expanded_row, compose_height, compose_row, ui_height = map(int, h.lua(
                     "(function() "
                     "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
                     "  local win = vim.fn.win_findbuf(buf)[1]; "
@@ -232,12 +235,18 @@ class TmuxTangentTests(unittest.TestCase):
                     "  require('strider.ui').refresh_q_answer_layouts(); "
                     "  local cfg = vim.api.nvim_win_get_config(win); "
                     "  local row = type(cfg.row) == 'table' and (cfg.row[false] or cfg.row[1]) or cfg.row; "
+                    "  local cbuf = vim.fn.bufnr('strider://StriderQCompose'); "
+                    "  local cwin = vim.fn.win_findbuf(cbuf)[1]; "
+                    "  local ccfg = vim.api.nvim_win_get_config(cwin); "
+                    "  local crow = type(ccfg.row) == 'table' and (ccfg.row[false] or ccfg.row[1]) or ccfg.row; "
                     "  local ui_info = vim.api.nvim_list_uis()[1]; "
-                    "  return string.format('%d,%d,%d', vim.api.nvim_win_get_height(win), row, ui_info.height); "
+                    "  return string.format('%d,%d,%d,%d,%d', vim.api.nvim_win_get_height(win), row, vim.api.nvim_win_get_height(cwin), crow, ui_info.height); "
                     "end)()"
                 ).split(","))
                 self.assertGreater(expanded_height, folded_height)
-                self.assertGreaterEqual(expanded_height, ui_height - 4)
+                self.assertGreater(compose_height, 0)
+                self.assertGreater(compose_row, expanded_row)
+                self.assertGreaterEqual(expanded_height + compose_height, ui_height - 8)
                 self.assertGreater(folded_row, expanded_row)
 
                 sticky_height = int(h.lua(
@@ -272,6 +281,9 @@ class TmuxTangentTests(unittest.TestCase):
                     "end)()"
                 ))
                 self.assertEqual(folded_height, folded_after_explicit_action)
+                self.assertNotIn("strider://StriderQCompose", h.json_expr(
+                    "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+                ))
 
     def test_q_completion_clears_pending_request(self) -> None:
         with FixtureProject(self.project_root) as project_root:

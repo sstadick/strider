@@ -1,4 +1,3 @@
-local compose = require("strider.ui.q_card_compose")
 local state = require("strider.state")
 
 local M = {}
@@ -74,8 +73,7 @@ function M.lines(card, expanded)
     table.insert(lines, "Waiting for Strider…")
   end
 
-  local compose_header_row, compose_start_row = compose.append(lines, card)
-  return lines, #question_lines, separator_row, body_row, compose_header_row, compose_start_row
+  return lines, #question_lines, separator_row, body_row
 end
 
 return M

@@ -22,7 +22,7 @@ README.
 | `:StriderComments` | Browse recorded review comments |
 | `:StriderPatch [prompt]` | Open the patch popup for the current review item |
 | `:'<,'>StriderPatch [prompt]` | Open the patch popup for a visual selection |
-| `:StriderQ [prompt]` | Open the Q popup and run a background Q-worker question |
+| `:StriderQ [prompt]` | Open the Q popup; with no args, toggles the latest Q card if one exists |
 | `:'<,'>StriderQ [prompt]` | Open the Q popup with a selection-scoped Q-worker question |
 | `:StriderChat` | Toggle the chat log + compose buffers |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
@@ -45,10 +45,11 @@ Search transcript lives in `:StriderLogFlow`, Q in `:StriderLogQ`, and patch in
 flow cards in the bottom-right. Cards stay compact while running and after
 completion; select/focus one to expand it into a near full-height right-side
 panel. Expanded cards stay open when you return to code; press `q` or `<Esc>`
-inside the card to fold it. Q cards show the question plus assistant answer
-only. Patch cards show the request, target, touched files, diffs, and
-final summary. Reasoning, tool calls, and full tool output remain in the
-operation's log. When flow-worker operations finish, Strider always leaves a
+inside the card to fold it, or run bare `:StriderQ` to toggle the latest Q card.
+Expanded Q cards show the question plus assistant answer and include a follow-up
+compose section; type there and press `<C-s>` to ask on the same Q worker.
+Patch cards show the request, target, touched files, diffs, and final summary.
+Reasoning, tool calls, and full tool output remain in the operation's log. When flow-worker operations finish, Strider always leaves a
 bottom-left green-dot completion cue; if that worker's log is hidden, it also
 sends a notification. `:StriderStopFlow` aborts active flow-worker turns.
 `:StriderReview` runs on a dedicated review
@@ -198,10 +199,13 @@ cancellation.
 asks on Strider's dedicated Q worker without popping open main chat. Range-based
 Q includes the selected excerpt in the prompt. The focused answer opens in a
 non-focus-stealing `strider://StriderQAnswer` window at the bottom-right. It
-stays compact while waiting and after the answer is ready; select/focus it to
-expand into a near full-height right-side answer panel. It stays expanded when
-you return to code; press `q` or `<Esc>` inside the card to fold it. The full
-transcript, including reasoning and tool calls, lands in `:StriderLogQ`.
+stays compact while waiting and after the answer is ready; select/focus it or
+run bare `:StriderQ` to expand it into a near full-height right-side answer
+panel. It stays expanded when you return to code; press `q` or `<Esc>` inside
+the card, or run `:StriderQ` again, to fold it. Expanded Q cards include a
+follow-up compose section; type there and press `<C-s>` to ask on the same Q
+worker. The full transcript, including reasoning and tool calls, lands in
+`:StriderLogQ`.
 
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It
 requires a visual range or an active review item, embeds the excerpt and range

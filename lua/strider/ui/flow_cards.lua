@@ -1,4 +1,6 @@
 local highlights = require("strider.ui.highlights")
+local q_cards = require("strider.ui.q_cards")
+local q_compose = require("strider.ui.q_card_compose")
 local state = require("strider.state")
 local M = {}
 local ns = vim.api.nvim_create_namespace("strider-flow-cards")
@@ -23,9 +25,7 @@ end
 local function format_elapsed(start_ns)
   if not start_ns then return nil end
   local elapsed_s = (vim.uv.hrtime() - start_ns) / 1e9
-  if elapsed_s < 60 then
-    return string.format("%ds", math.floor(elapsed_s))
-  end
+  if elapsed_s < 60 then return string.format("%ds", math.floor(elapsed_s)) end
   if elapsed_s < 3600 then
     return string.format("%dm%02ds", math.floor(elapsed_s / 60), math.floor(elapsed_s % 60))
   end
@@ -45,11 +45,6 @@ local function configure_scratch_buffer(buf, filetype)
   vim.bo[buf].swapfile = false
   vim.bo[buf].modifiable = true
   if filetype then vim.bo[buf].filetype = filetype end
-end
-local function q_answer_name(lane)
-  lane = normalize_lane(lane)
-  if lane == "q" or lane == "flow" then return "strider://StriderQAnswer" end
-  return "strider://StriderQAnswer-" .. lane
 end
 local function ensure_card_state(session)
   session.flow_cards = session.flow_cards or {}
@@ -86,9 +81,13 @@ local function ensure_card_buffer(card, lane)
   pcall(vim.api.nvim_buf_set_name, buf, name)
   configure_scratch_buffer(buf, "markdown")
   vim.bo[buf].bufhidden = "hide"
+  card.buf = buf
   vim.b[buf].strider_flow_card = card.id
   vim.b[buf].strider_flow_card_kind = card.kind
-  if card.kind == "q" then vim.b[buf].strider_q_answer = true end
+  if card.kind == "q" then
+    vim.b[buf].strider_q_answer = true
+    q_compose.attach(card)
+  end
   local function fold_card()
     local session = state.get_session(lane); if session then session.active_flow_card_id = nil end
     for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -97,19 +96,9 @@ local function ensure_card_buffer(card, lane)
     M.reflow(lane)
   end
   for _, lhs in ipairs({ "q", "<Esc>" }) do vim.keymap.set("n", lhs, fold_card, { buffer = buf, nowait = true, silent = true, desc = "Fold Strider flow card" }) end
-  card.buf = buf
   return buf
 end
-local function sync_legacy_q(session, card)
-  if not session or not card or card.kind ~= "q" then return end
-  session.q_answer_card_id = card.id
-  session.q_answer_buf = card.buf
-  session.q_answer_win = card.win
-  session.q_answer_prompt = card.prompt or ""
-  session.q_answer_text = card.answer_text or ""
-  session.q_answer_done = card.status ~= "running"
-  session.q_answer_status = card.status == "running" and nil or (card.status == "cancelled" and "error" or card.status)
-end
+local sync_legacy_q = q_cards.sync_legacy
 local function card_window(card)
   if not card then return nil end
   if card.win and vim.api.nvim_win_is_valid(card.win) then
@@ -125,6 +114,13 @@ local function card_window(card)
   end
   card.win = nil
   return nil
+end
+local function focus_regular_window(exclude_buf)
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    local regular = vim.api.nvim_win_get_config(win).relative == ""
+    if regular and vim.api.nvim_win_get_buf(win) ~= exclude_buf then pcall(vim.api.nvim_set_current_win, win); return true end
+  end
+  return false
 end
 local function current_card_id(session)
   local current = vim.api.nvim_get_current_win()
@@ -187,53 +183,6 @@ local function preview_text(text)
   end
   return preview
 end
-local function q_compact_status(card)
-  local body = card.answer_text or ""
-  local has_body = vim.trim(body) ~= ""
-  local done = card.status ~= "running"
-  if has_body and done and card.status ~= "success" then
-    return "Stopped — focus to expand"
-  end
-  if has_body and done then
-    return "Answer ready — focus to expand"
-  end
-  if has_body then
-    return "Answer streaming — focus to expand"
-  end
-  if done then
-    return card.status ~= "success" and "Strider Q stopped before an answer." or "Strider Q completed with no answer."
-  end
-  return "Waiting for Strider…"
-end
-local function q_card_lines(card, expanded)
-  if not expanded then
-    return {
-      "› " .. preview_text(card.prompt),
-      "────────────────────────────────",
-      q_compact_status(card),
-    }, 1, 1, 2
-  end
-  local question = vim.trim(card.prompt or "")
-  local question_lines = vim.split(question ~= "" and question or "(no question)", "\n", { plain = true })
-  local lines = {}
-  for index, line in ipairs(question_lines) do
-    table.insert(lines, (index == 1 and "› " or "  ") .. line)
-  end
-  local separator_row = #lines
-  table.insert(lines, "────────────────────────────────")
-  local body = card.answer_text or ""
-  local has_body = vim.trim(body) ~= ""
-  if has_body then table.insert(lines, "") end
-  local body_row = #lines
-  if has_body then
-    vim.list_extend(lines, vim.split(body, "\n", { plain = true }))
-  elseif card.status ~= "running" then
-    table.insert(lines, card.status ~= "success" and "Strider Q stopped before an answer." or "Strider Q completed with no answer.")
-  else
-    table.insert(lines, "Waiting for Strider…")
-  end
-  return lines, #question_lines, separator_row, body_row
-end
 local function generic_card_lines(card, expanded)
   local lines = {}
   table.insert(lines, "› " .. preview_text(card.prompt))
@@ -248,15 +197,19 @@ end
 local function render_card(session, card)
   local buf = ensure_card_buffer(card, session.lane)
   local expanded = card_is_expanded(session, card)
-  local lines, question_count, separator_row, body_row
+  if card.kind == "q" then q_compose.capture(card) end
+  local lines, question_count, separator_row, body_row, compose_header_row, compose_start_row
   if card.kind == "q" then
-    lines, question_count, separator_row, body_row = q_card_lines(card, expanded)
+    lines, question_count, separator_row, body_row, compose_header_row, compose_start_row = q_cards.lines(card, expanded)
   else
     lines, question_count, separator_row, body_row = generic_card_lines(card, expanded)
   end
+  card.compose_start_row = compose_start_row
 
+  card._q_compose_rendering = true
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  card._q_compose_rendering = false
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   for row = 0, question_count - 1 do
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
@@ -270,6 +223,14 @@ local function render_card(session, card)
     hl_group = log_rule_hl,
     priority = 10,
   })
+  if compose_header_row then
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, compose_header_row, 0, {
+      end_row = compose_header_row + 1,
+      hl_group = log_rule_hl,
+      priority = 10,
+    })
+    q_compose.hint(card, ns)
+  end
   if card.status == "running" and vim.trim(card.answer_text or "") == "" then
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, body_row, 0, {
       end_row = body_row + 1,
@@ -277,7 +238,8 @@ local function render_card(session, card)
       priority = 10,
     })
   end
-  vim.bo[buf].modifiable = false
+  vim.bo[buf].modifiable = card.kind == "q" and expanded
+  pcall(function() vim.bo[buf].modified = false end)
 end
 local function card_winbar(card, lane)
   local session = state.get_session(lane)
@@ -292,7 +254,8 @@ local function card_winbar(card, lane)
     local text = card.title or "Strider flow"
     if card.kind == "q" then text = card.status == "success" and "StriderQ answer ready" or "StriderQ stopped" end
     if card.kind == "patch" then text = card.status == "success" and "StriderPatch complete" or "StriderPatch stopped" end
-    return escape_status_text(text) .. (expanded and "%=" .. escape_status_text("q/Esc fold") or "")
+    local hint = card.kind == "q" and "i follow-up · <C-s> send · q/Esc fold" or "q/Esc fold"
+    return escape_status_text(text) .. (expanded and "%=" .. escape_status_text(hint) or "")
   end
   return escape_status_text(card.title or "Strider flow")
 end
@@ -308,6 +271,13 @@ local function open_card_window(session, card)
   card.win = win
   sync_legacy_q(session, card)
   return win
+end
+local function latest_card(session, kind)
+  for i = #ensure_card_state(session), 1, -1 do
+    local card = session.flow_cards[i]
+    if not card.dismissed and (not kind or card.kind == kind) then return card end
+  end
+  return nil
 end
 local function sorted_cards(session)
   local cards = vim.tbl_filter(function(card)
@@ -334,7 +304,9 @@ function M.reflow(lane)
     if win and vim.api.nvim_win_is_valid(win) then
       render_card(session, card)
       pcall(vim.api.nvim_win_set_config, win, card_config(session, card, stack_index))
-      pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
+      if not (card.kind == "q" and card_is_expanded(session, card)) then
+        pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
+      end
       pcall(function() vim.wo[win].winbar = card_winbar(card, lane) end)
       sync_legacy_q(session, card)
       if not card_is_expanded(session, card) then
@@ -386,6 +358,30 @@ function M.open_card(id, lane)
   local win = open_card_window(session, card)
   M.reflow(lane)
   return win
+end
+function M.toggle_q_answer(lane)
+  ensure_autocmds()
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  if not session then return false, "No Strider Q card yet" end
+  local card = latest_card(session, "q") or card_by_id(session, session.q_answer_card_id)
+  if not card then return false, "No Strider Q card yet" end
+  local win = card_window(card)
+  if card_is_expanded(session, card) and win then
+    session.active_flow_card_id = nil
+    focus_regular_window(card.buf)
+    M.reflow(lane)
+    return true
+  end
+  session.active_flow_card_id = card.id
+  render_card(session, card)
+  win = open_card_window(session, card)
+  M.reflow(lane)
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_set_current_win(win)
+    q_compose.focus(card)
+  end
+  return true
 end
 function M.create_card(kind, opts, lane)
   ensure_autocmds()
@@ -439,11 +435,12 @@ local function ensure_q_card(prompt, lane)
   if card then
     card.prompt = prompt or ""
     card.answer_text = ""
+    card.compose_text = ""
     card.status = "running"
     card.finished_at = nil
     card.started_at = vim.uv.hrtime()
     card.title = "Strider Q"
-    card.buffer_name = q_answer_name(lane)
+    card.buffer_name = q_cards.answer_name(lane)
     sync_legacy_q(session, card)
     return card
   end
@@ -451,7 +448,7 @@ local function ensure_q_card(prompt, lane)
     title = "Strider Q",
     prompt = prompt or "",
     operation = "q",
-    buffer_name = q_answer_name(lane),
+    buffer_name = q_cards.answer_name(lane),
   }, lane)
   return card_by_id(session, id)
 end

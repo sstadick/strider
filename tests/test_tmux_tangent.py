@@ -114,6 +114,57 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertIn("Checking the relevant files first", q_log)
                 self.assertIn("Finished a broader work pass", q_log)
 
+    def test_q_card_toggle_and_followup_compose(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderQ what does this flag do")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://StriderQAnswer")),
+                    timeout=5.0,
+                )
+
+                h.ex("StriderQ")
+                h.wait_until(lambda: h.expr("bufname('%')") == "strider://StriderQAnswer", timeout=3.0)
+                expanded = "\n".join(h.buffer_lines("strider://StriderQAnswer"))
+                self.assertIn("Follow up", expanded)
+
+                h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui'); "
+                    "  local session = state.get_session('q'); "
+                    "  local card = require('strider.ui.flow_cards').get_card(session.q_answer_card_id, 'q'); "
+                    "  ui.refresh_q_answer_layouts(); "
+                    "  local buf = card.buf; "
+                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  vim.api.nvim_set_current_win(win); "
+                    "  vim.bo[buf].modifiable = true; "
+                    "  vim.api.nvim_buf_set_lines(buf, card.compose_start_row, card.compose_start_row + 1, false, {'what about follow ups?'}); "
+                    "  return true "
+                    "end)()"
+                )
+                h.send("C-s", pause=0.3)
+                h.wait_until(
+                    lambda: "what about follow ups?" in "\n".join(h.q_log_lines()),
+                    timeout=5.0,
+                )
+                h.wait_until(
+                    lambda: h.lua_bool("require('strider.state').peek_pending_request('q') == nil"),
+                    timeout=5.0,
+                )
+
+                h.ex("StriderQ")
+                folded_height = int(h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  local win = vim.fn.win_findbuf(buf)[1]; "
+                    "  require('strider.ui').refresh_q_answer_layouts(); "
+                    "  return tostring(vim.api.nvim_win_get_height(win)); "
+                    "end)()"
+                ))
+                self.assertLessEqual(folded_height, 3)
+
     def test_q_answer_winbar_uses_flow_stop_command(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

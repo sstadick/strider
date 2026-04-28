@@ -1705,6 +1705,10 @@ function M.finish_q_answer(text, status, lane)
   return flow_cards.finish_q_answer(text, status, lane)
 end
 
+function M.toggle_q_answer(lane)
+  return flow_cards.toggle_q_answer(lane)
+end
+
 function M.open_patch_card(prompt, opts, lane)
   return patch_cards.open(prompt, opts, lane)
 end

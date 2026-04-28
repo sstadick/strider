@@ -144,11 +144,14 @@ ask quick questions without interrupting a running chat or patch turn.
    Q worker (with an excerpt block when a range was given)
 4. the question runs in the background: the focused answer opens in a
    non-focus-stealing bottom-right `strider://StriderQAnswer` window; it stays
-   compact until the user focuses/selects it, then expands to near full height
-   and remains expanded until `q` or `<Esc>` is pressed in the card
-5. the full transcript lands in `:StriderLogQ`, including reasoning, tool calls,
+   compact until the user focuses/selects it or runs bare `:StriderQ`, then
+   expands to near full height and remains expanded until `q`, `<Esc>`, or
+   bare `:StriderQ` folds it
+5. expanded Q cards include a follow-up compose section; `<C-s>` sends that
+   draft as another `/prompt` on the same Q worker/session
+6. the full transcript lands in `:StriderLogQ`, including reasoning, tool calls,
    and tool output; chat is not auto-opened
-6. no tree anchoring needed — the Q worker has its own independent session
+7. no tree anchoring needed — the Q worker has its own independent session
 
 ### Chat
 
@@ -366,7 +369,9 @@ Working today:
 - plain-prompt agent turns with clarify available
 - side questions, search, and patches on separate flow-worker processes; Q and
   patch results open in compact flow cards while full transcripts land in their
-  worker logs (`:StriderLogQ`, `:StriderLogPatch`, `:StriderLogFlow`)
+  worker logs (`:StriderLogQ`, `:StriderLogPatch`, `:StriderLogFlow`); expanded
+  Q cards include a follow-up compose section, and bare `:StriderQ` toggles the
+  latest card when one exists
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
 - `:StriderStatus` for a compact lane/status/control summary

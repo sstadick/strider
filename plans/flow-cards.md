@@ -3,7 +3,7 @@
 ## Proposal
 
 - Date proposed: 2026-04-27
-- Implementation status: phase 1 implemented (Q answer surface extracted to flow-card manager); patch cards implemented in-process for `:StriderPatch`
+- Implementation status: Q answer cards, Q-card follow-up compose, bare `:StriderQ` card toggle, and patch cards are implemented in-process
 
 ## Goal
 
@@ -22,7 +22,10 @@ The working model:
 - Cards stay folded until the user focuses/selects one.
 - Focusing a card expands it into a near full-height right-side panel.
 - Expanded cards remain open when focus returns to code.
-- Pressing `q` or `<Esc>` in a card folds it back down.
+- Pressing `q` or `<Esc>` in a card folds it back down; bare `:StriderQ` toggles
+  the latest Q card up/down when a card exists.
+- Expanded Q cards include a small follow-up compose section; `<C-s>` submits
+  that draft on the Q worker.
 
 ## Target UX
 
@@ -93,6 +96,8 @@ Expanded body:
 - assistant answer text only
 - no thinking/reasoning
 - no tool calls or tool output
+- follow-up compose section at the bottom; `<C-s>` sends the draft as another Q
+  prompt on the same worker
 
 `:StriderLogQ` still contains the full Q transcript.
 
@@ -242,7 +247,12 @@ Status: implemented in-process for `:StriderPatch`.
 
 ### Phase 4 — Navigation and history controls
 
-Add commands only once multiple cards exist:
+Implemented:
+
+- bare `:StriderQ` — toggles/focuses the latest Q card, or folds it when already
+  expanded; if no card exists it opens the original Q prompt.
+
+Still deferred until multiple visible cards/history need it:
 
 - `:StriderFlowCards` — focus the newest visible flow card or open a picker of
   cards if none is visible.
@@ -262,10 +272,11 @@ Add tmux tests around the card manager:
    - Assert two card buffers/windows exist.
    - Assert both are folded and newest is lower/rightmost in the stack.
 2. Q focus expands and stays pinned.
-   - Focus a folded Q card.
+   - Focus a folded Q card or run bare `:StriderQ` after a card exists.
    - Assert height is near full editor height.
    - Move focus away and assert it remains expanded.
-   - Press `q` or `<Esc>` in the card and assert it folds back.
+   - Press `q` / `<Esc>` or run bare `:StriderQ` again and assert it folds back.
+   - Type a Q-card follow-up and assert `<C-s>` sends it on the Q worker.
 3. Q answer remains answer-only.
    - Assert folded card only previews readiness.
    - Assert expanded card contains assistant answer.

@@ -44,11 +44,12 @@ Patch a small selected range:
 :'<,'>StriderPatch change the greeting literal from hi to hello
 ```
 
-Ask a side question on the dedicated Q worker:
+Ask a side question on the dedicated Q worker, then run bare `:StriderQ` again to reopen the answer card for follow-ups:
 
 ```vim
 :StriderQ what does this flag actually do?
 :'<,'>StriderQ why is this loop written this way?
+:StriderQ
 ```
 
 Browse or resume pi sessions:
@@ -81,8 +82,8 @@ prefills compose so you can edit before sending.
 - Scoped guardrails: review/search/plan are read-only; patch prompts are
   selection-scoped and intended for small local edits.
 - Native Neovim UI: logs, compose buffers, floating editors, flow cards for
-  Q/patch results, quickfix/pickers, inline review annotations, comments, and
-  touched-file navigation.
+  Q/patch results, Q-card follow-up compose, quickfix/pickers, inline review
+  annotations, comments, and touched-file navigation.
 - Useful transcript rendering: edit tools show inline diff rows; read/write
   output keeps syntax-highlighted code fences; command/search output uses
   compact rows that do not accidentally render as markdown.
@@ -136,7 +137,7 @@ panes:
 | `:StriderChat [prompt]` | Main chat log + compose |
 | `:StriderReview [prompt]` | Planned review walkthrough or current-stop question |
 | `:StriderSearch {prompt}` | Structured code search |
-| `:StriderQ [prompt]` | One-shot side question on the Q worker |
+| `:StriderQ [prompt]` | One-shot side question; bare command toggles an existing Q card |
 | `:'<,'>StriderPatch [prompt]` | Selection-scoped patch |
 | `:StriderNext` / `:StriderPrev` | Move through review stops |
 | `:StriderComment [text]` | Record a review comment |

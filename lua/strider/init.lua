@@ -841,7 +841,7 @@ local function dispatch_q(prompt, range)
   else
     message = prompt
   end
-  send("/prompt " .. message, prompt, {
+  return send("/prompt " .. message, prompt, {
     lane = Q_LANE,
     operation = "q",
   })
@@ -858,9 +858,23 @@ local function submit_q_request(prompt, range)
   dispatch_q(prompt, range)
 end
 
+function M.q_followup(prompt)
+  prompt = trimmed(prompt)
+  if prompt == "" then return false end
+  if not ensure_backend(Q_LANE) then return false end
+  return dispatch_q(prompt, nil)
+end
+
+local function toggle_existing_q_card()
+  local session = state.get_session(Q_LANE)
+  if not session or not session.q_answer_card_id then return false end
+  return ui.toggle_q_answer(Q_LANE)
+end
+
 function M.q(prompt, opts)
   prompt = trimmed(prompt)
   local range = range_from_opts(opts)
+  if prompt == "" and not range and toggle_existing_q_card() then return end
   local hint_lines = {
     "Ask a side question without opening chat.",
     "Answers land in StriderLogQ.",

@@ -712,6 +712,12 @@ function M.cards()
   end)
 end
 
+function M.cards_clear(opts)
+  local count = ui.clear_flow_cards({ all = opts and opts.bang }) or 0
+  ui.notify(string.format("Dismissed %d Strider card%s", count, count == 1 and "" or "s"), vim.log.levels.INFO)
+  return count
+end
+
 function M.search(prompt)
   prompt = trimmed(prompt)
   if prompt == "" then

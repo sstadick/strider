@@ -236,11 +236,7 @@ Implemented:
 4. Text deltas and final text route through the pending request's `card_id`.
 5. Bare `:StriderQ` toggles the latest card; `:StriderQ!` opens a new prompt.
 6. `:StriderCards` opens a telescope/fzf/`vim.ui.select` picker for named cards.
-
-Still deferred:
-
-- explicit card dismissal/clear commands
-- optional `o` mapping to open the worker log
+7. Card-local `d` dismisses a card and `o` opens its worker log.
 
 ### Phase 3 — Patch cards
 
@@ -260,15 +256,14 @@ Implemented:
 
 - bare `:StriderQ` — toggles/focuses the latest Q card, or folds it when already
   expanded; if no card exists it opens the original Q prompt.
-
-Still deferred:
-
-- `:StriderFlowCardsClear` — dismiss completed cards.
-- Optional mappings inside card buffers:
-  - `q` / `<Esc>`: fold or close focused card
+- `:StriderCards` — picker for named card surfaces.
+- `:StriderCardsClear[!]` — dismiss completed cards; bang includes running
+  cards.
+- Card-buffer mappings:
+  - `q` / `<Esc>`: fold focused card
   - `d`: dismiss card
   - `o`: open the card's worker log
-  - `]c` / `[c`: focus next/previous card
+  - `]c` / `[c`: focus next/previous card in the lane
 
 ## Tests
 

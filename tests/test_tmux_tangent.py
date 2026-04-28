@@ -477,6 +477,90 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertIn("StriderQ #1: why is this named? · running", labels)
                 self.assertIn("StriderPatch #1: change the greeting · running", labels)
 
+    def test_card_keymaps_open_log_and_dismiss(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderQ why is this card dismissible")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://StriderQAnswer")),
+                    timeout=5.0,
+                )
+
+                h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  vim.api.nvim_set_current_win(vim.fn.win_findbuf(buf)[1]); "
+                    "  return true "
+                    "end)()"
+                )
+                h.send("o", pause=0.3)
+                h.wait_until(
+                    lambda: "strider://StriderLogQ" in h.json_expr("map(getwininfo(), {_, v -> bufname(v.bufnr)})"),
+                    timeout=3.0,
+                )
+
+                h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  vim.api.nvim_set_current_win(vim.fn.win_findbuf(buf)[1]); "
+                    "  return true "
+                    "end)()"
+                )
+                h.send("d", pause=0.3)
+                self.assertNotIn("strider://StriderQAnswer", h.json_expr("map(getwininfo(), {_, v -> bufname(v.bufnr)})"))
+                labels = h.lua(
+                    "(function() "
+                    "  local labels = vim.tbl_map(function(item) return item.label end, require('strider.ui.card_picker').items({ kind = 'q' })); "
+                    "  return table.concat(labels, '\\n') "
+                    "end)()"
+                )
+                self.assertEqual("", labels)
+
+    def test_strider_cards_clear_dismisses_completed_cards(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderQ clear me later")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://StriderQAnswer")),
+                    timeout=5.0,
+                )
+                h.ex("StriderCardsClear")
+                h.wait_until(
+                    lambda: h.lua("(function() return tostring(#require('strider.ui.card_picker').items({ kind = 'q' })) end)()") == "0",
+                    timeout=3.0,
+                )
+                self.assertNotIn("strider://StriderQAnswer", h.json_expr("map(getwininfo(), {_, v -> bufname(v.bufnr)})"))
+
+    def test_q_card_bracket_navigation_focuses_adjacent_card(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); local ui = require('strider.ui'); "
+                    "  state.ensure_session('q', vim.fn.getcwd()); "
+                    "  ui.open_q_answer('first nav card', 'q', { new = true }); "
+                    "  ui.finish_q_answer('one', 'success', 'q'); "
+                    "  ui.open_q_answer('second nav card', 'q', { new = true }); "
+                    "  ui.finish_q_answer('two', 'success', 'q'); "
+                    "  require('strider.ui').toggle_q_answer('q'); "
+                    "  return true "
+                    "end)()"
+                )
+                h.wait_until(lambda: h.expr("bufname('%')") == "strider://flow-card/q-compose/2", timeout=3.0)
+                h.lua(
+                    "(function() "
+                    "  vim.cmd('stopinsert'); "
+                    "  local buf = vim.fn.bufnr('strider://flow-card/q/2'); "
+                    "  vim.api.nvim_set_current_win(vim.fn.win_findbuf(buf)[1]); "
+                    "  return true "
+                    "end)()"
+                )
+                h.send("[", "c", pause=0.3)
+                h.wait_until(lambda: h.expr("bufname('%')") == "strider://StriderQAnswer", timeout=3.0)
+                self.assertIn("first nav card", "\n".join(h.buffer_lines("strider://StriderQAnswer")))
+
     def test_q_lane_rejects_new_q_while_busy(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

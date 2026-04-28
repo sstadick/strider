@@ -26,6 +26,7 @@ README.
 | `:StriderQ! [prompt]` | Open a new StriderQ popup instead of toggling the latest card |
 | `:'<,'>StriderQ [prompt]` | Open the StriderQ popup with a selection-scoped Q-worker question |
 | `:StriderCards` | Pick an existing named Chat/Q/Patch card with telescope/fzf fallback |
+| `:StriderCardsClear[!]` | Dismiss completed cards; `!` also dismisses running cards |
 | `:StriderChat` | Toggle the chat log + compose floats; collapsed state leaves a compact card |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:StriderStop` | Abort the current main-lane turn |
@@ -52,9 +53,11 @@ completion; select/focus one to expand it into a near full-height right-side
 panel. Every card has a stable name such as `StriderQ #2: why is this flag?`,
 and `:StriderCards` opens a picker for existing Chat/Q/Patch cards. Expanded
 cards stay open when you return to code; press `q` or `<Esc>` inside the card to
-fold it, or run bare `:StriderQ` to toggle the latest Q card. Expanded Q cards
-show the question plus assistant answer above a separate follow-up compose float;
-type there and press `<C-s>` to ask on the same Q worker/card. Patch cards show
+fold it, `d` to dismiss it, `o` to open its worker log, or `[c`/`]c` to move
+between cards in that lane. Bare `:StriderQ` toggles the latest Q card. Expanded
+Q cards show the question plus assistant answer above a separate follow-up
+compose float; type there and press `<C-s>` to ask on the same Q worker/card.
+Patch cards show
 the request, target, touched files, diffs, and final
 summary. Reasoning, tool calls, and full tool output remain in the operation's
 log. When flow-worker operations finish, Strider always leaves a
@@ -212,8 +215,10 @@ after the answer is ready; select/focus one, pick it via `:StriderCards`, or run
 bare `:StriderQ` to expand the latest card into a near full-height right-side
 answer panel. `:StriderQ!` opens a fresh prompt even when a Q card already
 exists. Expanded Q cards place a separate follow-up compose float beneath the
-answer; type there and press `<C-s>` to ask on the same Q worker/card. The full
-transcript, including reasoning and tool calls, lands in `:StriderLogQ`.
+answer; type there and press `<C-s>` to ask on the same Q worker/card. Use `d`
+inside a card, or `:StriderCardsClear`, to dismiss completed cards when the
+stack gets noisy. The full transcript, including reasoning and tool calls, lands
+in `:StriderLogQ`.
 
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It
 requires a visual range or an active review item, embeds the excerpt and range

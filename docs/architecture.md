@@ -150,9 +150,12 @@ ask quick questions without interrupting a running chat or patch turn.
    `strider://flow-card/q/N`
 6. cards stay compact until selected, picked through `:StriderCards`, or toggled
    by bare `:StriderQ`; the bare command always targets the latest Q card
-7. expanded Q cards open a separate follow-up compose float beneath the answer;
+7. focused cards support `q`/`<Esc>` fold, `d` dismiss, `o` open worker log,
+   and `[c`/`]c` lane-local card navigation; `:StriderCardsClear` dismisses
+   completed cards in bulk
+8. expanded Q cards open a separate follow-up compose float beneath the answer;
    `<C-s>` sends that draft as another `/prompt` on the same Q worker/card
-8. the full transcript lands in `:StriderLogQ`, including reasoning, tool calls,
+9. the full transcript lands in `:StriderLogQ`, including reasoning, tool calls,
    and tool output; chat is not auto-opened
 7. no tree anchoring needed — the Q worker has its own independent session
 
@@ -215,6 +218,7 @@ Purpose:
   log/compose stack and a compact card placeholder when collapsed
 - compact Chat/Q/Patch cards reserve shared right-edge stack slots
 - `:StriderCards` picks named card surfaces through telescope/fzf/`vim.ui.select`
+- `:StriderCardsClear` and card-local `d` dismiss completed card surfaces
 - tail new output only while the log window is already at the bottom;
   scrolling up pauses follow-mode until the user jumps back to the tail
 - keep the latest user prompt available as a small pinned preview when
@@ -379,8 +383,9 @@ Working today:
   patch results open in compact flow cards while full transcripts land in their
   worker logs (`:StriderLogQ`, `:StriderLogPatch`, `:StriderLogFlow`); each Q
   submission creates a named card, expanded Q cards open a separate follow-up
-  compose float, bare `:StriderQ` toggles the latest card, and `:StriderCards`
-  opens a picker for named card surfaces
+  compose float, bare `:StriderQ` toggles the latest card, `:StriderCards`
+  opens a picker for named card surfaces, and `:StriderCardsClear`/`d` dismiss
+  cards when the stack gets noisy
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
 - `:StriderStatus` for a compact lane/status/control summary

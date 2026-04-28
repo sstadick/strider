@@ -1747,6 +1747,10 @@ function M.focus_flow_card(id, lane)
   return flow_cards.focus_card(id, lane)
 end
 
+function M.clear_flow_cards(opts)
+  return flow_cards.clear_completed(opts)
+end
+
 function M.open_patch_card(prompt, opts, lane)
   return patch_cards.open(prompt, opts, lane)
 end

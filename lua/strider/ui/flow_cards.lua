@@ -81,7 +81,12 @@ local function ensure_card_buffer(card, lane)
     end
     M.refresh_layouts()
   end
-  for _, lhs in ipairs({ "q", "<Esc>" }) do vim.keymap.set("n", lhs, fold_card, { buffer = buf, nowait = true, silent = true, desc = "Fold Strider flow card" }) end
+  local function map(lhs, rhs, desc) vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true, desc = desc }) end
+  for _, lhs in ipairs({ "q", "<Esc>" }) do map(lhs, fold_card, "Fold Strider flow card") end
+  map("d", function() M.dismiss_card(card.id, lane) end, "Dismiss Strider flow card")
+  map("o", function() M.open_card_log(card.id, lane) end, "Open Strider flow card log")
+  map("]c", function() M.focus_relative(card.id, lane, 1) end, "Next Strider flow card")
+  map("[c", function() M.focus_relative(card.id, lane, -1) end, "Previous Strider flow card")
   return buf
 end
 local sync_legacy_q = q_cards.sync_legacy
@@ -277,6 +282,20 @@ local function latest_card(session, kind)
   end
   return best
 end
+local function close_card_surfaces(card)
+  if card.kind == "q" then q_compose.close(card) end
+  local win = card_window(card); if win then pcall(vim.api.nvim_win_close, win, true) end
+  card.win = nil
+end
+local function clear_legacy_q(session)
+  session.q_answer_card_id = nil; session.q_answer_buf = nil; session.q_answer_win = nil
+  session.q_answer_prompt = nil; session.q_answer_text = nil; session.q_answer_done = false; session.q_answer_status = nil
+end
+local function sync_latest_q(session)
+  local card = latest_card(session, "q")
+  if not card then clear_legacy_q(session); return end
+  session.q_answer_card_id = card.id; sync_legacy_q(session, card)
+end
 local function sorted_cards(session)
   local cards = vim.tbl_filter(function(card)
     return not card.dismissed
@@ -285,6 +304,15 @@ local function sorted_cards(session)
     return (a.started_at or 0) < (b.started_at or 0)
   end)
   return cards
+end
+function M.focus_relative(id, lane, delta)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane); if not session then return false end
+  local cards = sorted_cards(session); if #cards == 0 then return false end
+  local index = 1
+  for i, card in ipairs(cards) do if card.id == id then index = i; break end end
+  local target = cards[((index - 1 + delta) % #cards) + 1]
+  return target and M.focus_card(target.id, lane) or false
 end
 function M.reflow(lane)
   lane = normalize_lane(lane)
@@ -395,6 +423,30 @@ function M.focus_card(id, lane)
   if win and vim.api.nvim_win_is_valid(win) then vim.api.nvim_set_current_win(win) end
   if card.kind == "q" then q_compose.focus(card, { insert = true }) end
   return true
+end
+function M.dismiss_card(id, lane)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane); local card = card_by_id(session, id)
+  if not card then return false end
+  card.dismissed = true; if session.active_flow_card_id == id then session.active_flow_card_id = nil end
+  close_card_surfaces(card); focus_regular_window(card.buf)
+  if card.kind == "q" then sync_latest_q(session) end
+  M.refresh_layouts(); return true
+end
+function M.open_card_log(id, lane)
+  local cmd = ({ flow = "StriderLogFlow", patch = "StriderLogPatch", q = "StriderLogQ" })[normalize_lane(lane)]
+  if cmd then pcall(vim.cmd, cmd); return true end
+  return false
+end
+function M.clear_completed(opts)
+  opts = opts or {}; local count = 0
+  for _, lane in ipairs(state.lanes()) do
+    local session = state.get_session(lane)
+    for _, card in ipairs(session and ensure_card_state(session) or {}) do
+      if not card.dismissed and (opts.all or card.status ~= "running") then if M.dismiss_card(card.id, lane) then count = count + 1 end end
+    end
+  end
+  return count
 end
 function M.create_card(kind, opts, lane)
   ensure_autocmds()

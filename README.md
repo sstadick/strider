@@ -141,6 +141,7 @@ panes:
 | `:StriderSearch {prompt}` | Structured code search |
 | `:StriderQ[!] [prompt]` | Named side-question card; bare toggles latest, `!` opens a new Q prompt |
 | `:StriderCards` | Pick an existing Chat/Q/Patch card with telescope/fzf |
+| `:StriderCardsClear[!]` | Dismiss completed cards; `!` includes running cards |
 | `:'<,'>StriderPatch [prompt]` | Selection-scoped patch |
 | `:StriderNext` / `:StriderPrev` | Move through review stops |
 | `:StriderComment [text]` | Record a review comment |

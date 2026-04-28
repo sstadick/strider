@@ -26,6 +26,8 @@ The working model:
   the latest Q card up/down when a card exists.
 - Expanded Q cards open a separate follow-up compose float under the answer;
   `<C-s>` submits that draft on the Q worker.
+- The compact main Chat placeholder shares the same right-edge stack slots as
+  Q/Patch cards so compact surfaces do not overlap.
 
 ## Target UX
 

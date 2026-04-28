@@ -353,6 +353,32 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertIn("Applied the requested local patch.", patch_log)
                 self.assertIn("Hello from patched fixture app", patch_log)
 
+    def test_chat_q_and_patch_cards_stack_without_overlap(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                rows = h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui'); "
+                    "  state.ensure_session('main', vim.fn.getcwd()); "
+                    "  state.ensure_session('q', vim.fn.getcwd()); "
+                    "  state.ensure_session('patch', vim.fn.getcwd()); "
+                    "  ui.show_chat_card(); "
+                    "  ui.open_patch_card('change the greeting', { target = { path = vim.fn.getcwd() .. '/src/App.tsx', startLine = 1, endLine = 3 } }, 'patch'); "
+                    "  ui.open_q_answer('where does this render?', 'q'); "
+                    "  require('strider.ui.flow_cards').refresh_layouts(); "
+                    "  local function row(name) "
+                    "    local win = vim.fn.win_findbuf(vim.fn.bufnr(name))[1]; "
+                    "    local cfg = vim.api.nvim_win_get_config(win); "
+                    "    return type(cfg.row) == 'table' and (cfg.row[false] or cfg.row[1]) or cfg.row "
+                    "  end; "
+                    "  return string.format('%d,%d,%d', row('strider://StriderChatCard'), row('strider://StriderQAnswer'), row('strider://flow-card/patch/1')); "
+                    "end)()"
+                ).split(",")
+                chat_row, q_row, patch_row = map(int, rows)
+                self.assertGreater(chat_row, q_row)
+                self.assertGreater(q_row, patch_row)
+
     def test_q_and_patch_use_distinct_workers(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

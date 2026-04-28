@@ -298,6 +298,10 @@ local function ensure_stream_log(pending, lane)
   if not pending or pending.log_opened or pending.operation == "plan" or pending.operation == "q" then
     return
   end
+  if ui.should_auto_open_stream_log and not ui.should_auto_open_stream_log(lane) then
+    pending.log_opened = true
+    return
+  end
   pending.log_opened = true
   ui.open_log({ preserve_focus = true }, lane)
 end

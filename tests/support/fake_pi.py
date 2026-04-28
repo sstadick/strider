@@ -528,6 +528,8 @@ def handle_prompt(payload: dict) -> None:
     elif message.startswith(("/sessions", "/resume", "/switch_session")):
         emit_session_start("resume")
     elif message.startswith("/prompt "):
+        if "__strider_stream_delay__" in message:
+            time.sleep(0.8)
         emit_streaming_thinking(prompt_thinking(message))
         emit(assistant_message(prompt_response(message)))
     else:

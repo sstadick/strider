@@ -155,7 +155,8 @@ ask quick questions without interrupting a running chat or patch turn.
 
 ### Chat
 
-1. user runs `:StriderChat` (no args) to toggle the log + compose surfaces
+1. user runs `:StriderChat` (no args) to toggle the floating log + compose stack;
+   collapsing it leaves a compact `Strider chat` card placeholder
 2. `:[range]StriderChat [message]` opens chat and prefills compose with the
    range pointer and/or inline text instead of sending immediately
 3. compose `<C-s>` sends `/prompt <message>` if no request is pending, or
@@ -207,7 +208,9 @@ Buffer name:
 Purpose:
 - keep the full transcript, tool activity, and stderr
 - useful for debugging and history
-- toggled via `:StriderChat` along with compose
+- toggled via `:StriderChat` along with compose; main chat uses a floating
+  log/compose stack and a compact card placeholder when collapsed
+- compact Chat/Q/Patch cards reserve shared right-edge stack slots
 - tail new output only while the log window is already at the bottom;
   scrolling up pauses follow-mode until the user jumps back to the tail
 - keep the latest user prompt available as a small pinned preview when
@@ -361,6 +364,7 @@ Shell parsing remains intentionally lightweight.
 ## Current implementation status
 
 Working today:
+- floating main chat log/compose stack with compact card placeholder
 - structured search with picker + quickfix behavior
 - pre-planned review with in-buffer annotations and sidebar TOC
 - dedicated review pane

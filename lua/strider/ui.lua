@@ -1,3 +1,5 @@
+local chat_card = require("strider.ui.chat_card")
+local chat_float = require("strider.ui.chat_float")
 local clipboard = require("strider.clipboard")
 local flow_cards = require("strider.ui.flow_cards")
 local highlights = require("strider.ui.highlights")
@@ -841,6 +843,28 @@ function M.open_compose(on_send)
   return win
 end
 
+function M.hide_chat_card()
+  chat_card.close()
+end
+
+function M.show_chat_card()
+  return chat_card.open()
+end
+
+function M.open_chat_float(on_send)
+  return chat_float.open(on_send, {
+    close_windows_for_buffer = close_windows_for_buffer,
+    ensure_compose_buffer = M.ensure_compose_buffer,
+    ensure_log_buffer = M.ensure_log_buffer,
+    ensure_log_follow_autocmds = ensure_log_follow_autocmds,
+    log_pin_refresh_for_window = log_pin.refresh_for_window,
+    refresh_compose_winbar = M.refresh_compose_winbar,
+    refresh_log_winbar = M.refresh_log_winbar,
+    scroll_log_windows = scroll_log_windows,
+    set_log_follow = set_log_follow,
+  })
+end
+
 function M.hide_compose()
   local session = state.get_session()
   close_windows_for_buffer(session and session.compose_buf)
@@ -878,10 +902,20 @@ function M.chat_is_visible()
   return false
 end
 
--- Hide both chat surfaces.
-function M.hide_chat()
+-- Hide both chat surfaces. Optionally leave behind a compact chat card.
+function M.hide_chat(opts)
+  opts = opts or {}
+  local session = state.get_session("main")
+  if session then session.chat_collapsed = true end
   M.hide_compose()
   M.hide_log()
+  if opts.show_card then M.show_chat_card() end
+end
+
+function M.should_auto_open_stream_log(lane)
+  lane = normalize_lane(lane)
+  local session = state.get_session(lane)
+  return not (lane == "main" and session and session.chat_collapsed)
 end
 
 -- Trim the oldest lines from a log buffer when it exceeds the configured
@@ -1773,6 +1807,10 @@ function M.start_activity(title, target, operation, lane)
     activity_echo(title)
   end, 10)
   start_spin(session.progress, lane)
+  if normalize_lane(lane) == "main" then
+    session.chat_card_status = nil
+    chat_card.refresh()
+  end
 end
 
 function M.finish_activity(message, status, lane)
@@ -1791,6 +1829,10 @@ function M.finish_activity(message, status, lane)
   M.refresh_log_winbar(lane)
   M.refresh_q_answer_winbar(lane)
   M.refresh_compose_hint()
+  if normalize_lane(lane) == "main" then
+    session.chat_card_status = status == "cancel" and "stopped" or (status == "error" and "failed" or "done")
+    chat_card.refresh()
+  end
 end
 
 local editor_ns = vim.api.nvim_create_namespace("strider-editor-hint")

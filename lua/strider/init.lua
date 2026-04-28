@@ -671,27 +671,25 @@ function M.chat(prompt, opts)
   local range = range_from_opts(opts)
   local prefill = chat_prefill(prompt, range)
 
-  -- No args + no range keeps the old toggle behavior. Any explicit
-  -- prompt or range means "open chat with this draft/context".
-  if prefill == "" then
-    if ui.chat_is_visible() then
-      ui.hide_chat()
-      return
-    end
+  -- No args + no range toggles the chat surface. Collapse leaves a compact
+  -- card so chat can pop back up quickly; explicit prompt/range opens compose.
+  if prefill == "" and ui.chat_is_visible() then
+    ui.hide_chat({ show_card = true })
+    return
   end
 
   if not ensure_backend(MAIN_LANE) then
     return
   end
 
-  ui.open_log({ preserve_focus = true }, MAIN_LANE)
+  ui.hide_chat_card()
   ui.ensure_compose_buffer(function(text)
     return dispatch_compose(text)
   end)
   if prefill ~= "" then
     ui.prefill_compose(prefill)
   end
-  ui.open_compose(function(text)
+  ui.open_chat_float(function(text)
     return dispatch_compose(text)
   end)
 end

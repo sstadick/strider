@@ -24,7 +24,7 @@ README.
 | `:'<,'>StriderPatch [prompt]` | Open the patch popup for a visual selection |
 | `:StriderQ [prompt]` | Open the Q popup; with no args, toggles the latest Q card if one exists |
 | `:'<,'>StriderQ [prompt]` | Open the Q popup with a selection-scoped Q-worker question |
-| `:StriderChat` | Toggle the chat log + compose buffers |
+| `:StriderChat` | Toggle the chat log + compose floats; collapsed state leaves a compact card |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:StriderStop` | Abort the current main-lane turn |
 | `:StriderStopFlow` | Abort active Q/Search/Patch worker turns |
@@ -37,7 +37,10 @@ README.
 `:StriderComment` use floating editors. Submit with `<C-s>`, cancel with
 `<Esc><Esc>`.
 
-`:StriderChat` keeps the persistent main log and compose buffers.
+`:StriderChat` keeps persistent main log and compose buffers, shown as a
+right-side floating log/compose stack. Toggling it closed leaves a compact
+`Strider chat` card; bare `:StriderChat` pops it back open. Compact Chat, Q,
+and Patch cards share the same right-edge stack instead of overlapping.
 `:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on separate flow-worker
 processes, so Q and patch can proceed independently of each other and main chat.
 Search transcript lives in `:StriderLogFlow`, Q in `:StriderLogQ`, and patch in
@@ -59,7 +62,7 @@ manual/diagnostic and does not open on review start or review end.
 
 ## Chat Compose
 
-Type into the `:StriderChat` compose buffer. Leading `/` routes to pi
+Type into the `:StriderChat` compose float. Leading `/` routes to pi
 extensions instead of the model. Beyond Strider's own `/prompt`, `/review`,
 and related commands, compose supports:
 

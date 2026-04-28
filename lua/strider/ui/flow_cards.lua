@@ -1,3 +1,4 @@
+local chat_card = require("strider.ui.chat_card")
 local highlights = require("strider.ui.highlights")
 local q_cards = require("strider.ui.q_cards")
 local q_compose = require("strider.ui.q_card_compose")
@@ -33,10 +34,8 @@ local function stop_command(lane) return state.is_flow_lane(lane) and ":StriderS
 local function stop_hint(lane) return stop_command(lane) .. " to interrupt" end
 local function working_label() highlights.ensure(); return string.format("%%#%s#%s%%*", compose_working_hl, WORKING_LABEL) end
 local function configure_scratch_buffer(buf, filetype)
-  vim.bo[buf].bufhidden = "hide"
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].swapfile = false
-  vim.bo[buf].modifiable = true
+  vim.bo[buf].bufhidden = "hide"; vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].swapfile = false; vim.bo[buf].modifiable = true
   if filetype then vim.bo[buf].filetype = filetype end
 end
 local function ensure_card_state(session)
@@ -50,9 +49,7 @@ end
 local function card_by_id(session, id)
   if not session or not id then return nil end
   for _, card in ipairs(ensure_card_state(session)) do
-    if card.id == id then
-      return card
-    end
+    if card.id == id then return card end
   end
   return nil
 end
@@ -62,9 +59,7 @@ local function card_buffer_name(card, lane)
   return string.format("strider://flow-card/%s/%s", card.kind or "card", seq)
 end
 local function ensure_card_buffer(card, lane)
-  if card.buf and vim.api.nvim_buf_is_valid(card.buf) then
-    return card.buf
-  end
+  if card.buf and vim.api.nvim_buf_is_valid(card.buf) then return card.buf end
   local name = card_buffer_name(card, lane)
   local existing = vim.fn.bufnr(name)
   local buf = existing > 0 and existing or vim.api.nvim_create_buf(false, true)
@@ -83,7 +78,7 @@ local function ensure_card_buffer(card, lane)
     for _, win in ipairs(vim.api.nvim_list_wins()) do
       if vim.api.nvim_win_get_buf(win) ~= buf and vim.api.nvim_win_get_config(win).relative == "" then pcall(vim.api.nvim_set_current_win, win); break end
     end
-    M.reflow(lane)
+    M.refresh_layouts()
   end
   for _, lhs in ipairs({ "q", "<Esc>" }) do vim.keymap.set("n", lhs, fold_card, { buffer = buf, nowait = true, silent = true, desc = "Fold Strider flow card" }) end
   return buf
@@ -91,16 +86,11 @@ end
 local sync_legacy_q = q_cards.sync_legacy
 local function card_window(card)
   if not card then return nil end
-  if card.win and vim.api.nvim_win_is_valid(card.win) then
-    return card.win
-  end
+  if card.win and vim.api.nvim_win_is_valid(card.win) then return card.win end
   local buf = card.buf
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return nil end
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    if vim.api.nvim_win_is_valid(win) then
-      card.win = win
-      return win
-    end
+    if vim.api.nvim_win_is_valid(win) then card.win = win; return win end
   end
   card.win = nil
   return nil
@@ -116,9 +106,7 @@ local function current_card_id(session)
   local current = vim.api.nvim_get_current_win()
   for _, card in ipairs(ensure_card_state(session)) do
     local win = card_window(card)
-    if win and win == current then
-      return card.id
-    end
+    if win and win == current then return card.id end
   end
   return nil
 end
@@ -129,15 +117,31 @@ local function folded_row(ui_height, stack_index)
   local step = FOLDED_HEIGHT + 2 + STACK_GAP
   return math.max(ui_height - FOLDED_HEIGHT - STACK_MARGIN_BOTTOM - step * (stack_index - 1), 0)
 end
-local lane_stack_offsets = { patch = 1 }
+local lane_stack_rank = { flow = 1, q = 2, patch = 3 }
 local function expanded_height(info) return math.max(FOLDED_HEIGHT, info.height - EXPANDED_BOTTOM_MARGIN - 1) end
+local function folded_card_count(session)
+  if not session then return 0 end
+  local count = 0
+  for _, card in ipairs(ensure_card_state(session)) do
+    if not card.dismissed and not card_is_expanded(session, card) then count = count + 1 end
+  end
+  return count
+end
+local function stack_base_offset(lane)
+  local offset = chat_card.is_visible() and 1 or 0
+  local rank = lane_stack_rank[lane] or 1
+  for other, other_rank in pairs(lane_stack_rank) do
+    if other_rank < rank then offset = offset + folded_card_count(state.get_session(other)) end
+  end
+  return offset
+end
 local function card_config(session, card, stack_index)
   local info = ui_size()
   local expanded = card_is_expanded(session, card)
   local width = card_width(info.width)
   local height = expanded and expanded_height(info) or FOLDED_HEIGHT
   if expanded and card.kind == "q" then height = math.max(6, height - Q_COMPOSE_HEIGHT - Q_SPLIT_GAP - 2) end
-  local folded_index = (stack_index or 1) + (lane_stack_offsets[session.lane] or 0)
+  local folded_index = (stack_index or 1) + stack_base_offset(session.lane)
   return {
     relative = "editor",
     anchor = "NW",
@@ -353,7 +357,7 @@ function M.open_card(id, lane)
   if not card then return nil end
   render_card(session, card)
   local win = open_card_window(session, card)
-  M.reflow(lane)
+  M.refresh_layouts()
   return win
 end
 function M.toggle_q_answer(lane)
@@ -367,13 +371,13 @@ function M.toggle_q_answer(lane)
   if card_is_expanded(session, card) and win then
     session.active_flow_card_id = nil
     focus_regular_window(card.buf)
-    M.reflow(lane)
+    M.refresh_layouts()
     return true
   end
   session.active_flow_card_id = card.id
   render_card(session, card)
   win = open_card_window(session, card)
-  M.reflow(lane)
+  M.refresh_layouts()
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_set_current_win(win)
     q_compose.focus(card)
@@ -468,7 +472,7 @@ function M.open_q_answer(prompt, lane)
   if not card then return nil end
   render_card(session, card)
   local win = open_card_window(session, card)
-  M.reflow(lane)
+  M.refresh_layouts()
   return win
 end
 function M.update_q_answer(text, lane)

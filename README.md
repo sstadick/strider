@@ -69,8 +69,9 @@ Work, then review the diff:
 ```
 
 Most popup commands submit with `<C-s>` and cancel with `<Esc><Esc>`.
-`:StriderChat` opens a persistent log plus compose buffer; with arguments it
-prefills compose so you can edit before sending.
+`:StriderChat` opens a right-side floating log plus compose stack; toggling it
+closed leaves a compact chat card. With arguments it prefills compose so you can
+edit before sending.
 
 ## Features
 
@@ -81,9 +82,10 @@ prefills compose so you can edit before sending.
   transcript, in-flight state, and pi worker process.
 - Scoped guardrails: review/search/plan are read-only; patch prompts are
   selection-scoped and intended for small local edits.
-- Native Neovim UI: logs, compose buffers, floating editors, flow cards for
-  Q/patch results, split-style Q-card follow-up compose, quickfix/pickers,
-  inline review annotations, comments, and touched-file navigation.
+- Native Neovim UI: floating chat log/compose with a compact card placeholder,
+  stacked compact Chat/Q/Patch cards, split-style Q-card follow-up compose,
+  quickfix/pickers, inline review annotations, comments, and touched-file
+  navigation.
 - Useful transcript rendering: edit tools show inline diff rows; read/write
   output keeps syntax-highlighted code fences; command/search output uses
   compact rows that do not accidentally render as markdown.
@@ -134,7 +136,7 @@ panes:
 
 | Command | Purpose |
 |---|---|
-| `:StriderChat [prompt]` | Main chat log + compose |
+| `:StriderChat [prompt]` | Main chat log + compose; bare command toggles the compact card |
 | `:StriderReview [prompt]` | Planned review walkthrough or current-stop question |
 | `:StriderSearch {prompt}` | Structured code search |
 | `:StriderQ [prompt]` | One-shot side question; bare command toggles an existing Q card |

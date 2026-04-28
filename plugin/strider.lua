@@ -68,6 +68,10 @@ vim.api.nvim_create_user_command("StriderCards", function()
   require("strider").cards()
 end, { desc = "Pick a Strider card with telescope/fzf" })
 
+vim.api.nvim_create_user_command("StriderQs", function()
+  require("strider").q_cards()
+end, { desc = "Pick a StriderQ card with telescope/fzf" })
+
 vim.api.nvim_create_user_command("StriderCardsClear", function(opts)
   require("strider").cards_clear(opts)
 end, { bang = true, desc = "Dismiss completed Strider cards; ! includes running cards" })

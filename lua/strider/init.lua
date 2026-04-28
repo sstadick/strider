@@ -704,17 +704,25 @@ function M.chat(prompt, opts)
   open_chat_surface(prefill)
 end
 
-function M.cards()
-  local items = card_picker.items()
+local function pick_cards(title, opts)
+  local items = card_picker.items(opts)
   if #items == 0 then
-    ui.notify("No Strider cards yet", vim.log.levels.INFO)
+    ui.notify("No " .. title .. " yet", vim.log.levels.INFO)
     return false
   end
-  return picker.select("Strider Cards", items, function(item)
+  return picker.select(title, items, function(item)
     local value = item and item.value or {}
     if value.type == "chat" then open_chat_surface("") end
     if value.type == "flow" then ui.focus_flow_card(value.id, value.lane) end
   end)
+end
+
+function M.cards()
+  return pick_cards("Strider Cards")
+end
+
+function M.q_cards()
+  return pick_cards("StriderQ Cards", { kind = "q" })
 end
 
 function M.cards_clear(opts)

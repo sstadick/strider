@@ -459,7 +459,7 @@ class TmuxTangentTests(unittest.TestCase):
     def test_card_picker_items_have_card_names(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                labels = h.lua(
+                labels, q_labels = h.lua(
                     "(function() "
                     "  local state = require('strider.state'); "
                     "  local ui = require('strider.ui'); "
@@ -469,13 +469,18 @@ class TmuxTangentTests(unittest.TestCase):
                     "  ui.show_chat_card(); "
                     "  ui.open_q_answer('why is this named?', 'q', { new = true }); "
                     "  ui.open_patch_card('change the greeting', { target = { path = vim.fn.getcwd() .. '/src/App.tsx', startLine = 1, endLine = 3 } }, 'patch'); "
-                    "  local labels = vim.tbl_map(function(item) return item.label end, require('strider.ui.card_picker').items()); "
-                    "  return table.concat(labels, '\\n') "
+                    "  local picker = require('strider.ui.card_picker'); "
+                    "  local labels = vim.tbl_map(function(item) return item.label end, picker.items()); "
+                    "  local q_labels = vim.tbl_map(function(item) return item.label end, picker.items({ kind = 'q' })); "
+                    "  return table.concat(labels, '\\n') .. '\\f' .. table.concat(q_labels, '\\n') "
                     "end)()"
-                ).split("\n")
+                ).split("\f")
+                labels = labels.split("\n")
+                q_labels = q_labels.split("\n")
                 self.assertIn("StriderChat · collapsed", labels)
                 self.assertIn("StriderQ #1: why is this named? · running", labels)
                 self.assertIn("StriderPatch #1: change the greeting · running", labels)
+                self.assertEqual(["StriderQ #1: why is this named? · running"], q_labels)
 
     def test_card_keymaps_open_log_and_dismiss(self) -> None:
         with FixtureProject(self.project_root) as project_root:
@@ -564,25 +569,27 @@ class TmuxTangentTests(unittest.TestCase):
     def test_striderq_bang_starts_another_worker_while_q_is_busy(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                h.lua(
-                    "(function() "
-                    "  local state = require('strider.state'); "
-                    "  state.ensure_session('q', vim.fn.getcwd()); "
-                    "  state.set_pending_request('q', {}, 'q'); "
-                    "  return true "
-                    "end)()"
+                h.ex("StriderQ __strider_stream_delay__ slow first question")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: h.lua_bool("require('strider.state').peek_pending_request('q') ~= nil"),
+                    timeout=3.0,
                 )
+
                 h.ex("StriderQ! second question")
                 h.submit_popup()
 
-                pending = h.lua(
-                    "(function() "
-                    "  local pending = require('strider.state').peek_pending_request('q'); "
-                    "  return pending and pending.operation or '' "
-                    "end)()"
-                )
-                self.assertEqual("q", pending)
                 h.wait_until(lambda: h.lua_bool("require('strider.state').get_session('q-2') ~= nil"), timeout=5.0)
+                job_ids = h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local q1 = state.get_session('q'); local q2 = state.get_session('q-2'); "
+                    "  return tostring(q1 and q1.job_id or '') .. ',' .. tostring(q2 and q2.job_id or '') "
+                    "end)()"
+                ).split(",")
+                self.assertTrue(job_ids[0])
+                self.assertTrue(job_ids[1])
+                self.assertNotEqual(job_ids[0], job_ids[1])
                 self.assertIn("second question", "\n".join(h.buffer_lines("strider://StriderLogQ-2")))
                 self.assertFalse(h.popup_open())
 

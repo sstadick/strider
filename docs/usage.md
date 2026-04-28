@@ -25,6 +25,7 @@ README.
 | `:StriderQ [prompt]` | Open the StriderQ popup; with no args, toggles the latest Q card if one exists |
 | `:StriderQ! [prompt]` | Open a new StriderQ popup instead of toggling the latest card |
 | `:'<,'>StriderQ [prompt]` | Open the StriderQ popup with a selection-scoped Q-worker question |
+| `:StriderQs` | Pick an existing named StriderQ card with telescope/fzf fallback |
 | `:StriderCards` | Pick an existing named Chat/Q/Patch card with telescope/fzf fallback |
 | `:StriderCardsClear[!]` | Dismiss completed cards; `!` also dismisses running cards |
 | `:StriderChat` | Toggle the chat log + compose floats; collapsed state leaves a compact card |
@@ -52,7 +53,7 @@ Each new StriderQ card gets its own Q worker process. Search transcript lives in
 flow cards in the bottom-right. Cards stay compact while running and after
 completion; select/focus one to expand it into a near full-height right-side
 panel. Every card has a stable name such as `StriderQ #2: why is this flag?`,
-and `:StriderCards` opens a picker for existing Chat/Q/Patch cards. Expanded
+and `:StriderQs`/`:StriderCards` open pickers for existing Q cards or all Chat/Q/Patch cards. Expanded
 cards stay open when you return to code; press `q` or `<Esc>` inside the card to
 fold it, `d` to dismiss it, `o` to open its worker log, or `[c`/`]c` to move
 between cards in that lane. Bare `:StriderQ` toggles the latest Q card. Expanded
@@ -219,7 +220,8 @@ exists; submitting it starts another Q worker, so multiple StriderQ cards can ru
 concurrently. Expanded Q cards place a separate follow-up compose float beneath
 the answer; type there and press `<C-s>` to ask on the same Q worker/card. Use `d` inside a card, or
 `:StriderCardsClear`, to dismiss completed cards when the stack gets noisy. The
-full transcript, including reasoning and tool calls, lands in `:StriderLogQ`.
+full transcript, including reasoning and tool calls, lands in that card's worker
+log (`:StriderLogQ` for the first Q, `strider://StriderLogQ-N` for later Qs).
 
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It
 requires a visual range or an active review item, embeds the excerpt and range

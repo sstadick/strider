@@ -83,6 +83,31 @@ running turn via pi's `steer` command. Slash commands are rejected mid-turn.
 flow-lane turn. `:StriderStatus` opens a compact summary of lane state, pending
 controls, review progress, model/context widget lines, and the last error.
 
+## Live Neovim Tool
+
+Strider exposes an always-available `strider_vim` tool to the agent. There is no
+separate `:StriderVim` command: ask in `:StriderChat`, `:StriderQ`, or another
+agent surface, and the model can call the tool when live editor state matters.
+
+The tool takes:
+
+- `intent` — a short human-readable description for the Strider log
+- `lua` — arbitrary Lua executed inside the current Neovim, with access to
+  `vim.api`, `vim.fn`, `vim.cmd`, `vim.lsp`, `vim.diagnostic`, plugin APIs,
+  key feeding, buffers, windows, tabs, and the rest of the live editor process
+
+Strider does not apply an allowlist or confirmation layer. Routine inspection is
+silent except for a compact log line such as:
+
+```text
+• Vim: inspect current LSP clients
+```
+
+The Lua source and full tool result remain in pi's session/tool history. Strider
+does not render inspection code inline by default. If the Lua mutates editor
+state — opens files, moves windows, changes options, feeds keys — you see that
+because your Neovim session changes.
+
 ## Session Storage
 
 Strider uses pi's existing JSONL session files rather than a separate store.
@@ -138,6 +163,8 @@ Tool calls show their results inline.
 - Compact command output keeps the original text after a muted gutter so
   markdown-looking output cannot render as headings, lists, blockquotes,
   tables, or fences.
+- `strider_vim` renders only `• Vim: <intent>` by default. The executed Lua and
+  raw result stay in pi's tool-call history rather than the visible log.
 
 The log tails new output only while the visible log window is already at the
 bottom. Scrolling up pauses follow-mode until you jump back to the tail. The log

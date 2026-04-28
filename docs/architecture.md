@@ -56,6 +56,9 @@ Owns:
 - the `strider_plan` and `strider_append_stops` tools used during reviews
 - the `strider_clarify` tool used during `prompt` and `patch` for
   mid-turn questions, plan proposals, and yes/no confirmations
+- the `strider_vim` tool, an always-available raw Lua bridge into the live
+  Neovim client; the extension declares the tool and uses the RPC UI channel as
+  transport, while Lua executes the code in-process
 - read-only guardrails for plan / review / search
 - widget/status updates for Neovim (model, context usage, running cost)
 - `/models` and `/tree` commands that drive fuzzy pickers via
@@ -287,9 +290,13 @@ about the current review item.
     UI updates. `setWidget` payloads are flattened into the log
     window's winbar. The `strider-clarify` `setStatus` key drives the
     `[Clarify]` badge in the compose winbar.
-  - `editor` — the extension uses this to ask the user something
-    mid-turn (from `strider_clarify`). Strider routes everything through
-    the chat log + compose buffer rather than floating editors:
+  - `editor` — the extension uses this both for user-facing clarification
+    and for Strider-owned silent transports:
+    - **Strider Vim** (title prefixed `[strider-vim-exec]`): no UI opens.
+      Lua executes the request prefill as arbitrary Neovim Lua via
+      `strider.vim_exec`, then replies with `extension_ui_response{value}`.
+      The visible log shows only `• Vim: <intent>` from the tool arguments;
+      the Lua source and raw result remain in pi's tool-call history.
     - **Plain clarify** (`kind: question`): title/body rendered as a
       `[clarify]` block in the log, pending-id stashed, compose
       hijacked — the next `<C-s>` sends the reply via
@@ -369,6 +376,9 @@ Working today:
 - live streaming: thinking and assistant text tokens render in the log
   as unformatted plain text during generation, then finalize into styled
   blocks when the stream completes
+- live Neovim bridge: `strider_vim` lets the agent run arbitrary Lua in the
+  current Neovim via a silent `[strider-vim-exec]` editor request; Strider logs
+  only the supplied intent, not the Lua body or routine inspection result
 - rich log rendering: inline diff rows under `• Edited <path> (+N -M)`
   headers for edit tools; syntax-highlighted fenced output for
   read/write via treesitter + render-markdown; compact gutter output for

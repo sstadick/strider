@@ -128,6 +128,13 @@ local function append_tool_summary(tool_name, summary, lane)
 end
 
 local function append_tool(tool_name, args, lane)
+  if tool_name == "strider_vim" then
+    local raw_intent = args and args.intent
+    local intent = type(raw_intent) == "string" and vim.trim(raw_intent) or ""
+    ui.append({ "• Vim" .. (intent ~= "" and (": " .. intent) or "") }, lane)
+    return
+  end
+
   local summary = summary_tools[tool_name] and format_tool_args(tool_name, args)
   if summary then
     append_tool_summary(tool_name, summary, lane)
@@ -887,6 +894,10 @@ local function handle_extension_ui(event, lane)
     -- cancel send `{cancelled: true}`. Tool's execute() in the extension
     -- awaits this response.
     --
+    -- Strider Vim is a silent transport: the extension calls ctx.ui.editor
+    -- with a sentinel title, but Lua intercepts it here and executes the
+    -- prefill as live Neovim Lua instead of opening a popup.
+    --
     -- Plan proposals are a special case: the extension tags their title
     -- with a `[strider-plan-proposal]` sentinel so we route through a
     -- read-only preview + accept/modify/reject picker rather than the
@@ -894,6 +905,27 @@ local function handle_extension_ui(event, lane)
     local id = event.id
     local title = event.title or "Strider clarify"
     local prefill = event.prefill or ""
+    local vim_exec_prefix = "[strider-vim-exec]"
+    if title:sub(1, #vim_exec_prefix) == vim_exec_prefix then
+      local ok, vim_exec = pcall(require, "strider.vim_exec")
+      local result
+      if ok and vim_exec and vim_exec.exec then
+        local exec_ok, value = pcall(vim_exec.exec, prefill)
+        result = exec_ok and value or vim.json.encode({
+          ok = false,
+          phase = "bridge",
+          error = tostring(value),
+        })
+      else
+        result = vim.json.encode({
+          ok = false,
+          phase = "bridge",
+          error = tostring(vim_exec),
+        })
+      end
+      send_ui_response(id, { value = result }, lane)
+      return
+    end
     local plan_prefix = "[strider-plan-proposal] "
     if lane ~= "main" then
       local function popup_cancel(message)

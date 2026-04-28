@@ -89,6 +89,10 @@ prefills compose so you can edit before sending.
   `/fork`, `/export`, `/sessions`, `/resume`, and `/switch_session`; raw RPC
   commands like `/compact` show `Working` in the compose/log winbars until pi
   replies.
+- Live Neovim access: the always-available `strider_vim` tool lets the agent run
+  arbitrary Lua inside the current Neovim. Strider logs only the tool's `intent`
+  by default, so routine state inspection stays quiet while editor-changing Lua
+  visibly affects your session.
 - Status and control surfaces: `:StriderStatus` summarizes lane state, context,
   cost, review progress, pending controls, and recent errors.
 
@@ -174,7 +178,7 @@ pi --mode rpc --no-extensions --extension ./pi/strider-stepper.ts
 Run the fake-backend test suite:
 
 ```bash
-python3 -m unittest tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_tmux_log_rendering tests.test_rpc_commands tests.test_plan_helpers tests.test_review_render tests.test_count_lines
+python3 -m unittest tests.test_vim_exec tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_tmux_log_rendering tests.test_rpc_commands tests.test_plan_helpers tests.test_review_render tests.test_count_lines
 ```
 
 Optional real-pi smoke test:

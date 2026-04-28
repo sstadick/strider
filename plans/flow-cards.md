@@ -14,10 +14,10 @@ full worker transcript.
 
 The working model:
 
-- Flow work runs on dedicated worker lanes: search (`flow`), Q (`q`), and patch
-  (`patch`).
-- `:StriderLogFlow`, `:StriderLogQ`, and `:StriderLogPatch` are the complete
-  audit/debug transcripts.
+- Flow work runs on dedicated worker lanes: search (`flow`), patch (`patch`),
+  and one Q worker per StriderQ card (`q`, `q-2`, `q-3`, ...).
+- `:StriderLogFlow`, `:StriderLogQ`/`strider://StriderLogQ-N`, and
+  `:StriderLogPatch` are the complete audit/debug transcripts.
 - Each completed or running flow request gets a compact card on the right.
 - Cards stay folded until the user focuses/selects one.
 - Focusing a card expands it into a near full-height right-side panel.
@@ -25,7 +25,7 @@ The working model:
 - Pressing `q` or `<Esc>` in a card folds it back down; bare `:StriderQ` toggles
   the latest Q card up/down when a card exists.
 - Expanded Q cards open a separate follow-up compose float under the answer;
-  `<C-s>` submits that draft on the Q worker.
+  `<C-s>` submits that draft on the same card's Q worker.
 - The compact main Chat placeholder shares the same right-edge stack slots as
   Q/Patch cards so compact surfaces do not overlap.
 
@@ -99,7 +99,7 @@ Expanded body:
 - no thinking/reasoning
 - no tool calls or tool output
 - separate follow-up compose float beneath the answer; `<C-s>` sends the draft
-  as another Q prompt on the same worker
+  as another Q prompt on the same card worker
 
 `:StriderLogQ` still contains the full Q transcript.
 
@@ -233,7 +233,8 @@ Implemented:
 2. The first card keeps the compatibility buffer `strider://StriderQAnswer`;
    later cards use `strider://flow-card/q/N`.
 3. Folded Q cards stack in the shared right-edge stack.
-4. Text deltas and final text route through the pending request's `card_id`.
+4. Each new Q card gets its own worker lane; text deltas and final text route
+   through the pending request's `card_id`/`card_lane`.
 5. Bare `:StriderQ` toggles the latest card; `:StriderQ!` opens a new prompt.
 6. `:StriderCards` opens a telescope/fzf/`vim.ui.select` picker for named cards.
 7. Card-local `d` dismisses a card and `o` opens its worker log.
@@ -278,7 +279,7 @@ Add tmux tests around the card manager:
    - Assert height is near full editor height.
    - Move focus away and assert it remains expanded.
    - Press `q` / `<Esc>` or run bare `:StriderQ` again and assert it folds back.
-   - Type a Q-card follow-up and assert `<C-s>` sends it on the Q worker.
+   - Type a Q-card follow-up and assert `<C-s>` sends it on that card's Q worker.
 3. Q answer remains answer-only.
    - Assert folded card only previews readiness.
    - Assert expanded card contains assistant answer.

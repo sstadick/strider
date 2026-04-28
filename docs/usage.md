@@ -10,7 +10,7 @@ README.
 | `:StriderSearch {prompt}` | Structured code search with picker and quickfix output |
 | `:StriderSearches` | Reopen recent search result sets |
 | `:StriderLogFlow` | Toggle the search/flow log |
-| `:StriderLogQ` | Toggle the dedicated Q worker log |
+| `:StriderLogQ` | Toggle the latest StriderQ worker log |
 | `:StriderLogPatch` | Toggle the dedicated patch worker log |
 | `:StriderReview [prompt]` | Open the review popup; submit to start a dedicated review-lane walkthrough or ask about the current stop |
 | `:StriderLogReview` | Toggle the dedicated review log |
@@ -46,7 +46,8 @@ right-side floating log/compose stack. Toggling it closed leaves a compact
 and Patch cards share the same right-edge stack instead of overlapping.
 `:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on separate flow-worker
 processes, so Q and patch can proceed independently of each other and main chat.
-Search transcript lives in `:StriderLogFlow`, Q in `:StriderLogQ`, and patch in
+Each new StriderQ card gets its own Q worker process. Search transcript lives in
+`:StriderLogFlow`, the latest Q worker in `:StriderLogQ`, and patch in
 `:StriderLogPatch`. `:StriderQ` and `:StriderPatch` also open non-focus-stealing
 flow cards in the bottom-right. Cards stay compact while running and after
 completion; select/focus one to expand it into a near full-height right-side
@@ -207,17 +208,16 @@ cancellation.
 ## Tangents And Patch
 
 `:StriderQ` opens a floating editor for a one-shot side question. Submitting it
-asks on Strider's dedicated Q worker without popping open main chat. Range-based
-Q includes the selected excerpt in the prompt. Each submitted question creates a
-named card; the first keeps the legacy `strider://StriderQAnswer` buffer and
-later cards use `strider://flow-card/q/N`. Cards stay compact while waiting and
+starts a Q worker without popping open main chat. Range-based Q includes the
+selected excerpt in the prompt. Each submitted question creates a named card and
+its own worker process; the first keeps the legacy `strider://StriderQAnswer`
+buffer and later cards use `strider://flow-card/q/N`. Cards stay compact while waiting and
 after the answer is ready; select/focus one, pick it via `:StriderCards`, or run
 bare `:StriderQ` to expand the latest card into a near full-height right-side
 answer panel. `:StriderQ!` opens a fresh prompt even when a Q card already
-exists. The Q worker is still serial: if another Q is running, submitting a new
-Q warns and keeps the prompt open so the draft is not lost. Expanded Q cards
-place a separate follow-up compose float beneath the answer; type there and
-press `<C-s>` to ask on the same Q worker/card. Use `d` inside a card, or
+exists; submitting it starts another Q worker, so multiple StriderQ cards can run
+concurrently. Expanded Q cards place a separate follow-up compose float beneath
+the answer; type there and press `<C-s>` to ask on the same Q worker/card. Use `d` inside a card, or
 `:StriderCardsClear`, to dismiss completed cards when the stack gets noisy. The
 full transcript, including reasoning and tool calls, lands in `:StriderLogQ`.
 

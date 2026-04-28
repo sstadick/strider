@@ -14,7 +14,7 @@ local FLOW_LANE = "flow"
 local Q_LANE = "q"
 local PATCH_LANE = "patch"
 local REVIEW_LANE = "review"
-local FLOW_LANES = { FLOW_LANE, Q_LANE, PATCH_LANE }
+local FLOW_LANES = { FLOW_LANE, PATCH_LANE }
 
 -- Cached CWD + hrtime to short-circuit ensure_backend's per-lane cwd check.
 -- CWD changes are user-initiated and rare; avoid calling getcwd() + comparing
@@ -64,7 +64,7 @@ local function activity_title(operation)
 end
 
 local function activity_target(operation, lane)
-  if operation == "q" then
+  if operation == "q" and state.normalize_lane(lane) == Q_LANE then
     return "q"
   end
   if lane == REVIEW_LANE and (operation == "review" or operation == "plan")
@@ -75,7 +75,7 @@ local function activity_target(operation, lane)
 end
 
 local function lane_title(lane)
-  if lane == Q_LANE then return "StriderQ" end
+  if state.is_q_lane(lane) then return "StriderQ" end
   if lane == PATCH_LANE then return "Strider patch" end
   if lane == FLOW_LANE then return "Strider flow" end
   if lane == REVIEW_LANE then return "Strider review" end
@@ -114,10 +114,15 @@ local function send(command, user_text, opts)
   if operation == "patch" then
     metadata.card_id = ui.open_patch_card(user_text, { target = metadata.target }, lane)
   elseif operation == "q" then
-    metadata.card_id = ui.open_q_answer(user_text, lane, {
+    metadata.card_lane = metadata.card_lane or Q_LANE
+    ensure_session(metadata.card_lane)
+    metadata.worker_lane = lane
+    metadata.card_id = ui.open_q_answer(user_text, metadata.card_lane, {
       card_id = metadata.card_id,
       new = metadata.card_id == nil,
       preserve_name = metadata.card_id ~= nil,
+      seq = metadata.q_seq,
+      worker_lane = lane,
     })
   end
   state.set_pending_request(operation, metadata, lane)
@@ -131,7 +136,7 @@ local function send(command, user_text, opts)
     state.set_pending_request(nil, nil, lane)
     ui.finish_activity("Strider request failed to start", "error", lane)
     if operation == "q" then
-      ui.finish_q_answer("Strider request failed to start", "error", lane, metadata.card_id)
+      ui.finish_q_answer("Strider request failed to start", "error", metadata.card_lane or lane, metadata.card_id)
     elseif operation == "patch" then
       ui.finish_patch_card(metadata.card_id, "error", {
         assistant_summary = "Strider request failed to start",
@@ -392,8 +397,8 @@ end
 
 function M.stop_flow()
   local stopped = false
-  for _, lane in ipairs(FLOW_LANES) do
-    if state.peek_pending_request(lane) and rpc.abort(lane) then stopped = true end
+  for _, lane in ipairs(state.lanes()) do
+    if state.is_flow_lane(lane) and state.peek_pending_request(lane) and rpc.abort(lane) then stopped = true end
   end
   if stopped then
     ui.notify("Stopping Strider flow…", vim.log.levels.INFO)
@@ -864,10 +869,12 @@ local function dispatch_q(prompt, range, opts)
     message = prompt
   end
   opts = opts or {}
+  local lane, seq = opts.worker_lane, opts.q_seq
+  if not lane then lane, seq = state.next_q_worker_lane() end
   return send("/prompt " .. message, prompt, {
-    lane = Q_LANE,
+    lane = lane,
     operation = "q",
-    metadata = { card_id = opts.card_id },
+    metadata = { card_id = opts.card_id, card_lane = Q_LANE, q_seq = seq or state.q_lane_index(lane) },
   })
 end
 
@@ -880,8 +887,9 @@ end
 function M.q_followup(prompt, card_id)
   prompt = trimmed(prompt)
   if prompt == "" then return false end
-  if not ensure_backend(Q_LANE) then return false end
-  return dispatch_q(prompt, nil, { card_id = card_id })
+  local card = ui.get_flow_card(card_id, Q_LANE)
+  local worker_lane = card and card.worker_lane or Q_LANE
+  return dispatch_q(prompt, nil, { card_id = card_id, worker_lane = worker_lane })
 end
 
 local function toggle_existing_q_card()
@@ -899,9 +907,6 @@ function M.q(prompt, opts)
     "Ask a side question without opening chat.",
     "Answers land in StriderLogQ.",
   }
-  if state.peek_pending_request(Q_LANE) then
-    table.insert(hint_lines, 1, "StriderQ is already running; this draft will stay open until it can send.")
-  end
   local pointer = range_pointer(range)
   if pointer then
     table.insert(hint_lines, string.format("Range: %s", pointer))
@@ -1026,8 +1031,17 @@ function M.flow_log()
   toggle_lane_log(FLOW_LANE)
 end
 
+local function latest_q_worker_lane()
+  local session = state.get_session(Q_LANE)
+  local latest = nil
+  for _, card in ipairs(session and session.flow_cards or {}) do
+    if card.kind == "q" and not card.dismissed and (not latest or (card.started_at or 0) > (latest.started_at or 0)) then latest = card end
+  end
+  return latest and latest.worker_lane or Q_LANE
+end
+
 function M.q_log()
-  toggle_lane_log(Q_LANE)
+  toggle_lane_log(latest_q_worker_lane())
 end
 
 function M.patch_log()

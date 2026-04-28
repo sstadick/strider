@@ -44,7 +44,7 @@ Patch a small selected range:
 :'<,'>StriderPatch change the greeting literal from hi to hello
 ```
 
-Ask a side question on the dedicated Q worker, then run bare `:StriderQ` again to reopen the answer card with a compose split for follow-ups:
+Ask a side question on a dedicated Q worker, then run bare `:StriderQ` again to reopen the latest answer card with a compose split for follow-ups:
 
 ```vim
 :StriderQ what does this flag actually do?
@@ -78,8 +78,8 @@ edit before sending.
 - Planned reviews: `:StriderReview` builds a full ordered set of stops up front.
   `:StriderNext` and `:StriderPrev` navigate mechanically; `:StriderNext!`
   accepts the current stop before advancing.
-- Dedicated lanes: main chat, search, Q, patch, and review each have their own
-  transcript, in-flight state, and pi worker process.
+- Dedicated workers: main chat, search, patch, review, and each StriderQ card
+  have their own transcript, in-flight state, and pi worker process.
 - Scoped guardrails: review/search/plan are read-only; patch prompts are
   selection-scoped and intended for small local edits.
 - Native Neovim UI: floating chat log/compose with a compact card placeholder,

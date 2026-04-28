@@ -561,7 +561,7 @@ class TmuxTangentTests(unittest.TestCase):
                 h.wait_until(lambda: h.expr("bufname('%')") == "strider://StriderQAnswer", timeout=3.0)
                 self.assertIn("first nav card", "\n".join(h.buffer_lines("strider://StriderQAnswer")))
 
-    def test_q_lane_rejects_new_q_while_busy(self) -> None:
+    def test_striderq_bang_starts_another_worker_while_q_is_busy(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.lua(
@@ -573,8 +573,7 @@ class TmuxTangentTests(unittest.TestCase):
                     "end)()"
                 )
                 h.ex("StriderQ! second question")
-                h.wait_until(lambda: h.popup_open(), timeout=3.0)
-                h.send("C-s", pause=0.3)
+                h.submit_popup()
 
                 pending = h.lua(
                     "(function() "
@@ -583,8 +582,9 @@ class TmuxTangentTests(unittest.TestCase):
                     "end)()"
                 )
                 self.assertEqual("q", pending)
-                self.assertTrue(h.popup_open())
-                self.assertIn("second question", "\n".join(h.buffer_lines("strider://prompt")))
+                h.wait_until(lambda: h.lua_bool("require('strider.state').get_session('q-2') ~= nil"), timeout=5.0)
+                self.assertIn("second question", "\n".join(h.buffer_lines("strider://StriderLogQ-2")))
+                self.assertFalse(h.popup_open())
 
 
 if __name__ == "__main__":

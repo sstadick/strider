@@ -242,7 +242,7 @@ end
 local function log_name(lane)
   lane = normalize_lane(lane)
   if lane == "flow" then return "strider://StriderLogFlow" end
-  if lane == "q" then return "strider://StriderLogQ" end
+  if state.is_q_lane(lane) then return lane == "q" and "strider://StriderLogQ" or ("strider://StriderLogQ-" .. tostring(state.q_lane_index(lane))) end
   if lane == "patch" then return "strider://StriderLogPatch" end
   if lane == "review" then return "strider://StriderLogReview" end
   return state.get_config().log_buffer_name
@@ -1745,6 +1745,10 @@ end
 
 function M.focus_flow_card(id, lane)
   return flow_cards.focus_card(id, lane)
+end
+
+function M.get_flow_card(id, lane)
+  return flow_cards.get_card(id, lane)
 end
 
 function M.clear_flow_cards(opts)

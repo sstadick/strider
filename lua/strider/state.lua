@@ -5,6 +5,7 @@ local lane_set = {}
 for _, lane in ipairs(lane_order) do
   lane_set[lane] = true
 end
+local dynamic_lanes = {}
 
 local flow_lanes = {flow = true, q = true, patch = true}
 local flow_operations = {q = true, search = true, patch = true}
@@ -26,23 +27,23 @@ local defaults = {
   pi_cmd = { "pi" },
 }
 
+local function is_dynamic_q_lane(lane)
+  return type(lane) == "string" and lane:match("^q%-%d+$") ~= nil
+end
+
+local function is_known_lane(lane)
+  return lane_set[lane] == true or is_dynamic_q_lane(lane)
+end
+
 local function normalize_lane(lane)
-  if lane == nil or lane == "" then
-    return "main"
-  end
-  if lane_set[lane] then
-    return lane
-  end
+  if lane == nil or lane == "" then return "main" end
+  if is_known_lane(lane) then return lane end
   return "main"
 end
 
 local function resolve_lane_and_cwd(arg1, arg2)
-  if lane_set[arg1] then
-    return arg1, arg2
-  end
-  if lane_set[arg2] then
-    return arg2, arg1
-  end
+  if is_known_lane(arg1) then return normalize_lane(arg1), arg2 end
+  if is_known_lane(arg2) then return normalize_lane(arg2), arg1 end
   return "main", arg1 or arg2
 end
 
@@ -115,11 +116,16 @@ function M.get_config()
 end
 
 function M.lanes()
-  return vim.deepcopy(lane_order)
+  local lanes = vim.deepcopy(lane_order)
+  local dynamic = {}
+  for lane in pairs(dynamic_lanes) do table.insert(dynamic, lane) end
+  table.sort(dynamic, function(a, b) return (M.q_lane_index(a) or 0) < (M.q_lane_index(b) or 0) end)
+  vim.list_extend(lanes, dynamic)
+  return lanes
 end
 
 function M.is_lane(lane)
-  return lane_set[lane] == true
+  return is_known_lane(lane)
 end
 
 function M.normalize_lane(lane)
@@ -132,6 +138,7 @@ end
 
 function M.ensure_session(arg1, arg2)
   local lane, cwd = resolve_lane_and_cwd(arg1, arg2)
+  if is_dynamic_q_lane(lane) then dynamic_lanes[lane] = true end
   if not cwd or cwd == "" then
     local current = M.sessions[lane]
     cwd = current and current.cwd or vim.fn.getcwd()
@@ -144,10 +151,11 @@ end
 
 function M.clear_session(lane)
   if lane == nil then
-    M.sessions = {}
-    return
+    M.sessions = {}; dynamic_lanes = {}; return
   end
-  M.sessions[normalize_lane(lane)] = nil
+  lane = normalize_lane(lane)
+  M.sessions[lane] = nil
+  dynamic_lanes[lane] = nil
 end
 
 function M.next_request_id(lane)
@@ -293,8 +301,36 @@ function M.review_acceptances(lane)
   return session and session.review_acceptances or {}
 end
 
+function M.q_lane_index(lane)
+  lane = normalize_lane(lane)
+  if lane == "q" then return 1 end
+  return tonumber(type(lane) == "string" and lane:match("^q%-(%d+)$") or nil)
+end
+
+function M.is_q_lane(lane)
+  return M.q_lane_index(lane) ~= nil
+end
+
+function M.q_lanes()
+  local lanes = {}
+  for _, lane in ipairs(M.lanes()) do if M.is_q_lane(lane) then table.insert(lanes, lane) end end
+  return lanes
+end
+
+function M.next_q_worker_lane()
+  local max_index = 0
+  for lane in pairs(M.sessions) do
+    if M.is_q_lane(lane) then max_index = math.max(max_index, M.q_lane_index(lane) or 0) end
+  end
+  local next_index = max_index + 1
+  local lane = next_index == 1 and "q" or ("q-" .. next_index)
+  if is_dynamic_q_lane(lane) then dynamic_lanes[lane] = true end
+  return lane, next_index
+end
+
 function M.is_flow_lane(lane)
-  return flow_lanes[normalize_lane(lane)] == true
+  lane = normalize_lane(lane)
+  return flow_lanes[lane] == true or M.is_q_lane(lane)
 end
 
 function M.is_flow_operation(op)

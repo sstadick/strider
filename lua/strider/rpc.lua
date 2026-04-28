@@ -394,7 +394,8 @@ local function handle_message_update(event, lane)
   ui.update_live_block(session.message_text, lane)
 
   if pending.operation == "q" then
-    ui.update_q_answer(session.message_text, lane, pending.metadata and pending.metadata.card_id)
+    local meta = pending.metadata or {}
+    ui.update_q_answer(session.message_text, meta.card_lane or lane, meta.card_id)
   end
 
   if pending.operation == "review" then
@@ -476,7 +477,8 @@ local function handle_message_end(event, lane)
     local level = stop_reason == "aborted" and "cancel" or "error"
     ui.finish_activity(reason, level, lane)
     if pending and pending.operation == "q" then
-      ui.finish_q_answer(reason, "error", lane, pending.metadata and pending.metadata.card_id)
+      local meta = pending.metadata or {}
+      ui.finish_q_answer(reason, "error", meta.card_lane or lane, meta.card_id)
     elseif pending and pending.operation == "patch" then
       local status = stop_reason == "aborted" and "cancelled" or "error"
       ui.finish_patch_card(pending.metadata and pending.metadata.card_id, status, {
@@ -516,7 +518,8 @@ local function handle_message_end(event, lane)
   if not text then
     ui.finish_activity("Strider request complete (no text)", "success", lane)
     if pending and pending.operation == "q" then
-      ui.finish_q_answer(nil, "success", lane, pending.metadata and pending.metadata.card_id)
+      local meta = pending.metadata or {}
+      ui.finish_q_answer(nil, "success", meta.card_lane or lane, meta.card_id)
     elseif pending and pending.operation == "patch" then
       ui.finish_patch_card(pending.metadata and pending.metadata.card_id, "success", {
         assistant_summary = "Patch completed with no final summary.",
@@ -547,7 +550,8 @@ local function handle_message_end(event, lane)
 
   ui.finish_activity("Strider request complete", "success", lane)
   if pending and pending.operation == "q" then
-    ui.finish_q_answer(text, "success", lane, pending.metadata and pending.metadata.card_id)
+    local meta = pending.metadata or {}
+    ui.finish_q_answer(text, "success", meta.card_lane or lane, meta.card_id)
   elseif pending and pending.operation == "patch" then
     ui.finish_patch_card(pending.metadata and pending.metadata.card_id, "success", {
       assistant_summary = text,

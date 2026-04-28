@@ -434,8 +434,10 @@ function M.dismiss_card(id, lane)
   M.refresh_layouts(); return true
 end
 function M.open_card_log(id, lane)
-  local cmd = ({ flow = "StriderLogFlow", patch = "StriderLogPatch", q = "StriderLogQ" })[normalize_lane(lane)]
-  if cmd then pcall(vim.cmd, cmd); return true end
+  local card = card_by_id(state.get_session(lane), id)
+  local log_lane = card and card.worker_lane or lane
+  local ok, ui = pcall(require, "strider.ui")
+  if ok and ui and ui.open_log then ui.open_log({}, log_lane); return true end
   return false
 end
 function M.clear_completed(opts)
@@ -460,6 +462,8 @@ function M.create_card(kind, opts, lane)
     id = id,
     seq = seq,
     kind = kind,
+    lane = lane,
+    compose_lane = lane,
     name = opts.name or card_names.default(kind, seq, opts.prompt),
     operation = opts.operation or kind,
     title = opts.title or "Strider flow",
@@ -500,12 +504,14 @@ local function start_q_turn(card, prompt, opts)
   if not opts.preserve_name then card.name = card_names.default("q", card.seq, prompt) end
   return card
 end
-local function create_q_card(prompt, lane, session)
-  local started = vim.uv.hrtime()
+local function create_q_card(prompt, lane, session, opts)
+  opts = opts or {}
+  local started = vim.uv.hrtime(); local seq = opts.seq or (q_card_count(session) + 1)
   local id = M.create_card("q", {
-    title = "StriderQ", prompt = prompt or "", operation = "q", started_at = started,
+    title = "StriderQ", prompt = prompt or "", operation = "q", started_at = started, seq = seq,
     turns = { { prompt = prompt or "", answer_text = "", status = "running", started_at = started } }, current_turn_index = 1,
     buffer_name = q_card_count(session) == 0 and q_cards.answer_name(lane) or nil,
+    worker_lane = opts.worker_lane,
   }, lane)
   local card = card_by_id(session, id); session.q_answer_card_id = id; sync_legacy_q(session, card)
   return card
@@ -515,7 +521,8 @@ local function ensure_q_card(prompt, lane, opts)
   local session = state.get_session(lane); if not session then return nil end
   local card = opts.card_id and card_by_id(session, opts.card_id) or nil
   if not card and not opts.new then card = card_by_id(session, session.q_answer_card_id) end
-  if not card then return create_q_card(prompt, lane, session) end
+  if not card then return create_q_card(prompt, lane, session, opts) end
+  if opts.worker_lane then card.worker_lane = opts.worker_lane end
   session.q_answer_card_id = card.id; start_q_turn(card, prompt, opts); sync_legacy_q(session, card)
   return card
 end

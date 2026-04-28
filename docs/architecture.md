@@ -133,21 +133,23 @@ Important UX rule:
 
 ### Tangent
 
-`:StriderQ` opens a floating editor for a one-shot side question that
-runs on Strider's dedicated Q worker — a separate pi process from main chat,
-search, patch, and review. This keeps the main session clean and lets the user
-ask quick questions without interrupting a running chat or patch turn.
+`:StriderQ` opens a floating editor for a one-shot side question. Each submitted
+StriderQ creates a named card and runs on its own Q worker process, separate
+from main chat, search, patch, review, and other Q cards. This keeps the main
+session clean and lets the user ask quick questions without interrupting a
+running chat, patch turn, or earlier Q.
 
 1. user runs `:StriderQ [prompt]` (optionally with a visual range)
 2. plugin opens the floating editor, prefilled when inline args were given;
    `:StriderQ!` forces a new prompt even if a Q card already exists
-3. on submit, plugin creates a named StriderQ card and stores its `card_id` on
-   `pending_request.metadata`
-4. plugin dispatches the question as `/prompt ...` on the Q worker (with an
+3. on submit, plugin allocates a Q worker lane (`q`, then `q-2`, `q-3`, ...),
+   creates a named StriderQ card, and stores `card_id`, `card_lane`, and
+   `worker_lane` on `pending_request.metadata`
+4. plugin dispatches the question as `/prompt ...` on that Q worker (with an
    excerpt block when a range was given)
-5. streamed text deltas and final text update the pending request's exact card;
-   the first card keeps `strider://StriderQAnswer`, later cards use
-   `strider://flow-card/q/N`
+5. streamed text deltas and final text from the worker update the pending
+   request's exact card; the first card keeps `strider://StriderQAnswer`, later
+   cards use `strider://flow-card/q/N`
 6. cards stay compact until selected, picked through `:StriderCards`, or toggled
    by bare `:StriderQ`; the bare command always targets the latest Q card
 7. focused cards support `q`/`<Esc>` fold, `d` dismiss, `o` open worker log,
@@ -155,9 +157,10 @@ ask quick questions without interrupting a running chat or patch turn.
    completed cards in bulk
 8. expanded Q cards open a separate follow-up compose float beneath the answer;
    `<C-s>` sends that draft as another `/prompt` on the same Q worker/card
-9. the full transcript lands in `:StriderLogQ`, including reasoning, tool calls,
-   and tool output; chat is not auto-opened
-7. no tree anchoring needed — the Q worker has its own independent session
+9. the full transcript lands in that card's worker log (`:StriderLogQ` for the
+   first worker, `strider://StriderLogQ-N` for later workers), including
+   reasoning, tool calls, and tool output; chat is not auto-opened
+10. no tree anchoring needed — each Q worker has its own independent session
 
 ### Chat
 
@@ -379,9 +382,10 @@ Working today:
 - local review comments
 - selection-scoped patching
 - plain-prompt agent turns with clarify available
-- side questions, search, and patches on separate flow-worker processes; Q and
-  patch results open in compact flow cards while full transcripts land in their
-  worker logs (`:StriderLogQ`, `:StriderLogPatch`, `:StriderLogFlow`); each Q
+- side questions, search, and patches on separate flow-worker processes; each Q
+  card gets its own Q worker, and Q/patch results open in compact flow cards
+  while full transcripts land in their worker logs (`:StriderLogQ`,
+  `:StriderLogPatch`, `:StriderLogFlow`); each Q
   submission creates a named card, expanded Q cards open a separate follow-up
   compose float, bare `:StriderQ` toggles the latest card, `:StriderCards`
   opens a picker for named card surfaces, and `:StriderCardsClear`/`d` dismiss

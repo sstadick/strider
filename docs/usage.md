@@ -214,11 +214,12 @@ later cards use `strider://flow-card/q/N`. Cards stay compact while waiting and
 after the answer is ready; select/focus one, pick it via `:StriderCards`, or run
 bare `:StriderQ` to expand the latest card into a near full-height right-side
 answer panel. `:StriderQ!` opens a fresh prompt even when a Q card already
-exists. Expanded Q cards place a separate follow-up compose float beneath the
-answer; type there and press `<C-s>` to ask on the same Q worker/card. Use `d`
-inside a card, or `:StriderCardsClear`, to dismiss completed cards when the
-stack gets noisy. The full transcript, including reasoning and tool calls, lands
-in `:StriderLogQ`.
+exists. The Q worker is still serial: if another Q is running, submitting a new
+Q warns and keeps the prompt open so the draft is not lost. Expanded Q cards
+place a separate follow-up compose float beneath the answer; type there and
+press `<C-s>` to ask on the same Q worker/card. Use `d` inside a card, or
+`:StriderCardsClear`, to dismiss completed cards when the stack gets noisy. The
+full transcript, including reasoning and tool calls, lands in `:StriderLogQ`.
 
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It
 requires a visual range or an active review item, embeds the excerpt and range

@@ -572,8 +572,9 @@ class TmuxTangentTests(unittest.TestCase):
                     "  return true "
                     "end)()"
                 )
-                h.ex("StriderQ second question")
-                h.submit_popup()
+                h.ex("StriderQ! second question")
+                h.wait_until(lambda: h.popup_open(), timeout=3.0)
+                h.send("C-s", pause=0.3)
 
                 pending = h.lua(
                     "(function() "
@@ -582,6 +583,8 @@ class TmuxTangentTests(unittest.TestCase):
                     "end)()"
                 )
                 self.assertEqual("q", pending)
+                self.assertTrue(h.popup_open())
+                self.assertIn("second question", "\n".join(h.buffer_lines("strider://prompt")))
 
 
 if __name__ == "__main__":

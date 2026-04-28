@@ -1924,25 +1924,22 @@ local function open_scratch_editor(opts, on_submit)
   })
 
   local function finish(submit)
-    if not vim.api.nvim_buf_is_valid(buf) then
-      return
-    end
+    if not vim.api.nvim_buf_is_valid(buf) then return end
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local text = vim.trim(table.concat(lines, "\n"))
-    -- Drop out of insert before closing the float, so the previous
-    -- window inherits normal mode instead of staying in insert.
     pcall(vim.cmd, "stopinsert")
-    if vim.api.nvim_win_is_valid(win) then
-      pcall(vim.api.nvim_win_close, win, true)
-    end
     if submit and (text ~= "" or opts.allow_empty) then
-      on_submit(text)
+      if on_submit(text) == false then
+        if vim.api.nvim_win_is_valid(win) then vim.api.nvim_set_current_win(win) end
+        render_hint(); vim.cmd("startinsert"); return
+      end
     elseif submit then
       notify("Discarded empty Strider input", vim.log.levels.WARN)
       if opts.on_cancel then opts.on_cancel() end
     else
       if opts.on_cancel then opts.on_cancel() end
     end
+    if vim.api.nvim_win_is_valid(win) then pcall(vim.api.nvim_win_close, win, true) end
   end
 
   vim.keymap.set({ "n", "i" }, "<C-s>", function()

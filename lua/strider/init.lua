@@ -873,13 +873,8 @@ end
 
 local function submit_q_request(prompt, range)
   prompt = trimmed(prompt)
-  if prompt == "" then
-    return
-  end
-  if not ensure_backend(Q_LANE) then
-    return
-  end
-  dispatch_q(prompt, range)
+  if prompt == "" then return nil end
+  return dispatch_q(prompt, range)
 end
 
 function M.q_followup(prompt, card_id)
@@ -904,13 +899,16 @@ function M.q(prompt, opts)
     "Ask a side question without opening chat.",
     "Answers land in StriderLogQ.",
   }
+  if state.peek_pending_request(Q_LANE) then
+    table.insert(hint_lines, 1, "StriderQ is already running; this draft will stay open until it can send.")
+  end
   local pointer = range_pointer(range)
   if pointer then
     table.insert(hint_lines, string.format("Range: %s", pointer))
   end
 
   ui.open_prompt_editor("StriderQ", function(text)
-    submit_q_request(text, range)
+    return submit_q_request(text, range)
   end, {
     hint_lines = hint_lines,
     prefill = prompt ~= "" and prompt or nil,

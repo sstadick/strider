@@ -102,6 +102,39 @@ Q/search/patch worker turns. `:StriderStatus` opens a compact summary of lane
 state, pending controls, review progress, model/context widget lines, and the
 last error.
 
+## Lane Model Profiles
+
+Strider starts a separate pi RPC process per lane. Configure startup model and
+reasoning choices per lane with `setup({ lane_models = ... })`; existing worker
+processes keep their current model until they are restarted.
+
+```lua
+require("strider").setup({
+  model_env_var = "PI_MODEL_ENV", -- default
+  lane_models = {
+    chat = {
+      default = { model = "openai/gpt-5.5", reasoning = "xhigh" },
+      work = { model = "bedrock/opus4-6", reasoning = "high" },
+    },
+    q = {
+      default = { model = "anthropic/claude-sonnet-4", reasoning = "low" },
+      work = { model = "openai/gpt-5", reasoning = "xhigh" },
+    },
+    search = {
+      default = { model = "openai/gpt-5-mini", reasoning = "low" },
+      work = { model = "openai/gpt-5-search", reasoning = "medium" },
+    },
+  },
+})
+```
+
+`PI_MODEL_ENV=work` selects each lane's `work` profile; unset, empty, or
+`default` selects `default`. If a lane lacks the requested profile, it falls
+back to that lane's `default`. Lane keys are `chat`/`main`, `q` (including
+`q-2`, `q-3`, ...), `search`/`flow`, `patch`, `review`, plus a top-level
+`default` fallback. Use either `reasoning` or pi's `thinking` key; both map to
+pi's `--thinking` startup option.
+
 ## Live Neovim Tool
 
 Strider exposes an always-available `strider_vim` tool to the agent. There is no

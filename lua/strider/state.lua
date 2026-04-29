@@ -9,6 +9,16 @@ local dynamic_lanes = {}
 
 local flow_lanes = { flow = true, q = true, patch = true }
 local flow_operations = { q = true, search = true, patch = true }
+local model_config_lane_keys = {
+	chat = true,
+	default = true,
+	flow = true,
+	main = true,
+	patch = true,
+	q = true,
+	review = true,
+	search = true,
+}
 
 local function plugin_root()
 	local source = debug.getinfo(1, "S").source:sub(2)
@@ -23,6 +33,7 @@ local defaults = {
 	log_max_lines = 5000,
 	log_pin_max_rows = 5,
 	log_pin_user_message = true,
+	model_env_var = "PI_MODEL_ENV",
 	open_log_on_start = true,
 	pi_cmd = { "pi" },
 }
@@ -53,6 +64,77 @@ local function resolve_lane_and_cwd(arg1, arg2)
 		return normalize_lane(arg2), arg1
 	end
 	return "main", arg1 or arg2
+end
+
+local function configured_lane_models(config)
+	if type(config.lane_models) == "table" and next(config.lane_models) ~= nil then
+		return config.lane_models
+	end
+	if type(config.models) == "table" and next(config.models) ~= nil then
+		return config.models
+	end
+
+	local profiles = {}
+	local found = false
+	for key in pairs(model_config_lane_keys) do
+		if type(config[key]) == "table" then
+			profiles[key] = config[key]
+			found = true
+		end
+	end
+	return found and profiles or nil
+end
+
+local function env_profile_key(config)
+	local name = config.model_profile_env or config.model_env_var or "PI_MODEL_ENV"
+	if type(name) ~= "string" or vim.trim(name) == "" then
+		name = "PI_MODEL_ENV"
+	end
+	local key = vim.trim(vim.env[name] or "")
+	if key == "" or key:lower() == "default" then
+		key = "default"
+	end
+	return name, key
+end
+
+local function has_model_fields(profile)
+	return type(profile) == "table"
+		and (
+			profile.model ~= nil
+			or profile.provider ~= nil
+			or profile.thinking ~= nil
+			or profile.reasoning ~= nil
+		)
+end
+
+local function lane_model_keys(lane)
+	lane = normalize_lane(lane)
+	if is_dynamic_q_lane(lane) then
+		return { lane, "q" }
+	end
+	if lane == "main" then
+		return { "main", "chat" }
+	end
+	if lane == "flow" then
+		return { "flow", "search" }
+	end
+	return { lane }
+end
+
+local function select_model_profile(profiles, requested)
+	if type(profiles) ~= "table" then
+		return nil, nil
+	end
+	if has_model_fields(profiles) then
+		return profiles, "default"
+	end
+	if requested ~= "default" and type(profiles[requested]) == "table" then
+		return profiles[requested], requested
+	end
+	if type(profiles.default) == "table" then
+		return profiles.default, "default"
+	end
+	return nil, nil
 end
 
 local function new_session(cwd, lane)
@@ -121,6 +203,32 @@ end
 
 function M.get_config()
 	return M.config
+end
+
+function M.resolve_lane_model(lane)
+	local profiles = configured_lane_models(M.config)
+	local env_name, requested = env_profile_key(M.config)
+	local meta = { env = env_name, requested = requested }
+	if not profiles then
+		return nil, meta
+	end
+
+	for _, key in ipairs(lane_model_keys(lane)) do
+		local profile, selected = select_model_profile(profiles[key], requested)
+		if profile then
+			meta.lane = key
+			meta.profile = selected
+			return profile, meta
+		end
+	end
+
+	local profile, selected = select_model_profile(profiles.default, requested)
+	if profile then
+		meta.lane = "default"
+		meta.profile = selected
+		return profile, meta
+	end
+	return nil, meta
 end
 
 function M.lanes()

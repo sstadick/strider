@@ -115,6 +115,30 @@ vim.pack.add({
 require("strider").setup()
 ```
 
+Optional lane-specific startup models can be selected with `PI_MODEL_ENV`:
+
+```lua
+require("strider").setup({
+  lane_models = {
+    chat = {
+      default = { model = "openai/gpt-5.5", reasoning = "xhigh" },
+      work = { model = "bedrock/opus4-6", reasoning = "high" },
+    },
+    q = {
+      default = { model = "anthropic/claude-sonnet-4", reasoning = "low" },
+      work = { model = "openai/gpt-5", reasoning = "xhigh" },
+    },
+    search = {
+      default = { model = "openai/gpt-5-mini", reasoning = "low" },
+      work = { model = "openai/gpt-5-search", reasoning = "medium" },
+    },
+  },
+})
+```
+
+Unset/empty/`default` uses each lane's `default`; `PI_MODEL_ENV=work` selects
+`work` where present.
+
 Install the Tree-sitter parsers you expect Strider to render in logs and review
 panes:
 

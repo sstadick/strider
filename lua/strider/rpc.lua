@@ -28,10 +28,32 @@ local function resolve_lane_and_payload(arg1, arg2)
 	return normalize_lane(arg2), arg1
 end
 
-local function command_list()
+local function append_cli_arg(cmd, flag, value)
+	if value == nil then
+		return
+	end
+	value = tostring(value)
+	if vim.trim(value) == "" then
+		return
+	end
+	vim.list_extend(cmd, { flag, value })
+end
+
+local function append_lane_model_args(cmd, lane)
+	local profile = state.resolve_lane_model(lane)
+	if not profile then
+		return
+	end
+	append_cli_arg(cmd, "--provider", profile.provider)
+	append_cli_arg(cmd, "--model", profile.model)
+	append_cli_arg(cmd, "--thinking", profile.thinking or profile.reasoning)
+end
+
+function M.command_list(lane)
 	local config = state.get_config()
 	local cmd = vim.deepcopy(config.pi_cmd)
 	local extension = config.extension_path or (config.plugin_root .. "/pi/strider-stepper.ts")
+	append_lane_model_args(cmd, lane)
 	vim.list_extend(cmd, { "--mode", "rpc", "--extension", extension })
 	return cmd
 end
@@ -735,7 +757,7 @@ function M.start(arg1, arg2)
 		return true
 	end
 
-	local job_id = vim.fn.jobstart(command_list(), {
+	local job_id = vim.fn.jobstart(M.command_list(lane), {
 		cwd = cwd,
 		on_exit = function()
 			session.job_id = nil

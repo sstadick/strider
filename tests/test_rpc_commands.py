@@ -31,6 +31,15 @@ def _winbar_for_buffer(h: TmuxNvimHarness, name: str) -> str:
     )
 
 
+def _rpc_command_list(h: TmuxNvimHarness, lane: str) -> list[str]:
+    raw = h.lua(
+        "(function() "
+        f"  return vim.json.encode(require('strider.rpc').command_list('{lane}')) "
+        "end)()"
+    )
+    return json.loads(raw)
+
+
 class RpcCommandTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[1]
@@ -320,6 +329,95 @@ class RpcCommandTests(unittest.TestCase):
                     timeout=5.0,
                 )
                 self.assertEqual("error", h.lua("tostring(_G._cb_err_result)"))
+
+    # ---- lane model startup config ---------------------------------------
+
+    def test_lane_model_profiles_apply_to_rpc_startup_args(self) -> None:
+        """Lane model profiles should become pi CLI args before RPC startup."""
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.lua(
+                    "(function() "
+                    "  vim.env.STRIDER_TEST_MODEL_ENV = 'work'; "
+                    "  require('strider').setup({ "
+                    "    pi_cmd = { 'pi' }, "
+                    "    model_env_var = 'STRIDER_TEST_MODEL_ENV', "
+                    "    lane_models = { "
+                    "      chat = { "
+                    "        default = { model = 'openai/gpt-5.5', reasoning = 'xhigh' }, "
+                    "        work = { model = 'bedrock/opus4-6', thinking = 'high' }, "
+                    "      }, "
+                    "      q = { "
+                    "        default = { model = 'anthropic/sonnet', reasoning = 'low' }, "
+                    "        work = { provider = 'openai', model = 'gpt-5', reasoning = 'xhigh' }, "
+                    "      }, "
+                    "      search = { "
+                    "        default = { model = 'openai/gpt-5-mini', reasoning = 'low' }, "
+                    "        work = { model = 'openai/gpt-5-search', reasoning = 'medium' }, "
+                    "      }, "
+                    "    }, "
+                    "  }); "
+                    "  return true "
+                    "end)()"
+                )
+
+                self.assertEqual(
+                    ["pi", "--model", "bedrock/opus4-6", "--thinking", "high"],
+                    _rpc_command_list(h, "main")[:5],
+                )
+                self.assertEqual(
+                    [
+                        "pi",
+                        "--provider",
+                        "openai",
+                        "--model",
+                        "gpt-5",
+                        "--thinking",
+                        "xhigh",
+                    ],
+                    _rpc_command_list(h, "q-2")[:7],
+                )
+                self.assertEqual(
+                    ["pi", "--model", "openai/gpt-5-search", "--thinking", "medium"],
+                    _rpc_command_list(h, "flow")[:5],
+                )
+
+    def test_lane_model_profile_env_defaults_and_fallbacks(self) -> None:
+        """Unset/default env uses lane default; unknown lane uses global default."""
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.lua(
+                    "(function() "
+                    "  require('strider').setup({ "
+                    "    pi_cmd = { 'pi' }, "
+                    "    model_env_var = 'STRIDER_TEST_MODEL_ENV', "
+                    "    lane_models = { "
+                    "      chat = { default = { model = 'chat-default', reasoning = 'low' } }, "
+                    "      default = { "
+                    "        default = { model = 'global-default' }, "
+                    "        work = { model = 'global-work', reasoning = 'medium' }, "
+                    "      }, "
+                    "    }, "
+                    "  }); "
+                    "  return true "
+                    "end)()"
+                )
+
+                h.lua("(function() vim.env.STRIDER_TEST_MODEL_ENV = nil; return true end)()")
+                self.assertEqual(
+                    ["pi", "--model", "chat-default", "--thinking", "low"],
+                    _rpc_command_list(h, "main")[:5],
+                )
+                h.lua("(function() vim.env.STRIDER_TEST_MODEL_ENV = 'default'; return true end)()")
+                self.assertEqual(
+                    ["pi", "--model", "chat-default", "--thinking", "low"],
+                    _rpc_command_list(h, "main")[:5],
+                )
+                h.lua("(function() vim.env.STRIDER_TEST_MODEL_ENV = 'work'; return true end)()")
+                self.assertEqual(
+                    ["pi", "--model", "global-work", "--thinking", "medium"],
+                    _rpc_command_list(h, "review")[:5],
+                )
 
     # ---- /model alias ----------------------------------------------------
 

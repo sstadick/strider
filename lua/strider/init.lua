@@ -97,6 +97,23 @@ local function lane_title(lane)
 	return "Strider chat"
 end
 
+local CHAT_READ_ONLY_INSTRUCTIONS = table.concat({
+	"Read-only chat mode is enabled.",
+	"Do not create, edit, delete, rename, move, format, or otherwise modify files or project state.",
+	"Do not run commands that mutate the working tree or project state.",
+	"You may inspect files, run read-only commands, explain findings, and propose changes, but do not apply them.",
+	"If changes are required, describe them and ask the user to disable Strider chat read-only mode.",
+}, "\n")
+
+local function chat_read_only_enabled()
+	local session = state.get_session(MAIN_LANE)
+	return session and session.chat_read_only == true
+end
+
+local function read_only_chat_prompt(text)
+	return string.format("/prompt %s\n\nUser request:\n%s", CHAT_READ_ONLY_INSTRUCTIONS, text)
+end
+
 local function warn_if_lane_busy(lane)
 	lane = state.normalize_lane(lane)
 	local pending = state.peek_pending_request(lane)
@@ -338,6 +355,44 @@ function M.cycle_thinking()
 	rpc.send_prompt(MAIN_LANE, "/thinking")
 end
 
+local function set_chat_read_only(enabled, opts)
+	opts = opts or {}
+	local session = ensure_session(MAIN_LANE)
+	session.chat_read_only = enabled == true
+	ui.refresh_compose_winbar(MAIN_LANE)
+	ui.refresh_compose_hint()
+	if opts.notify ~= false then
+		ui.notify(
+			string.format("Strider chat read-only %s", session.chat_read_only and "enabled" or "disabled"),
+			vim.log.levels.INFO
+		)
+	end
+	return session.chat_read_only
+end
+
+function M.toggle_chat_read_only()
+	return set_chat_read_only(not chat_read_only_enabled())
+end
+
+function M.chat_read_only(args)
+	local value = trimmed(args or ""):lower()
+	if value == "" or value == "toggle" then
+		return M.toggle_chat_read_only()
+	end
+	if value == "on" or value == "true" or value == "1" or value == "enable" or value == "enabled" then
+		return set_chat_read_only(true)
+	end
+	if value == "off" or value == "false" or value == "0" or value == "disable" or value == "disabled" then
+		return set_chat_read_only(false)
+	end
+	ui.notify("Usage: :StriderChatReadOnly [on|off|toggle]", vim.log.levels.WARN)
+	return false
+end
+
+function M.chat_read_only_enabled()
+	return chat_read_only_enabled()
+end
+
 -- :StriderStop / :StriderStopFlow — cancel an in-flight turn via pi's abort RPC.
 -- The actual "[error] Turn aborted" block in the log and spinner reset
 -- happen when pi emits the final message_end (see handle_message_end's
@@ -531,7 +586,11 @@ local function dispatch_prompt(text)
 			return
 		end
 		if is_prompt_slash(text) then
-			send(text, text, { operation = "prompt", open_log = true })
+			local command = text
+			if name == "prompt" and chat_read_only_enabled() then
+				command = read_only_chat_prompt(rest ~= "" and rest or text)
+			end
+			send(command, text, { operation = "prompt", open_log = true })
 		else
 			-- Pi built-in or extension command (e.g. /models).
 			-- Still needs a pending request so streamed response events
@@ -540,7 +599,8 @@ local function dispatch_prompt(text)
 		end
 		return
 	end
-	send("/prompt " .. text, text, { operation = "prompt", open_log = true })
+	local command = chat_read_only_enabled() and read_only_chat_prompt(text) or ("/prompt " .. text)
+	send(command, text, { operation = "prompt", open_log = true })
 end
 
 -- Send a user message from the compose buffer. If a request is already

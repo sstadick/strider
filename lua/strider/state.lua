@@ -144,6 +144,7 @@ local function new_session(cwd, lane)
 		message_text = nil,
 		chunk_lines = {},
 		chunk_path = nil,
+		chat_read_only = false,
 		comment_buffers = {},
 		compose_buf = nil,
 		cwd = cwd,

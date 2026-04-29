@@ -12,6 +12,16 @@ end, {
 	desc = "Toggle Strider chat; with args or a range, open compose prefilled with context",
 })
 
+vim.api.nvim_create_user_command("StriderChatReadOnly", function(opts)
+	require("strider").chat_read_only(opts.args)
+end, {
+	nargs = "?",
+	complete = function()
+		return { "on", "off", "toggle" }
+	end,
+	desc = "Toggle read-only instructions for Strider chat prompts",
+})
+
 vim.api.nvim_create_user_command("StriderSearch", function(opts)
 	require("strider").search(opts.args)
 end, { nargs = "*", desc = "Run Strider search or open recent searches" })

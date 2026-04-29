@@ -161,6 +161,7 @@ panes:
 | Command | Purpose |
 |---|---|
 | `:StriderChat [prompt]` | Main chat log + compose; bare command toggles the compact card |
+| `:StriderChatReadOnly [on\|off\|toggle]` | Toggle chat-only read-only prompting; compose shows `RO` |
 | `:StriderReview [prompt]` | Planned review walkthrough or current-stop question |
 | `:StriderSearch {prompt}` | Structured code search |
 | `:StriderQ[!] [prompt]` | Named side-question card; bare toggles latest, `!` opens a new Q prompt |

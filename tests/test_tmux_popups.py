@@ -92,6 +92,45 @@ class TmuxPopupTests(unittest.TestCase):
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("add a banner", log_text)
 
+    def test_chat_read_only_adds_badge_and_prompt_guard(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+
+                h.ex("StriderChatReadOnly on")
+                h.wait_until(lambda: "RO" in _winbar_for_buffer(h, "strider://compose"), timeout=3.0)
+                self.assertTrue(h.lua_bool("require('strider').chat_read_only_enabled()"))
+
+                h.send("explain without edits", "C-s", pause=0.3)
+                h.wait_until(
+                    lambda: "Read-only prompt received" in "\n".join(h.log_lines()),
+                    timeout=5.0,
+                )
+                log_text = "\n".join(h.log_lines())
+                self.assertIn("explain without edits", log_text)
+                self.assertNotIn("Read-only chat mode is enabled.", log_text)
+
+    def test_chat_read_only_keymaps_toggle_mode(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+                h.lua("(function() vim.cmd('stopinsert'); return true end)()")
+
+                h.send("g", "R", pause=0.3)
+                h.wait_until(lambda: h.lua_bool("require('strider').chat_read_only_enabled()"), timeout=3.0)
+                self.assertIn("RO", _winbar_for_buffer(h, "strider://compose"))
+
+                h.send("g", "R", pause=0.3)
+                h.wait_until(lambda: not h.lua_bool("require('strider').chat_read_only_enabled()"), timeout=3.0)
+                self.assertNotIn("RO", _winbar_for_buffer(h, "strider://compose"))
+
+                h.lua("(function() vim.cmd('startinsert'); return true end)()")
+                h.send("C-g", "r", pause=0.3)
+                h.wait_until(lambda: h.lua_bool("require('strider').chat_read_only_enabled()"), timeout=3.0)
+                self.assertIn("RO", _winbar_for_buffer(h, "strider://compose"))
+
     def test_compose_ctrl_v_inserts_image_marker(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             clipboard_png = project_root / "clipboard-test.png"

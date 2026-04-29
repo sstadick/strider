@@ -77,12 +77,24 @@ local function clear_buffer(card)
 	end
 end
 
+local function focus_regular_window(exclude_buf)
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		local regular = vim.api.nvim_win_get_config(win).relative == ""
+		if regular and vim.api.nvim_win_get_buf(win) ~= exclude_buf then
+			pcall(vim.api.nvim_set_current_win, win)
+			return true
+		end
+	end
+	return false
+end
+
 local function fold(card)
 	local lane = card.compose_lane or "q"
 	local session = require("strider.state").get_session(lane)
 	if session then
 		session.active_flow_card_id = nil
 	end
+	focus_regular_window(card.buf)
 	local ok, flow_cards = pcall(require, "strider.ui.flow_cards")
 	if ok and flow_cards and flow_cards.reflow then
 		flow_cards.reflow(lane)
@@ -216,7 +228,9 @@ end
 function M.close(card)
 	local win = compose_win(card)
 	if win then
+		card.compose_closing = true
 		pcall(vim.api.nvim_win_close, win, true)
+		card.compose_closing = nil
 	end
 	card.compose_win = nil
 end

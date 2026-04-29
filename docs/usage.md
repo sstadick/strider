@@ -30,6 +30,7 @@ README.
 | `:StriderCardsClear[!]` | Dismiss completed cards; `!` also dismisses running cards |
 | `:StriderChat` | Toggle the chat log + compose floats; collapsed state leaves a compact card |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
+| `:StriderChatReadOnly [on\|off\|toggle]` | Toggle the chat-only read-only prompt guard; compose shows an `RO` badge |
 | `:StriderStop` | Abort the current main-lane turn |
 | `:StriderStopFlow` | Abort active Q/Search/Patch worker turns |
 | `:StriderStatus` | Open the current lane/status/control summary |
@@ -43,8 +44,11 @@ README.
 
 `:StriderChat` keeps persistent main log and compose buffers, shown as a
 right-side floating log/compose stack. Toggling it closed leaves a compact
-`Strider chat` card; bare `:StriderChat` pops it back open. Compact Chat, Q,
-and Patch cards share the same right-edge stack instead of overlapping.
+`Strider chat` card; bare `:StriderChat` pops it back open. Use
+`:StriderChatReadOnly` (or `gR` in normal mode / `<C-g>r` in insert mode inside
+`strider://compose`) to toggle a chat-only read-only guard; the compose winbar
+shows `RO` while enabled. Compact Chat, Q, and Patch cards share the same
+right-edge stack instead of overlapping.
 `:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on separate flow-worker
 processes, so Q and patch can proceed independently of each other and main chat.
 Each new StriderQ card gets its own Q worker process. Search transcript lives in
@@ -55,9 +59,9 @@ completion; select/focus one to expand it into a near full-height right-side
 panel. Every card has a stable name such as `StriderQ #2: why is this flag?`,
 and `:StriderQs`/`:StriderCards` open pickers for existing Q cards or all
 Chat/Q/Patch cards. Expanded cards rise above the chat float, stay open when
-you return to code, and fold with `q` or `<Esc>` inside the card. Use `d` to
-dismiss it, `o` to open its worker log, or `[c`/`]c` to move between cards in
-that lane. Bare `:StriderQ` toggles the latest Q card. Expanded Q cards show
+you return to code, and fold with `q` or `<Esc>` inside the card. Use `d` or
+`:q` to dismiss it, `o` to open its worker log, or `[c`/`]c` to move between
+cards in that lane. Bare `:StriderQ` toggles the latest Q card. Expanded Q cards show
 the question plus assistant answer above a separate follow-up compose float;
 type there and press `<C-s>` to ask on the same Q worker/card. Patch cards show
 the request, target, touched files, diffs, and final summary. Reasoning, tool

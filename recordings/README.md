@@ -65,6 +65,7 @@ VHS_BIN=/opt/homebrew/bin/vhs recordings/vhs/render-all.sh
 - `review-popup.gif` — `:StriderReview` with no args opens the floating editor; first word picks the scope, then a follow-up shows the in-review question editor
 - `patch.gif` — `:StriderPatch` on a visual-line selection
 - `chat-review.gif` — `:StriderChat` followed by reviewing the resulting diff
+- `chat-readonly.gif` — `:StriderChatReadOnly` adds an `RO` badge and read-only prompt guard for chat
 - `reasoning-log.gif` — a chat turn showing faint reasoning text, compact tool output, inline diff rows, and the final answer
 - `tangent.gif` — `:StriderQ` opens a side-question card and keeps the main chat surfaces out of the way
 

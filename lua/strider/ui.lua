@@ -107,7 +107,8 @@ local function format_elapsed(start_ns)
 end
 
 local function escape_status_text(text)
-	return (text or ""):gsub("%%", "%%%%")
+	local escaped = (text or ""):gsub("%%", "%%%%")
+	return escaped
 end
 
 local WORKING_LABEL = "Working"
@@ -154,10 +155,10 @@ local function compose_status_line(progress, lane)
 	local session = state.get_session(lane)
 	local statuses = session and session.status or {}
 	local clarify_badge = statuses["strider-clarify"]
-	local prefix = ""
+	local prefix = session and session.chat_read_only and lane == "main" and "[RO] " or ""
 	local idle_msg = nil
 	if clarify_badge and clarify_badge ~= "" then
-		prefix = "[Clarify] "
+		prefix = prefix .. "[Clarify] "
 		idle_msg = "Strider is asking — type your answer (<Esc><Esc> to reject)."
 	end
 	if not progress then
@@ -166,7 +167,7 @@ local function compose_status_line(progress, lane)
 		end
 		local action = status.pending_action(lane)
 		if action then
-			return action
+			return prefix .. action
 		end
 		-- Idle: show model + cwd like codex's bottom bar.
 		local widget = session and session.widget or {}
@@ -178,9 +179,9 @@ local function compose_status_line(progress, lane)
 			end
 		end
 		if #parts > 0 then
-			return table.concat(parts, " · ")
+			return prefix .. table.concat(parts, " · ")
 		end
-		return "Strider is ready."
+		return prefix .. "Strider is ready."
 	end
 	-- Active: animate `Working`, keep elapsed time beside it, and leave the stop hint on the right.
 	local elapsed = format_elapsed(progress.started_at) or "0s"
@@ -491,13 +492,15 @@ local function compose_buffer_name()
 end
 
 local function compose_hint_text()
+	local session = state.get_session("main")
+	local prefix = session and session.chat_read_only and "RO · " or ""
 	if state.peek_pending_clarify() then
-		return "Answer clarify · <C-s> send · <Esc><Esc> reject"
+		return prefix .. "Answer clarify · <C-s> send · <Esc><Esc> reject"
 	end
 	if state.peek_pending_request() then
-		return "Turn in flight · type to steer · <C-s> send · :StriderStop cancel"
+		return prefix .. "Turn in flight · type to steer · <C-s> send · :StriderStop cancel"
 	end
-	return "Type a message · <C-v> screenshot · <C-s> to send"
+	return prefix .. "Type a message · <C-v> screenshot · <C-s> send · gR RO"
 end
 
 function M.ensure_compose_buffer(on_send)
@@ -643,6 +646,22 @@ function M.ensure_compose_buffer(on_send)
 		nowait = true,
 		silent = true,
 		desc = "Cycle Strider thinking level",
+	})
+	vim.keymap.set("n", "gR", function()
+		require("strider").toggle_chat_read_only()
+	end, {
+		buffer = buf,
+		nowait = true,
+		silent = true,
+		desc = "Toggle Strider chat read-only mode",
+	})
+	vim.keymap.set("i", "<C-g>r", function()
+		require("strider").toggle_chat_read_only()
+	end, {
+		buffer = buf,
+		nowait = true,
+		silent = true,
+		desc = "Toggle Strider chat read-only mode",
 	})
 	vim.keymap.set("i", "<Esc><Esc>", leave_insert, {
 		buffer = buf,

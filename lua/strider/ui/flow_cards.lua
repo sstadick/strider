@@ -26,7 +26,8 @@ local function normalize_lane(lane)
 	return state.normalize_lane(lane)
 end
 local function escape_status_text(text)
-	return (text or ""):gsub("%%", "%%%%")
+	local escaped = (text or ""):gsub("%%", "%%%%")
+	return escaped
 end
 local function format_elapsed(start_ns)
 	if not start_ns then
@@ -345,7 +346,8 @@ local function card_winbar(card, lane)
 		if card.kind == "patch" then
 			text = card.status == "success" and "StriderPatch complete" or "StriderPatch stopped"
 		end
-		local hint = card.kind == "q" and "i follow-up · q/Esc fold" or "q/Esc fold"
+		local hint = card.kind == "q" and "i follow-up · q/Esc fold · d/:q dismiss"
+			or "q/Esc fold · d/:q dismiss"
 		return escape_status_text(text) .. (expanded and "%=" .. escape_status_text(hint) or "")
 	end
 	return escape_status_text(card.title or "Strider flow")
@@ -497,17 +499,52 @@ function M.refresh_winbars(lane)
 		end
 	end
 end
+local function schedule_dismiss_closed_card(winid)
+	if not winid then
+		return false
+	end
+	for _, lane in ipairs(state.lanes()) do
+		local session = state.get_session(lane)
+		for _, card in ipairs(session and ensure_card_state(session) or {}) do
+			local closed_card = card.win == winid
+			local closed_compose = card.compose_win == winid and not card.compose_closing
+			if not card.dismissed and (closed_card or closed_compose) then
+				local id = card.id
+				vim.schedule(function()
+					local current = card_by_id(state.get_session(lane), id)
+					if current and not current.dismissed then
+						M.dismiss_card(id, lane)
+					end
+				end)
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function schedule_layout_refresh()
+	vim.schedule(function()
+		M.refresh_layouts()
+	end)
+end
+
 local function ensure_autocmds()
 	if augroup then
 		return
 	end
 	augroup = vim.api.nvim_create_augroup("StriderFlowCardsLayout", { clear = true })
-	vim.api.nvim_create_autocmd({ "WinEnter", "WinLeave", "BufEnter", "WinClosed", "VimResized" }, {
+	vim.api.nvim_create_autocmd({ "WinEnter", "WinLeave", "BufEnter", "VimResized" }, {
 		group = augroup,
-		callback = function()
-			vim.schedule(function()
-				M.refresh_layouts()
-			end)
+		callback = schedule_layout_refresh,
+	})
+	vim.api.nvim_create_autocmd("WinClosed", {
+		group = augroup,
+		callback = function(args)
+			if schedule_dismiss_closed_card(tonumber(args.match)) then
+				return
+			end
+			schedule_layout_refresh()
 		end,
 	})
 end

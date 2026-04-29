@@ -171,6 +171,57 @@ class TmuxTangentTests(unittest.TestCase):
                     "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
                 ))
 
+    def test_q_card_compose_quit_dismisses_card(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderQ what does this flag do")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://StriderQAnswer")),
+                    timeout=5.0,
+                )
+
+                h.ex("StriderQ")
+                h.wait_until(lambda: h.expr("bufname('%')") == "strider://StriderQCompose", timeout=3.0)
+                h.ex("q")
+                h.wait_until(
+                    lambda: h.lua(
+                        "(function() return tostring(#require('strider.ui.card_picker').items({ kind = 'q' })) end)()"
+                    ) == "0",
+                    timeout=3.0,
+                )
+                windows = h.json_expr("map(getwininfo(), {_, v -> bufname(v.bufnr)})")
+                self.assertNotIn("strider://StriderQCompose", windows)
+                self.assertNotIn("strider://StriderQAnswer", windows)
+
+    def test_q_card_answer_quit_dismisses_card(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderQ dismiss the answer card")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://StriderQAnswer")),
+                    timeout=5.0,
+                )
+
+                h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  vim.api.nvim_set_current_win(vim.fn.win_findbuf(buf)[1]); "
+                    "  return true "
+                    "end)()"
+                )
+                h.ex("q")
+                h.wait_until(
+                    lambda: h.lua(
+                        "(function() return tostring(#require('strider.ui.card_picker').items({ kind = 'q' })) end)()"
+                    ) == "0",
+                    timeout=3.0,
+                )
+                self.assertNotIn("strider://StriderQAnswer", h.json_expr(
+                    "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+                ))
+
     def test_q_answer_winbar_uses_flow_stop_command(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

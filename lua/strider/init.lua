@@ -694,10 +694,10 @@ function M.chat(prompt, opts)
   local range = range_from_opts(opts)
   local prefill = chat_prefill(prompt, range)
 
-  -- No args + no range toggles the chat surface. Collapse leaves a compact
-  -- card so chat can pop back up quickly; explicit prompt/range opens compose.
+  -- No args + no range toggles the chat surface. Collapse fully hides
+  -- chat surfaces; explicit prompt/range opens compose.
   if prefill == "" and ui.chat_is_visible() then
-    ui.hide_chat({ show_card = true })
+    ui.hide_chat()
     return
   end
 

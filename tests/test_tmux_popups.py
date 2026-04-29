@@ -206,9 +206,44 @@ class TmuxPopupTests(unittest.TestCase):
                 )
                 self.assertEqual(1, marker_index)
                 self.assertEqual("before", lines[marker_index - 1])
-                self.assertEqual("", lines[marker_index + 1])
-                self.assertEqual("after", lines[marker_index + 2])
-                self.assertEqual(marker_index + 2, h.current_state()["line"])
+                self.assertEqual("after", lines[marker_index + 1])
+                self.assertEqual(marker_index + 1, h.current_state()["line"])
+
+    def test_compose_ctrl_v_inserts_image_marker_at_cursor_column(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            clipboard_png = project_root / "clipboard-test.png"
+            clipboard_png.write_bytes(TEST_PNG)
+
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.lua(
+                    "(function() require('strider.state').setup({ clipboard_image_test_file = "
+                    + json.dumps(str(clipboard_png))
+                    + " }); return true end)()"
+                )
+                h.ex("StriderChat")
+                h.wait_until(
+                    lambda: h.current_state()["buf"] == "strider://compose",
+                    timeout=3.0,
+                )
+                h.lua(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://compose'); "
+                    "  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {'before after'}); "
+                    "  vim.api.nvim_win_set_cursor(0, {1, 7}); "
+                    "  return true "
+                    "end)()"
+                )
+
+                h.send("C-v", pause=0.3)
+                h.wait_until(
+                    lambda: h.buffer_lines("strider://compose")[0].startswith("before @image "),
+                    timeout=3.0,
+                )
+
+                lines = h.buffer_lines("strider://compose")
+                self.assertTrue(lines[0].startswith("before @image "))
+                self.assertEqual("after", lines[1])
+                self.assertEqual(1, h.current_state()["line"])
 
     def test_prompt_turn_logs_reasoning_before_assistant_text(self) -> None:
         with FixtureProject(self.project_root) as project_root:

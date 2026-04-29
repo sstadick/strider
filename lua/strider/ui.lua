@@ -538,7 +538,7 @@ function M.ensure_compose_buffer(on_send)
 		callback = render_hint,
 	})
 
-	local function resume_compose(cursor_lnum)
+	local function resume_compose(cursor_lnum, cursor_col)
 		local compose_win = vim.fn.win_findbuf(buf)[1]
 		if not compose_win or not vim.api.nvim_win_is_valid(compose_win) then
 			return
@@ -548,31 +548,38 @@ function M.ensure_compose_buffer(on_send)
 				vim.api.nvim_set_current_win(compose_win)
 				local last = math.max(vim.api.nvim_buf_line_count(buf), 1)
 				local lnum = math.max(1, math.min(cursor_lnum or last, last))
-				pcall(vim.api.nvim_win_set_cursor, compose_win, { lnum, 0 })
+				local line = vim.api.nvim_buf_get_lines(buf, lnum - 1, lnum, false)[1] or ""
+				local col = math.max(0, math.min(cursor_col or 0, #line))
+				pcall(vim.api.nvim_win_set_cursor, compose_win, { lnum, col })
 				vim.cmd("startinsert")
 			end
 		end)
 	end
 
-	local function append_compose_marker(marker)
-		local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-		local is_empty = (#lines == 0) or (#lines == 1 and lines[1] == "")
-		local insert_at = 0
-		if is_empty then
-			vim.api.nvim_buf_set_lines(buf, 0, -1, false, { marker, "" })
-		else
-			insert_at = #lines
-			local current_win = vim.api.nvim_get_current_win()
-			if vim.api.nvim_win_get_buf(current_win) == buf then
-				insert_at = vim.api.nvim_win_get_cursor(current_win)[1] - 1
-			elseif lines[#lines] == "" then
-				insert_at = #lines - 1
-			end
-			insert_at = math.max(0, math.min(insert_at, #lines))
-			vim.api.nvim_buf_set_lines(buf, insert_at, insert_at, false, { marker, "" })
+	local function compose_cursor_position(lines)
+		local current_win = vim.api.nvim_get_current_win()
+		if vim.api.nvim_win_get_buf(current_win) == buf then
+			local cursor = vim.api.nvim_win_get_cursor(current_win)
+			local row = math.max(0, math.min(cursor[1] - 1, #lines - 1))
+			local line = lines[row + 1] or ""
+			local col = math.max(0, math.min(cursor[2], #line))
+			return row, col
 		end
+		local row = math.max(#lines - 1, 0)
+		local line = lines[row + 1] or ""
+		return row, #line
+	end
+
+	local function insert_compose_marker(marker)
+		local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+		if #lines == 0 then
+			vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
+			lines = { "" }
+		end
+		local row, col = compose_cursor_position(lines)
+		vim.api.nvim_buf_set_text(buf, row, col, row, col, { marker, "" })
 		render_hint()
-		return insert_at + 2
+		return row + 1, col + #marker
 	end
 
 	local function paste_image()
@@ -582,7 +589,7 @@ function M.ensure_compose_buffer(on_send)
 			resume_compose()
 			return
 		end
-		resume_compose(append_compose_marker("@image " .. path))
+		resume_compose(insert_compose_marker("@image " .. path))
 	end
 
 	local function send_compose()

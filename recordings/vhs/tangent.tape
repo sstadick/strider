@@ -1,5 +1,5 @@
-# Strider tangent demo — :StriderQ opens a one-shot flow-lane question and
-# answers in the flow log so the main chat surfaces stay out of the way.
+# StriderQ demo — :StriderQ opens a side-question card and keeps the main chat
+# surfaces out of the way.
 # Run:   vhs recordings/vhs/tangent.tape
 
 Output recordings/tangent.gif
@@ -26,19 +26,22 @@ Sleep 2000ms
 Type ":StriderChat add loading states to the lobby flow"
 Sleep 2400ms
 Enter
+Sleep 900ms
+Ctrl+S
 Sleep 3500ms
 
-# Now the tangent — a question unrelated to the running thread that we
-# do not want polluting the main session's history.
+# Now the side question — unrelated to the running thread and isolated from the
+# main session's history.
 Type ":StriderQ what does the App component even do here?"
 Sleep 2600ms
 Enter
+Sleep 900ms
+Ctrl+S
 
-# Wait for the tangent answer to stream in and the [Tangent] badge to
-# appear in the compose winbar.
+# Wait for the Q answer to stream into its card.
 Sleep 3500ms
 
-# Hide the tangent by re-invoking :StriderQ with no args.
+# Hide the Q card by re-invoking :StriderQ with no args.
 Type ":StriderQ"
 Sleep 2200ms
 Enter

@@ -25,6 +25,8 @@ Sleep 2500ms
 Type ":StriderReview file"
 Sleep 2200ms
 Enter
+Sleep 900ms
+Ctrl+S
 Sleep 3500ms
 
 # Select a block to comment on.

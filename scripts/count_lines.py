@@ -9,20 +9,48 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
-SKIP_DIRS = {".git", ".hg", ".svn", "__pycache__"}
+SKIP_DIRS = {
+    ".git",
+    ".hg",
+    ".nvim-cache",
+    ".nvim-data",
+    ".nvim-state",
+    ".svn",
+    "__pycache__",
+    "_workspace",
+    "dist",
+    "node_modules",
+}
+SKIP_NAMES = {".DS_Store"}
+BINARY_SUFFIXES = {
+    ".gif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".swp",
+    ".webp",
+}
+GENERATED_SUFFIXES = {".log", ".pyc"}
 COMMANDS = {"lines", "bytes"}
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def should_skip(path: Path) -> bool:
+def should_skip(path: Path, *, command: str = "lines") -> bool:
     """Return whether a path should be excluded from scanning."""
-    return any(part in SKIP_DIRS for part in path.parts)
+    if any(part in SKIP_DIRS for part in path.parts):
+        return True
+    if path.name in SKIP_NAMES:
+        return True
+    suffix = path.suffix.lower()
+    if suffix in GENERATED_SUFFIXES:
+        return True
+    return command == "lines" and suffix in BINARY_SUFFIXES
 
 
-def iter_files(root: Path) -> Iterable[Path]:
+def iter_files(root: Path, *, command: str = "lines") -> Iterable[Path]:
     """Yield scannable files under ``root`` in a stable order."""
     for path in sorted(root.rglob("*")):
-        if not path.is_file() or should_skip(path):
+        if not path.is_file() or should_skip(path, command=command):
             continue
         yield path
 
@@ -89,10 +117,10 @@ def main() -> int:
         return 1
 
     if root.is_file():
-        files = [] if should_skip(root) else [root]
+        files = [] if should_skip(root, command=args.command) else [root]
         base = root.parent
     else:
-        files = iter_files(root)
+        files = iter_files(root, command=args.command)
         base = root
 
     counter = get_counter(args.command)

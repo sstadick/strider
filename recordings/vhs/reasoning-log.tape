@@ -26,6 +26,8 @@ Sleep 1500ms
 Type ":StriderChat add a banner"
 Sleep 1600ms
 Enter
+Sleep 900ms
+Ctrl+S
 Sleep 5000ms
 
 Type ":qall!"

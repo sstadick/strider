@@ -80,6 +80,31 @@ class CountLinesTests(unittest.TestCase):
             self.assertNotIn("ignored.py", result.stdout)
             self.assertIn("     2  total lines", result.stdout)
 
+    def test_lines_skips_generated_workspaces_and_binary_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generated = root / "recordings" / "_workspace" / "demo"
+            generated.mkdir(parents=True)
+            cache = root / "tests" / ".nvim-cache"
+            cache.mkdir(parents=True)
+
+            (root / "source.lua").write_text("return true\n", encoding="utf-8")
+            (root / ".DS_Store").write_text("ignored\n", encoding="utf-8")
+            (root / "nvim.log").write_text("ignored\n", encoding="utf-8")
+            (root / "demo.gif").write_bytes(b"GIF89a\nnot a text file\n")
+            (generated / "app.py").write_text("ignored\n", encoding="utf-8")
+            (cache / "state.lua").write_text("ignored\n", encoding="utf-8")
+
+            result = self.run_script("lines", root)
+
+            self.assertIn("source.lua", result.stdout)
+            self.assertNotIn(".DS_Store", result.stdout)
+            self.assertNotIn("nvim.log", result.stdout)
+            self.assertNotIn("demo.gif", result.stdout)
+            self.assertNotIn("recordings/_workspace", result.stdout)
+            self.assertNotIn(".nvim-cache", result.stdout)
+            self.assertIn("     1  total lines", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

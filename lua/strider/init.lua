@@ -1,4 +1,5 @@
 local card_picker = require("strider.ui.card_picker")
+local context = require("strider.context")
 local picker = require("strider.picker")
 local review = require("strider.review")
 local rpc = require("strider.rpc")
@@ -21,293 +22,253 @@ local FLOW_LANES = { FLOW_LANE, PATCH_LANE }
 -- every lane's session on every send().
 local cached_cwd = nil
 local cached_cwd_ns = 0
-local CWD_CACHE_NS = 500e6  -- 500ms in nanoseconds
+local CWD_CACHE_NS = 500e6 -- 500ms in nanoseconds
+local trimmed = context.trimmed
+local range_from_opts = context.range_from_opts
+local read_excerpt = context.read_excerpt
 
 local function current_cwd()
-  local now = vim.uv.hrtime()
-  if cached_cwd and (now - cached_cwd_ns) < CWD_CACHE_NS then
-    return cached_cwd
-  end
-  cached_cwd = vim.fn.getcwd()
-  cached_cwd_ns = now
-  return cached_cwd
+	local now = vim.uv.hrtime()
+	if cached_cwd and (now - cached_cwd_ns) < CWD_CACHE_NS then
+		return cached_cwd
+	end
+	cached_cwd = vim.fn.getcwd()
+	cached_cwd_ns = now
+	return cached_cwd
 end
 
 local function ensure_backend(lane)
-  lane = state.normalize_lane(lane)
-  local cwd = current_cwd()
-  for _, session_lane in ipairs(state.lanes()) do
-    local session = state.get_session(session_lane)
-    if session and session.cwd ~= cwd then
-      rpc.stop(session_lane)
-      state.clear_session(session_lane)
-    end
-  end
-  return rpc.start(cwd, lane)
+	lane = state.normalize_lane(lane)
+	local cwd = current_cwd()
+	for _, session_lane in ipairs(state.lanes()) do
+		local session = state.get_session(session_lane)
+		if session and session.cwd ~= cwd then
+			rpc.stop(session_lane)
+			state.clear_session(session_lane)
+		end
+	end
+	return rpc.start(cwd, lane)
 end
 
 local function ensure_session(lane)
-  return state.ensure_session(lane, current_cwd())
+	return state.ensure_session(lane, current_cwd())
 end
 
 local function activity_title(operation)
-  local titles = {
-    patch = "Strider patch running...",
-    plan = "Strider planning review...",
-    q = "StriderQ running...",
-    review = "Strider review running...",
-    search = "Strider search running...",
-    prompt = "Strider prompt running...",
-    command = "Strider command running...",
-  }
-  return titles[operation] or "Strider running..."
+	local titles = {
+		patch = "Strider patch running...",
+		plan = "Strider planning review...",
+		q = "StriderQ running...",
+		review = "Strider review running...",
+		search = "Strider search running...",
+		prompt = "Strider prompt running...",
+		command = "Strider command running...",
+	}
+	return titles[operation] or "Strider running..."
 end
 
 local function activity_target(operation, lane)
-  if operation == "q" and state.normalize_lane(lane) == Q_LANE then
-    return "q"
-  end
-  if lane == REVIEW_LANE and (operation == "review" or operation == "plan")
-      and (review.has_active_review() or review.is_awaiting_summary()) then
-    return "review"
-  end
-  return "log"
+	if operation == "q" and state.normalize_lane(lane) == Q_LANE then
+		return "q"
+	end
+	if
+		lane == REVIEW_LANE
+		and (operation == "review" or operation == "plan")
+		and (review.has_active_review() or review.is_awaiting_summary())
+	then
+		return "review"
+	end
+	return "log"
 end
 
 local function lane_title(lane)
-  if state.is_q_lane(lane) then return "StriderQ" end
-  if lane == PATCH_LANE then return "Strider patch" end
-  if lane == FLOW_LANE then return "Strider flow" end
-  if lane == REVIEW_LANE then return "Strider review" end
-  return "Strider chat"
+	if state.is_q_lane(lane) then
+		return "StriderQ"
+	end
+	if lane == PATCH_LANE then
+		return "Strider patch"
+	end
+	if lane == FLOW_LANE then
+		return "Strider flow"
+	end
+	if lane == REVIEW_LANE then
+		return "Strider review"
+	end
+	return "Strider chat"
 end
 
 local function warn_if_lane_busy(lane)
-  lane = state.normalize_lane(lane)
-  local pending = state.peek_pending_request(lane)
-  if not pending then
-    return false
-  end
-  local suffix = pending.operation and string.format(" (%s)", pending.operation) or ""
-  ui.notify(string.format("%s is already running%s; wait for it to finish.", lane_title(lane), suffix), vim.log.levels.WARN)
-  return true
+	lane = state.normalize_lane(lane)
+	local pending = state.peek_pending_request(lane)
+	if not pending then
+		return false
+	end
+	local suffix = pending.operation and string.format(" (%s)", pending.operation) or ""
+	ui.notify(
+		string.format("%s is already running%s; wait for it to finish.", lane_title(lane), suffix),
+		vim.log.levels.WARN
+	)
+	return true
 end
 
 local function send(command, user_text, opts)
-  opts = opts or {}
-  local lane = state.normalize_lane(opts.lane)
-  if warn_if_lane_busy(lane) then
-    return false
-  end
-  if not ensure_backend(lane) then
-    return false
-  end
-  if opts.open_log then
-    -- Don't steal focus from whatever the user is currently doing (e.g.
-    -- composing in strider://compose). If the log isn't visible yet,
-    -- opening it should be silent.
-    ui.open_log({ preserve_focus = true }, lane)
-  end
-  local operation = opts.operation or nil
-  local metadata = opts.metadata or {}
-  state.clear_error(lane)
-  if operation == "patch" then
-    metadata.card_id = ui.open_patch_card(user_text, { target = metadata.target }, lane)
-  elseif operation == "q" then
-    metadata.card_lane = metadata.card_lane or Q_LANE
-    ensure_session(metadata.card_lane)
-    metadata.worker_lane = lane
-    metadata.card_id = ui.open_q_answer(user_text, metadata.card_lane, {
-      card_id = metadata.card_id,
-      new = metadata.card_id == nil,
-      preserve_name = metadata.card_id ~= nil,
-      seq = metadata.q_seq,
-      worker_lane = lane,
-    })
-  end
-  state.set_pending_request(operation, metadata, lane)
-  if operation then
-    ui.start_activity(activity_title(operation), activity_target(operation, lane), operation, lane)
-  end
-  ui.refresh_compose_winbar(lane)
-  ui.refresh_compose_hint()
-  local ok = rpc.send_prompt(command, lane)
-  if not ok then
-    state.set_pending_request(nil, nil, lane)
-    ui.finish_activity("Strider request failed to start", "error", lane)
-    if operation == "q" then
-      ui.finish_q_answer("Strider request failed to start", "error", metadata.card_lane or lane, metadata.card_id)
-    elseif operation == "patch" then
-      ui.finish_patch_card(metadata.card_id, "error", {
-        assistant_summary = "Strider request failed to start",
-      }, lane)
-    end
-    ui.refresh_compose_hint()
-    return false
-  end
-  if user_text and user_text ~= "" then
-    ui.append_block("user", user_text, lane)
-  end
-  if opts.debug_prompt and opts.debug_prompt ~= "" then
-    ui.append_block("review-prompt", opts.debug_prompt, lane)
-  end
-  return true
-end
-
-local function trimmed(text)
-  return vim.trim(text or "")
-end
-
-local function current_buffer_path()
-  local path = vim.api.nvim_buf_get_name(0)
-  return path ~= "" and path or nil
-end
-
-local function range_from_opts(opts)
-  if not opts or tonumber(opts.range or 0) == 0 then
-    return nil
-  end
-  local path = current_buffer_path()
-  if not path then
-    return nil
-  end
-  return {
-    path = path,
-    startLine = tonumber(opts.line1) or 1,
-    endLine = tonumber(opts.line2) or tonumber(opts.line1) or 1,
-  }
-end
-
-local function display_path(path)
-  local cwd = current_cwd()
-  if path and cwd and vim.startswith(path, cwd .. "/") then
-    return path:sub(#cwd + 2)
-  end
-  return path
+	opts = opts or {}
+	local lane = state.normalize_lane(opts.lane)
+	if warn_if_lane_busy(lane) then
+		return false
+	end
+	if not ensure_backend(lane) then
+		return false
+	end
+	if opts.open_log then
+		-- Don't steal focus from whatever the user is currently doing (e.g.
+		-- composing in strider://compose). If the log isn't visible yet,
+		-- opening it should be silent.
+		ui.open_log({ preserve_focus = true }, lane)
+	end
+	local operation = opts.operation or nil
+	local metadata = opts.metadata or {}
+	state.clear_error(lane)
+	if operation == "patch" then
+		metadata.card_id = ui.open_patch_card(user_text, { target = metadata.target }, lane)
+	elseif operation == "q" then
+		metadata.card_lane = metadata.card_lane or Q_LANE
+		ensure_session(metadata.card_lane)
+		metadata.worker_lane = lane
+		metadata.card_id = ui.open_q_answer(user_text, metadata.card_lane, {
+			card_id = metadata.card_id,
+			new = metadata.card_id == nil,
+			preserve_name = metadata.card_id ~= nil,
+			seq = metadata.q_seq,
+			worker_lane = lane,
+		})
+	end
+	state.set_pending_request(operation, metadata, lane)
+	if operation then
+		ui.start_activity(activity_title(operation), activity_target(operation, lane), operation, lane)
+	end
+	ui.refresh_compose_winbar(lane)
+	ui.refresh_compose_hint()
+	local ok = rpc.send_prompt(command, lane)
+	if not ok then
+		state.set_pending_request(nil, nil, lane)
+		ui.finish_activity("Strider request failed to start", "error", lane)
+		if operation == "q" then
+			ui.finish_q_answer("Strider request failed to start", "error", metadata.card_lane or lane, metadata.card_id)
+		elseif operation == "patch" then
+			ui.finish_patch_card(metadata.card_id, "error", {
+				assistant_summary = "Strider request failed to start",
+			}, lane)
+		end
+		ui.refresh_compose_hint()
+		return false
+	end
+	if user_text and user_text ~= "" then
+		ui.append_block("user", user_text, lane)
+	end
+	if opts.debug_prompt and opts.debug_prompt ~= "" then
+		ui.append_block("review-prompt", opts.debug_prompt, lane)
+	end
+	return true
 end
 
 local function range_pointer(range)
-  if not range then
-    return nil
-  end
-  return string.format("%s:%d-%d", display_path(range.path), range.startLine, range.endLine)
+	return context.range_pointer(range, current_cwd())
 end
 
 local function chat_prefill(prompt, range)
-  local parts = {}
-  local pointer = range_pointer(range)
-  local text = trimmed(prompt)
-  if pointer then
-    table.insert(parts, pointer)
-  end
-  if text ~= "" then
-    table.insert(parts, text)
-  end
-  return table.concat(parts, "\n\n")
-end
-
-local function read_excerpt(path, start_line, end_line)
-  local buf = vim.fn.bufnr(path)
-  if buf > 0 and vim.api.nvim_buf_is_valid(buf) then
-    return table.concat(vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false), "\n")
-  end
-  local all = vim.fn.readfile(path)
-  local lines = {}
-  for line = start_line, math.min(end_line, #all) do
-    table.insert(lines, all[line])
-  end
-  return table.concat(lines, "\n")
+	return context.chat_prefill(prompt, range, current_cwd())
 end
 
 local function send_review_prompt(prompt, label, opts)
-  opts = opts or {}
-  local open_log = opts.open_log
-  if open_log == nil then
-    open_log = true
-  end
-  return send("/review " .. prompt, label, {
-    lane = REVIEW_LANE,
-    operation = "review",
-    debug_prompt = prompt,
-    open_log = open_log,
-  })
+	opts = opts or {}
+	local open_log = opts.open_log
+	if open_log == nil then
+		open_log = true
+	end
+	return send("/review " .. prompt, label, {
+		lane = REVIEW_LANE,
+		operation = "review",
+		debug_prompt = prompt,
+		open_log = open_log,
+	})
 end
 
 local function append_review_summary_to_main(summary)
-  if not summary or summary == "" then
-    return false
-  end
-  ensure_session(MAIN_LANE)
-  local lines = {
-    "Review summary",
-    "",
-    summary,
-  }
-  local comment_lines = review.pending_comment_lines()
-  if comment_lines and #comment_lines > 0 then
-    table.insert(lines, "")
-    table.insert(lines, "Review comments")
-    table.insert(lines, "")
-    vim.list_extend(lines, comment_lines)
-  end
-  ui.append_block("assistant", table.concat(lines, "\n"), MAIN_LANE)
-  return true
+	if not summary or summary == "" then
+		return false
+	end
+	ensure_session(MAIN_LANE)
+	local lines = {
+		"Review summary",
+		"",
+		summary,
+	}
+	local comment_lines = review.pending_comment_lines()
+	if comment_lines and #comment_lines > 0 then
+		table.insert(lines, "")
+		table.insert(lines, "Review comments")
+		table.insert(lines, "")
+		vim.list_extend(lines, comment_lines)
+	end
+	ui.append_block("assistant", table.concat(lines, "\n"), MAIN_LANE)
+	return true
 end
 
 function M.complete_review_summary(summary)
-  summary = trimmed(summary)
-  if summary == "" then
-    return false
-  end
-  local forwarded = append_review_summary_to_main(summary)
-  if forwarded then
-    review.mark_summary_forwarded(summary)
-  end
-  rpc.stop(REVIEW_LANE)
-  return forwarded
+	summary = trimmed(summary)
+	if summary == "" then
+		return false
+	end
+	local forwarded = append_review_summary_to_main(summary)
+	if forwarded then
+		review.mark_summary_forwarded(summary)
+	end
+	rpc.stop(REVIEW_LANE)
+	return forwarded
 end
 
 local function start_selection_review(opts)
-  if not ensure_backend(REVIEW_LANE) then
-    return false
-  end
-  if warn_if_lane_busy(REVIEW_LANE) then
-    return false
-  end
-  local item = review.start_planned("selection", opts)
-  if not item then
-    ui.notify("No review items found for the selected range", vim.log.levels.WARN)
-    return false
-  end
-  local prompt = review.build_prompt(opts and opts.focus)
-  if not prompt then
-    return false
-  end
-  local label = opts and opts.focus ~= "" and opts.focus or "Review selection"
-  return send_review_prompt(prompt, label, { open_log = false })
+	if not ensure_backend(REVIEW_LANE) then
+		return false
+	end
+	if warn_if_lane_busy(REVIEW_LANE) then
+		return false
+	end
+	local item = review.start_planned("selection", opts)
+	if not item then
+		ui.notify("No review items found for the selected range", vim.log.levels.WARN)
+		return false
+	end
+	local prompt = review.build_prompt(opts and opts.focus)
+	if not prompt then
+		return false
+	end
+	local label = opts and opts.focus ~= "" and opts.focus or "Review selection"
+	return send_review_prompt(prompt, label, { open_log = false })
 end
 
 local function start_free_review(focus)
-  local text = trimmed(focus)
-  if text == "" then
-    ui.notify("StriderReview requires input", vim.log.levels.WARN)
-    return false
-  end
-  if not ensure_backend(REVIEW_LANE) then
-    return false
-  end
-  if warn_if_lane_busy(REVIEW_LANE) then
-    return false
-  end
-  if not review.start_planning(text) then
-    return false
-  end
-  return send("/plan " .. text, text, {
-    lane = REVIEW_LANE,
-    operation = "plan",
-    debug_prompt = text,
-    open_log = false,
-  })
+	local text = trimmed(focus)
+	if text == "" then
+		ui.notify("StriderReview requires input", vim.log.levels.WARN)
+		return false
+	end
+	if not ensure_backend(REVIEW_LANE) then
+		return false
+	end
+	if warn_if_lane_busy(REVIEW_LANE) then
+		return false
+	end
+	if not review.start_planning(text) then
+		return false
+	end
+	return send("/plan " .. text, text, {
+		lane = REVIEW_LANE,
+		operation = "plan",
+		debug_prompt = text,
+		open_log = false,
+	})
 end
 
 -- Called from rpc.lua after a /plan turn finishes and a plan has been
@@ -318,51 +279,51 @@ end
 -- the explanation is already in `items[1].explanation` and the sidebar
 -- renders it. No second model round-trip needed.
 function M.dispatch_first_review()
-  if not review.has_active_review() then
-    return false
-  end
-  if review.is_planning() then
-    return false
-  end
-  -- `ingest_plan` already navigated to the first visible item (message 0
-  -- or stop 1) and rendered the sidebar. Nothing else to do here — this
-  -- hook exists so rpc.lua can still signal "plan turn complete" without
-  -- hard-coding navigation.
-  return true
+	if not review.has_active_review() then
+		return false
+	end
+	if review.is_planning() then
+		return false
+	end
+	-- `ingest_plan` already navigated to the first visible item (message 0
+	-- or stop 1) and rendered the sidebar. Nothing else to do here — this
+	-- hook exists so rpc.lua can still signal "plan turn complete" without
+	-- hard-coding navigation.
+	return true
 end
 
 -- Re-dispatch the plan turn if it stalled. Only useful while planning;
 -- once a plan has landed, explanations are already pre-computed so
 -- there is nothing to retry mid-review.
 function M.retry()
-  if not review.has_active_review() then
-    ui.notify("No active Strider review to retry", vim.log.levels.WARN)
-    return false
-  end
-  if review.is_planning() then
-    local session = state.get_session(REVIEW_LANE)
-    local goal = session and session.review and session.review.goal
-    if not goal or goal == "" then
-      ui.notify("Cannot retry plan: review goal is missing", vim.log.levels.WARN)
-      return false
-    end
-    return send("/plan " .. goal, goal, {
-      lane = REVIEW_LANE,
-      operation = "plan",
-      debug_prompt = goal,
-      open_log = false,
-    })
-  end
-  ui.notify("Nothing to retry — explanations are pre-computed.", vim.log.levels.INFO)
-  return false
+	if not review.has_active_review() then
+		ui.notify("No active Strider review to retry", vim.log.levels.WARN)
+		return false
+	end
+	if review.is_planning() then
+		local session = state.get_session(REVIEW_LANE)
+		local goal = session and session.review and session.review.goal
+		if not goal or goal == "" then
+			ui.notify("Cannot retry plan: review goal is missing", vim.log.levels.WARN)
+			return false
+		end
+		return send("/plan " .. goal, goal, {
+			lane = REVIEW_LANE,
+			operation = "plan",
+			debug_prompt = goal,
+			open_log = false,
+		})
+	end
+	ui.notify("Nothing to retry — explanations are pre-computed.", vim.log.levels.INFO)
+	return false
 end
 
 function M.setup(opts)
-  state.setup(opts or {})
+	state.setup(opts or {})
 end
 
 function M.status()
-  ui.show_status(status.lines())
+	ui.show_status(status.lines())
 end
 
 -- Cycle the pi thinking level (same semantics as pi's own shift-tab).
@@ -371,8 +332,10 @@ end
 -- update triggered on the TS side refreshes the `(level)` suffix on
 -- the winbar's model line.
 function M.cycle_thinking()
-  if not ensure_backend(MAIN_LANE) then return end
-  rpc.send_prompt(MAIN_LANE, "/thinking")
+	if not ensure_backend(MAIN_LANE) then
+		return
+	end
+	rpc.send_prompt(MAIN_LANE, "/thinking")
 end
 
 -- :StriderStop / :StriderStopFlow — cancel an in-flight turn via pi's abort RPC.
@@ -382,62 +345,68 @@ end
 -- user a quick notify so the interval between keypress and message_end
 -- doesn't feel like nothing happened.
 local function stop_lane(lane, idle_message, stopping_message)
-  if not state.peek_pending_request(lane) then
-    ui.notify(idle_message, vim.log.levels.INFO)
-    return
-  end
-  if rpc.abort(lane) then
-    ui.notify(stopping_message, vim.log.levels.INFO)
-  end
+	if not state.peek_pending_request(lane) then
+		ui.notify(idle_message, vim.log.levels.INFO)
+		return
+	end
+	if rpc.abort(lane) then
+		ui.notify(stopping_message, vim.log.levels.INFO)
+	end
 end
 
 function M.stop()
-  stop_lane(MAIN_LANE, "Strider is idle — nothing to stop", "Stopping Strider…")
+	stop_lane(MAIN_LANE, "Strider is idle — nothing to stop", "Stopping Strider…")
 end
 
 function M.stop_flow()
-  local stopped = false
-  for _, lane in ipairs(state.lanes()) do
-    if state.is_flow_lane(lane) and state.peek_pending_request(lane) and rpc.abort(lane) then stopped = true end
-  end
-  if stopped then
-    ui.notify("Stopping Strider flow…", vim.log.levels.INFO)
-  else
-    ui.notify("Strider flow is idle — nothing to stop", vim.log.levels.INFO)
-  end
+	local stopped = false
+	for _, lane in ipairs(state.lanes()) do
+		if state.is_flow_lane(lane) and state.peek_pending_request(lane) and rpc.abort(lane) then
+			stopped = true
+		end
+	end
+	if stopped then
+		ui.notify("Stopping Strider flow…", vim.log.levels.INFO)
+	else
+		ui.notify("Strider flow is idle — nothing to stop", vim.log.levels.INFO)
+	end
 end
 
 local function send_main_command(command)
-  return send(command, command, {
-    lane = MAIN_LANE,
-    operation = "command",
-    open_log = true,
-  })
+	return send(command, command, {
+		lane = MAIN_LANE,
+		operation = "command",
+		open_log = true,
+	})
 end
 
 function M.sessions()
-  return send_main_command("/sessions")
+	return send_main_command("/sessions")
 end
 
 function M.resume(target)
-  target = trimmed(target)
-  local command = target ~= "" and ("/resume " .. target) or "/resume"
-  return send_main_command(command)
+	target = trimmed(target)
+	local command = target ~= "" and ("/resume " .. target) or "/resume"
+	return send_main_command(command)
 end
 
 -- Slash-commands that pi routes to our /prompt etc. handlers which DO
 -- send a user message to the model — treat these as normal prompt turns
 -- (they produce message_end and need pending-request tracking).
 local strider_prompt_commands = {
-  prompt = true, patch = true, review = true, search = true, plan = true,
+	prompt = true,
+	patch = true,
+	review = true,
+	search = true,
+	plan = true,
 }
 
 -- Recognize Strider slash-commands that intentionally start model-backed
 -- prompt turns. Other slash-commands are routed as extension/built-in
 -- commands and use command-style pending/activity handling.
 local function is_prompt_slash(text)
-  local name = text:match("^/([%w%-_:]+)")
-  return name and strider_prompt_commands[name] or false
+	local name = text:match("^/([%w%-_:]+)")
+	return name and strider_prompt_commands[name] or false
 end
 
 -- Built-in commands that are dedicated RPC message types, not extension
@@ -445,129 +414,133 @@ end
 -- /resume, /switch_session) stay on the prompt path so the Strider pi
 -- extension can resolve ids and paths before switching.
 local rpc_commands = {
-  new = {
-    type = "new_session",
-    activity_title = "Starting new Strider session...",
-    activity_done = "New Strider session started",
-  },
-  compact = {
-    type = "compact",
-    args_key = "customInstructions",
-    activity_title = "Compacting Strider context...",
-    activity_done = "Strider context compacted",
-  },
-  export = {
-    type = "export_html",
-    args_key = "outputPath",
-    activity_title = "Exporting Strider session...",
-    activity_done = "Strider session exported",
-  },
+	new = {
+		type = "new_session",
+		activity_title = "Starting new Strider session...",
+		activity_done = "New Strider session started",
+	},
+	compact = {
+		type = "compact",
+		args_key = "customInstructions",
+		activity_title = "Compacting Strider context...",
+		activity_done = "Strider context compacted",
+	},
+	export = {
+		type = "export_html",
+		args_key = "outputPath",
+		activity_title = "Exporting Strider session...",
+		activity_done = "Strider session exported",
+	},
 }
 
 local function send_rpc_command(text, rpc_def, extra)
-  local lane = MAIN_LANE
-  if warn_if_lane_busy(lane) then
-    return false
-  end
-  if not ensure_backend(lane) then
-    return false
-  end
-  ui.open_log({ preserve_focus = true }, lane)
-  state.clear_error(lane)
-  state.set_pending_request("command", {
-    activity_done = rpc_def.activity_done,
-    command_text = text,
-    command_type = rpc_def.type,
-  }, lane)
-  ui.start_activity(rpc_def.activity_title or activity_title("command"), "log", "command", lane)
-  ui.refresh_compose_winbar(lane)
-  ui.refresh_compose_hint()
-  local ok = rpc.send_command(rpc_def.type, extra, lane)
-  if not ok then
-    state.set_pending_request(nil, nil, lane)
-    ui.finish_activity("Strider command failed to start", "error", lane)
-    ui.refresh_compose_hint()
-    return false
-  end
-  ui.append_block("user", text, lane)
-  return true
+	local lane = MAIN_LANE
+	if warn_if_lane_busy(lane) then
+		return false
+	end
+	if not ensure_backend(lane) then
+		return false
+	end
+	ui.open_log({ preserve_focus = true }, lane)
+	state.clear_error(lane)
+	state.set_pending_request("command", {
+		activity_done = rpc_def.activity_done,
+		command_text = text,
+		command_type = rpc_def.type,
+	}, lane)
+	ui.start_activity(rpc_def.activity_title or activity_title("command"), "log", "command", lane)
+	ui.refresh_compose_winbar(lane)
+	ui.refresh_compose_hint()
+	local ok = rpc.send_command(rpc_def.type, extra, lane)
+	if not ok then
+		state.set_pending_request(nil, nil, lane)
+		ui.finish_activity("Strider command failed to start", "error", lane)
+		ui.refresh_compose_hint()
+		return false
+	end
+	ui.append_block("user", text, lane)
+	return true
 end
 
 -- Aliases: common short-hands that map to the canonical command name
 -- used by the extension or RPC layer. Checked early in dispatch_prompt
 -- so `/model` works the same as `/models`.
 local command_aliases = {
-  model = "models",
+	model = "models",
 }
 
 -- /fork needs a multi-step flow: fetch forkable messages, present a
 -- picker, then issue the actual fork command with the chosen entryId.
 local function fork_flow()
-  rpc.send_command("get_fork_messages", {}, nil, function(event)
-    if not event.success then
-      ui.notify(event.errorMessage or event.error or "Failed to get fork messages", vim.log.levels.ERROR)
-      return
-    end
-    local messages = event.data and event.data.messages or {}
-    if #messages == 0 then
-      ui.notify("No messages available to fork from", vim.log.levels.WARN)
-      return
-    end
-    local labels = {}
-    local by_label = {}
-    for i, msg in ipairs(messages) do
-      local preview = (msg.text or "(empty)"):sub(1, 120):gsub("%s+", " ")
-      local label = string.format("%3d: %s", i, preview)
-      table.insert(labels, label)
-      by_label[label] = msg.entryId
-    end
-    vim.ui.select(labels, { prompt = "Fork from message" }, function(choice)
-      if not choice then return end
-      local entry_id = by_label[choice]
-      if not entry_id then return end
-      rpc.send_command("fork", { entryId = entry_id })
-    end)
-  end)
+	rpc.send_command("get_fork_messages", {}, nil, function(event)
+		if not event.success then
+			ui.notify(event.errorMessage or event.error or "Failed to get fork messages", vim.log.levels.ERROR)
+			return
+		end
+		local messages = event.data and event.data.messages or {}
+		if #messages == 0 then
+			ui.notify("No messages available to fork from", vim.log.levels.WARN)
+			return
+		end
+		local labels = {}
+		local by_label = {}
+		for i, msg in ipairs(messages) do
+			local preview = (msg.text or "(empty)"):sub(1, 120):gsub("%s+", " ")
+			local label = string.format("%3d: %s", i, preview)
+			table.insert(labels, label)
+			by_label[label] = msg.entryId
+		end
+		vim.ui.select(labels, { prompt = "Fork from message" }, function(choice)
+			if not choice then
+				return
+			end
+			local entry_id = by_label[choice]
+			if not entry_id then
+				return
+			end
+			rpc.send_command("fork", { entryId = entry_id })
+		end)
+	end)
 end
 
 local function dispatch_prompt(text)
-  -- If the user typed a slash-command (e.g. /models, /tree, /compact),
-  -- pass it through verbatim so pi routes it to the matching extension
-  -- command instead of wrapping it in /prompt (which would send the
-  -- slash-command to the LLM as prose and never fire the handler).
-  if text:sub(1, 1) == "/" then
-    local name, rest = text:match("^/([%w%-_]+)%s*(.*)$")
-    local original_name = name
-    name = name and (command_aliases[name] or name)
-    -- Rebuild the command text if we resolved an alias so pi sees the
-    -- canonical name (e.g. /model → /models).
-    if name and name ~= original_name then
-      text = "/" .. name .. (rest ~= "" and (" " .. rest) or "")
-    end
-    if name == "fork" then
-      fork_flow()
-      return
-    end
-    local rpc_def = name and rpc_commands[name]
-    if rpc_def then
-      local extra = {}
-      if rpc_def.args_key and rest and rest ~= "" then
-        extra[rpc_def.args_key] = rest
-      end
-      send_rpc_command(text, rpc_def, extra)
-      return
-    end
-    if is_prompt_slash(text) then
-      send(text, text, { operation = "prompt", open_log = true })
-    else
-      -- Pi built-in or extension command (e.g. /models).
-      -- Still needs a pending request so streamed response events
-      -- aren't silently dropped by the message_update handler.
-      send(text, text, { operation = "command", open_log = true })
-    end
-    return
-  end
-  send("/prompt " .. text, text, { operation = "prompt", open_log = true })
+	-- If the user typed a slash-command (e.g. /models, /tree, /compact),
+	-- pass it through verbatim so pi routes it to the matching extension
+	-- command instead of wrapping it in /prompt (which would send the
+	-- slash-command to the LLM as prose and never fire the handler).
+	if text:sub(1, 1) == "/" then
+		local name, rest = text:match("^/([%w%-_]+)%s*(.*)$")
+		local original_name = name
+		name = name and (command_aliases[name] or name)
+		-- Rebuild the command text if we resolved an alias so pi sees the
+		-- canonical name (e.g. /model → /models).
+		if name and name ~= original_name then
+			text = "/" .. name .. (rest ~= "" and (" " .. rest) or "")
+		end
+		if name == "fork" then
+			fork_flow()
+			return
+		end
+		local rpc_def = name and rpc_commands[name]
+		if rpc_def then
+			local extra = {}
+			if rpc_def.args_key and rest and rest ~= "" then
+				extra[rpc_def.args_key] = rest
+			end
+			send_rpc_command(text, rpc_def, extra)
+			return
+		end
+		if is_prompt_slash(text) then
+			send(text, text, { operation = "prompt", open_log = true })
+		else
+			-- Pi built-in or extension command (e.g. /models).
+			-- Still needs a pending request so streamed response events
+			-- aren't silently dropped by the message_update handler.
+			send(text, text, { operation = "command", open_log = true })
+		end
+		return
+	end
+	send("/prompt " .. text, text, { operation = "prompt", open_log = true })
 end
 
 -- Send a user message from the compose buffer. If a request is already
@@ -584,485 +557,531 @@ local dispatch_compose
 -- here so we don't have to expose that helper — we just write the JSON
 -- to the same channel via the rpc module.
 local function reply_to_clarify(pending, text)
-  local session = state.get_session(MAIN_LANE)
-  if not session or not session.job_id then return false end
-  local body = { type = "extension_ui_response", id = pending.id, value = text }
-  local ok, encoded = pcall(vim.json.encode, body)
-  if not ok then return false end
-  vim.fn.chansend(session.job_id, encoded .. "\n")
-  return true
+	local session = state.get_session(MAIN_LANE)
+	if not session or not session.job_id then
+		return false
+	end
+	local body = { type = "extension_ui_response", id = pending.id, value = text }
+	local ok, encoded = pcall(vim.json.encode, body)
+	if not ok then
+		return false
+	end
+	vim.fn.chansend(session.job_id, encoded .. "\n")
+	return true
 end
 
 local function cancel_clarify(pending)
-  local session = state.get_session(MAIN_LANE)
-  if not session or not session.job_id then return false end
-  local body = { type = "extension_ui_response", id = pending.id, cancelled = true }
-  local ok, encoded = pcall(vim.json.encode, body)
-  if not ok then return false end
-  vim.fn.chansend(session.job_id, encoded .. "\n")
-  return true
+	local session = state.get_session(MAIN_LANE)
+	if not session or not session.job_id then
+		return false
+	end
+	local body = { type = "extension_ui_response", id = pending.id, cancelled = true }
+	local ok, encoded = pcall(vim.json.encode, body)
+	if not ok then
+		return false
+	end
+	vim.fn.chansend(session.job_id, encoded .. "\n")
+	return true
 end
 
 -- Open the compose surfaces so the user can answer a clarify. The
 -- compose buffer's send callback is the standard dispatch_compose,
 -- which checks pending_clarify first and routes appropriately.
 function M.open_compose_for_clarify()
-  if not ensure_backend(MAIN_LANE) then return end
-  ui.open_log({ preserve_focus = true }, MAIN_LANE)
-  ui.open_compose(function(text)
-    return dispatch_compose(text)
-  end)
+	if not ensure_backend(MAIN_LANE) then
+		return
+	end
+	ui.open_log({ preserve_focus = true }, MAIN_LANE)
+	ui.open_compose(function(text)
+		return dispatch_compose(text)
+	end)
 end
 
 -- Called from compose's <Esc><Esc> keymap. If a clarify is pending,
 -- cancel it. Otherwise fall through so the keymap's usual behavior
 -- (stopinsert) runs.
 function M.cancel_pending_clarify_if_any()
-  local pending = state.consume_pending_clarify(MAIN_LANE)
-  if not pending then return false end
-  state.set_status("strider-clarify", nil, MAIN_LANE)
-  ui.refresh_compose_winbar(MAIN_LANE)
-  ui.refresh_compose_hint()
-  cancel_clarify(pending)
-  ui.append({ "[strider] clarify cancelled" }, MAIN_LANE)
-  return true
+	local pending = state.consume_pending_clarify(MAIN_LANE)
+	if not pending then
+		return false
+	end
+	state.set_status("strider-clarify", nil, MAIN_LANE)
+	ui.refresh_compose_winbar(MAIN_LANE)
+	ui.refresh_compose_hint()
+	cancel_clarify(pending)
+	ui.append({ "[strider] clarify cancelled" }, MAIN_LANE)
+	return true
 end
 
 function dispatch_compose(text)
-  text = trimmed(text)
-  if text == "" then return false end
-  if not ensure_backend(MAIN_LANE) then return false end
+	text = trimmed(text)
+	if text == "" then
+		return false
+	end
+	if not ensure_backend(MAIN_LANE) then
+		return false
+	end
 
-  -- A pending clarify takes precedence over everything: the model is
-  -- explicitly waiting for a reply on the extension_ui_request channel.
-  -- Whatever the user types becomes the answer. No tangent, no steer,
-  -- no new prompt turn. Clears the badge on success.
-  local pending_clarify = state.peek_pending_clarify(MAIN_LANE)
-  if pending_clarify then
-    state.consume_pending_clarify(MAIN_LANE)
-    state.set_status("strider-clarify", nil, MAIN_LANE)
-    ui.refresh_compose_winbar(MAIN_LANE)
-    ui.refresh_compose_hint()
-    ui.append_block("user", text, MAIN_LANE)
-    if not reply_to_clarify(pending_clarify, text) then
-      ui.notify("Failed to send clarify reply", vim.log.levels.ERROR)
-      return false
-    end
-    return true
-  end
+	-- A pending clarify takes precedence over everything: the model is
+	-- explicitly waiting for a reply on the extension_ui_request channel.
+	-- Whatever the user types becomes the answer. No tangent, no steer,
+	-- no new prompt turn. Clears the badge on success.
+	local pending_clarify = state.peek_pending_clarify(MAIN_LANE)
+	if pending_clarify then
+		state.consume_pending_clarify(MAIN_LANE)
+		state.set_status("strider-clarify", nil, MAIN_LANE)
+		ui.refresh_compose_winbar(MAIN_LANE)
+		ui.refresh_compose_hint()
+		ui.append_block("user", text, MAIN_LANE)
+		if not reply_to_clarify(pending_clarify, text) then
+			ui.notify("Failed to send clarify reply", vim.log.levels.ERROR)
+			return false
+		end
+		return true
+	end
 
-  local pending = state.peek_pending_request(MAIN_LANE)
-  if pending then
-    -- Extension commands (/models, /tree, etc.) are not allowed as steer
-    -- messages — pi requires them to come through prompt. Reject with a
-    -- helpful notice instead of silently dropping.
-    if text:sub(1, 1) == "/" then
-      ui.notify("Slash-commands can't be sent mid-turn — wait for the current request to finish.", vim.log.levels.WARN)
-      return false
-    end
-    -- Steer: the pending request stays the same, the model gets the
-    -- new message mid-stream. No new operation, no new activity.
-    ui.append_block("user", text, MAIN_LANE)
-    local ok = rpc.send_steer(MAIN_LANE, text)
-    if not ok then
-      ui.notify("Steer failed to send", vim.log.levels.ERROR)
-      return false
-    end
-    return true
-  end
-  -- No pending — start a new prompt turn. send() handles the [user]
-  -- append, pending state, and activity spinner.
-  dispatch_prompt(text)
-  return true
+	local pending = state.peek_pending_request(MAIN_LANE)
+	if pending then
+		-- Extension commands (/models, /tree, etc.) are not allowed as steer
+		-- messages — pi requires them to come through prompt. Reject with a
+		-- helpful notice instead of silently dropping.
+		if text:sub(1, 1) == "/" then
+			ui.notify(
+				"Slash-commands can't be sent mid-turn — wait for the current request to finish.",
+				vim.log.levels.WARN
+			)
+			return false
+		end
+		-- Steer: the pending request stays the same, the model gets the
+		-- new message mid-stream. No new operation, no new activity.
+		ui.append_block("user", text, MAIN_LANE)
+		local ok = rpc.send_steer(MAIN_LANE, text)
+		if not ok then
+			ui.notify("Steer failed to send", vim.log.levels.ERROR)
+			return false
+		end
+		return true
+	end
+	-- No pending — start a new prompt turn. send() handles the [user]
+	-- append, pending state, and activity spinner.
+	dispatch_prompt(text)
+	return true
 end
 
 local function open_chat_surface(prefill)
-  if not ensure_backend(MAIN_LANE) then return false end
-  ui.hide_chat_card()
-  ui.ensure_compose_buffer(function(text)
-    return dispatch_compose(text)
-  end)
-  if prefill and prefill ~= "" then ui.prefill_compose(prefill) end
-  ui.open_chat_float(function(text)
-    return dispatch_compose(text)
-  end)
-  return true
+	if not ensure_backend(MAIN_LANE) then
+		return false
+	end
+	ui.hide_chat_card()
+	ui.ensure_compose_buffer(function(text)
+		return dispatch_compose(text)
+	end)
+	if prefill and prefill ~= "" then
+		ui.prefill_compose(prefill)
+	end
+	ui.open_chat_float(function(text)
+		return dispatch_compose(text)
+	end)
+	return true
 end
 
 function M.chat(prompt, opts)
-  prompt = trimmed(prompt)
-  local range = range_from_opts(opts)
-  local prefill = chat_prefill(prompt, range)
+	prompt = trimmed(prompt)
+	local range = range_from_opts(opts)
+	local prefill = chat_prefill(prompt, range)
 
-  -- No args + no range toggles the chat surface. Collapse fully hides
-  -- chat surfaces; explicit prompt/range opens compose.
-  if prefill == "" and ui.chat_is_visible() then
-    ui.hide_chat()
-    return
-  end
+    if prefill == "" and ui.chat_is_visible() then
+      ui.hide_chat()
+      return
+    end
 
-  open_chat_surface(prefill)
+	open_chat_surface(prefill)
 end
 
 local function pick_cards(title, opts)
-  local items = card_picker.items(opts)
-  if #items == 0 then
-    ui.notify("No " .. title .. " yet", vim.log.levels.INFO)
-    return false
-  end
-  return picker.select(title, items, function(item)
-    local value = item and item.value or {}
-    if value.type == "chat" then open_chat_surface("") end
-    if value.type == "flow" then ui.focus_flow_card(value.id, value.lane) end
-  end)
+	local items = card_picker.items(opts)
+	if #items == 0 then
+		ui.notify("No " .. title .. " yet", vim.log.levels.INFO)
+		return false
+	end
+	return picker.select(title, items, function(item)
+		local value = item and item.value or {}
+		if value.type == "chat" then
+			open_chat_surface("")
+		end
+		if value.type == "flow" then
+			ui.focus_flow_card(value.id, value.lane)
+		end
+	end)
 end
 
 function M.cards()
-  return pick_cards("Strider Cards")
+	return pick_cards("Strider Cards")
 end
 
 function M.q_cards()
-  return pick_cards("StriderQ Cards", { kind = "q" })
+	return pick_cards("StriderQ Cards", { kind = "q" })
 end
 
 function M.cards_clear(opts)
-  local count = ui.clear_flow_cards({ all = opts and opts.bang }) or 0
-  ui.notify(string.format("Dismissed %d Strider card%s", count, count == 1 and "" or "s"), vim.log.levels.INFO)
-  return count
+	local count = ui.clear_flow_cards({ all = opts and opts.bang }) or 0
+	ui.notify(string.format("Dismissed %d Strider card%s", count, count == 1 and "" or "s"), vim.log.levels.INFO)
+	return count
 end
 
 function M.search(prompt)
-  prompt = trimmed(prompt)
-  if prompt == "" then
-    ui.open_prompt_editor("Strider search", function(text)
-      M.search(text)
-    end, {
-      "Structured code search. e.g. \"websocket entrypoints\".",
-      "Use :StriderSearches to browse previous searches.",
-    })
-    return
-  end
-  send("/search " .. prompt, prompt, {
-    lane = FLOW_LANE,
-    operation = "search",
-    metadata = { prompt = prompt },
-  })
+	prompt = trimmed(prompt)
+	if prompt == "" then
+		ui.open_prompt_editor("Strider search", function(text)
+			M.search(text)
+		end, {
+			'Structured code search. e.g. "websocket entrypoints".',
+			"Use :StriderSearches to browse previous searches.",
+		})
+		return
+	end
+	send("/search " .. prompt, prompt, {
+		lane = FLOW_LANE,
+		operation = "search",
+		metadata = { prompt = prompt },
+	})
 end
 
-
 local function submit_review_request(text, range)
-  text = trimmed(text)
-  if text == "" then
-    return
-  end
-  if warn_if_lane_busy(REVIEW_LANE) then
-    return
-  end
+	text = trimmed(text)
+	if text == "" then
+		return
+	end
+	if warn_if_lane_busy(REVIEW_LANE) then
+		return
+	end
 
-  if review.has_active_review() and range then
-    review.begin_ranged_question(range, text)
-    local prompt = review.build_prompt(text)
-    if prompt then send_review_prompt(prompt, text) end
-    return
-  end
+	if review.has_active_review() and range then
+		review.begin_ranged_question(range, text)
+		local prompt = review.build_prompt(text)
+		if prompt then
+			send_review_prompt(prompt, text)
+		end
+		return
+	end
 
-  if review.has_active_review() then
-    local prompt = review.build_prompt(text)
-    if not prompt then
-      ui.notify("No active Strider review item", vim.log.levels.WARN)
-      return
-    end
-    send_review_prompt(prompt, text)
-    return
-  end
+	if review.has_active_review() then
+		local prompt = review.build_prompt(text)
+		if not prompt then
+			ui.notify("No active Strider review item", vim.log.levels.WARN)
+			return
+		end
+		send_review_prompt(prompt, text)
+		return
+	end
 
-  if range then
-    start_selection_review({
-      endLine = range.endLine,
-      focus = text,
-      path = range.path,
-      startLine = range.startLine,
-    })
-    return
-  end
+	if range then
+		start_selection_review({
+			endLine = range.endLine,
+			focus = text,
+			path = range.path,
+			startLine = range.startLine,
+		})
+		return
+	end
 
-  start_free_review(text)
+	start_free_review(text)
 end
 
 function M.review(args, opts)
-  local range = range_from_opts(opts)
-  local text = trimmed(args)
-  local title = "Strider review context"
-  local hint_lines
+	local range = range_from_opts(opts)
+	local text = trimmed(args)
+	local title = "Strider review context"
+	local hint_lines
 
-  if review.has_active_review() and range then
-    title = "Ask about this selected range"
-    hint_lines = {
-      "Ask a question about the selected range inside the active review.",
-      string.format("Range: %s", range_pointer(range)),
-    }
-  elseif review.has_active_review() then
-    title = "Ask about this review item"
-    hint_lines = {
-      "Ask a question about the current review item.",
-    }
-  elseif range then
-    hint_lines = {
-      "Describe what you want reviewed in this selected range.",
-      string.format("Range: %s", range_pointer(range)),
-    }
-  else
-    hint_lines = {
-      "Describe what you want reviewed.",
-    }
-  end
+	if review.has_active_review() and range then
+		title = "Ask about this selected range"
+		hint_lines = {
+			"Ask a question about the selected range inside the active review.",
+			string.format("Range: %s", range_pointer(range)),
+		}
+	elseif review.has_active_review() then
+		title = "Ask about this review item"
+		hint_lines = {
+			"Ask a question about the current review item.",
+		}
+	elseif range then
+		hint_lines = {
+			"Describe what you want reviewed in this selected range.",
+			string.format("Range: %s", range_pointer(range)),
+		}
+	else
+		hint_lines = {
+			"Describe what you want reviewed.",
+		}
+	end
 
-  ui.open_prompt_editor(title, function(input)
-    submit_review_request(input, range)
-  end, {
-    hint_lines = hint_lines,
-    prefill = text ~= "" and text or nil,
-  })
+	ui.open_prompt_editor(title, function(input)
+		submit_review_request(input, range)
+	end, {
+		hint_lines = hint_lines,
+		prefill = text ~= "" and text or nil,
+	})
 end
 
 local function dispatch_patch(prompt, range)
-  local lines = {
-    string.format("Patch target file: %s", range.path),
-    string.format("Patch target lines: %d-%d", range.startLine, range.endLine),
-    "Only edit this file and stay as close to the selected range as possible.",
-    "<PATCH_EXCERPT>",
-    read_excerpt(range.path, range.startLine, range.endLine),
-    "</PATCH_EXCERPT>",
-    "User request: " .. prompt,
-  }
-  send("/patch " .. table.concat(lines, "\n"), prompt, {
-    lane = PATCH_LANE,
-    operation = "patch",
-    metadata = {
-      target = {
-        endLine = range.endLine,
-        path = range.path,
-        startLine = range.startLine,
-      },
-    },
-  })
+	local lines = {
+		string.format("Patch target file: %s", range.path),
+		string.format("Patch target lines: %d-%d", range.startLine, range.endLine),
+		"Only edit this file and stay as close to the selected range as possible.",
+		"<PATCH_EXCERPT>",
+		read_excerpt(range.path, range.startLine, range.endLine),
+		"</PATCH_EXCERPT>",
+		"User request: " .. prompt,
+	}
+	send("/patch " .. table.concat(lines, "\n"), prompt, {
+		lane = PATCH_LANE,
+		operation = "patch",
+		metadata = {
+			target = {
+				endLine = range.endLine,
+				path = range.path,
+				startLine = range.startLine,
+			},
+		},
+	})
 end
 
 local function resolve_patch_range(opts)
-  local range = range_from_opts(opts)
-  local item = review.current_item()
-  if not range and item then
-    return {
-      path = item.path,
-      startLine = item.startLine,
-      endLine = item.endLine,
-    }
-  end
-  return range
+	local range = range_from_opts(opts)
+	local item = review.current_item()
+	if not range and item then
+		return {
+			path = item.path,
+			startLine = item.startLine,
+			endLine = item.endLine,
+		}
+	end
+	return range
 end
 
 local function dispatch_q(prompt, range, opts)
-  local message
-  if range then
-    local lines = {
-      string.format("Context file: %s", range.path),
-      string.format("Context lines: %d-%d", range.startLine, range.endLine),
-      "<Q_EXCERPT>",
-      read_excerpt(range.path, range.startLine, range.endLine),
-      "</Q_EXCERPT>",
-      "Question: " .. prompt,
-    }
-    message = table.concat(lines, "\n")
-  else
-    message = prompt
-  end
-  opts = opts or {}
-  local lane, seq = opts.worker_lane, opts.q_seq
-  if not lane then lane, seq = state.next_q_worker_lane() end
-  return send("/prompt " .. message, prompt, {
-    lane = lane,
-    operation = "q",
-    metadata = { card_id = opts.card_id, card_lane = Q_LANE, q_seq = seq or state.q_lane_index(lane) },
-  })
+	local message
+	if range then
+		local lines = {
+			string.format("Context file: %s", range.path),
+			string.format("Context lines: %d-%d", range.startLine, range.endLine),
+			"<Q_EXCERPT>",
+			read_excerpt(range.path, range.startLine, range.endLine),
+			"</Q_EXCERPT>",
+			"Question: " .. prompt,
+		}
+		message = table.concat(lines, "\n")
+	else
+		message = prompt
+	end
+	opts = opts or {}
+	local lane, seq = opts.worker_lane, opts.q_seq
+	if not lane then
+		lane, seq = state.next_q_worker_lane()
+	end
+	return send("/prompt " .. message, prompt, {
+		lane = lane,
+		operation = "q",
+		metadata = { card_id = opts.card_id, card_lane = Q_LANE, q_seq = seq or state.q_lane_index(lane) },
+	})
 end
 
 local function submit_q_request(prompt, range)
-  prompt = trimmed(prompt)
-  if prompt == "" then return nil end
-  return dispatch_q(prompt, range)
+	prompt = trimmed(prompt)
+	if prompt == "" then
+		return nil
+	end
+	return dispatch_q(prompt, range)
 end
 
 function M.q_followup(prompt, card_id)
-  prompt = trimmed(prompt)
-  if prompt == "" then return false end
-  local card = ui.get_flow_card(card_id, Q_LANE)
-  local worker_lane = card and card.worker_lane or Q_LANE
-  return dispatch_q(prompt, nil, { card_id = card_id, worker_lane = worker_lane })
+	prompt = trimmed(prompt)
+	if prompt == "" then
+		return false
+	end
+	local card = ui.get_flow_card(card_id, Q_LANE)
+	local worker_lane = card and card.worker_lane or Q_LANE
+	return dispatch_q(prompt, nil, { card_id = card_id, worker_lane = worker_lane })
 end
 
 local function toggle_existing_q_card()
-  local session = state.get_session(Q_LANE)
-  if not session or not session.q_answer_card_id then return false end
-  return ui.toggle_q_answer(Q_LANE)
+	local session = state.get_session(Q_LANE)
+	if not session or not session.q_answer_card_id then
+		return false
+	end
+	return ui.toggle_q_answer(Q_LANE)
 end
 
 function M.q(prompt, opts)
-  prompt = trimmed(prompt)
-  opts = opts or {}
-  local range = range_from_opts(opts)
-  if not opts.bang and prompt == "" and not range and toggle_existing_q_card() then return end
-  local hint_lines = {
-    "Ask a side question without opening chat.",
-    "Answers land in StriderLogQ.",
-  }
-  local pointer = range_pointer(range)
-  if pointer then
-    table.insert(hint_lines, string.format("Range: %s", pointer))
-  end
+	prompt = trimmed(prompt)
+	opts = opts or {}
+	local range = range_from_opts(opts)
+	if not opts.bang and prompt == "" and not range and toggle_existing_q_card() then
+		return
+	end
+	local hint_lines = {
+		"Ask a side question without opening chat.",
+		"Answers land in StriderLogQ.",
+	}
+	local pointer = range_pointer(range)
+	if pointer then
+		table.insert(hint_lines, string.format("Range: %s", pointer))
+	end
 
-  ui.open_prompt_editor("StriderQ", function(text)
-    return submit_q_request(text, range)
-  end, {
-    hint_lines = hint_lines,
-    prefill = prompt ~= "" and prompt or nil,
-  })
+	ui.open_prompt_editor("StriderQ", function(text)
+		return submit_q_request(text, range)
+	end, {
+		hint_lines = hint_lines,
+		prefill = prompt ~= "" and prompt or nil,
+	})
 end
 
 function M.patch(prompt, opts)
-  prompt = trimmed(prompt)
+	prompt = trimmed(prompt)
 
-  local range = resolve_patch_range(opts)
-  if not range then
-    ui.notify("StriderPatch needs a visual range or an active review item", vim.log.levels.WARN)
-    return
-  end
+	local range = resolve_patch_range(opts)
+	if not range then
+		ui.notify("StriderPatch needs a visual range or an active review item", vim.log.levels.WARN)
+		return
+	end
 
-  ui.open_prompt_editor("Strider patch request", function(text)
-    text = trimmed(text)
-    if text == "" then
-      return
-    end
-    dispatch_patch(text, range)
-  end, {
-    hint_lines = {
-      string.format("Patch target: %s", range_pointer(range)),
-      "Keep changes local to this range.",
-    },
-    prefill = prompt ~= "" and prompt or nil,
-  })
+	ui.open_prompt_editor("Strider patch request", function(text)
+		text = trimmed(text)
+		if text == "" then
+			return
+		end
+		dispatch_patch(text, range)
+	end, {
+		hint_lines = {
+			string.format("Patch target: %s", range_pointer(range)),
+			"Keep changes local to this range.",
+		},
+		prefill = prompt ~= "" and prompt or nil,
+	})
 end
 
 function M.next_step(accept_current)
-  if not review.has_active_review() then
-    ui.notify("No active Strider review session", vim.log.levels.WARN)
-    return
-  end
+	if not review.has_active_review() then
+		ui.notify("No active Strider review session", vim.log.levels.WARN)
+		return
+	end
 
-  if accept_current then
-    review.accept_current_stop({ quiet = true })
-  end
+	if accept_current then
+		review.accept_current_stop({ quiet = true })
+	end
 
-  -- Explanations are pre-computed at plan time. Navigation is a pure
-  -- index++ that focuses the next stop; no model round-trip.
-  local item, finished = review.advance(1)
-  if item then
-    return
-  end
+	-- Explanations are pre-computed at plan time. Navigation is a pure
+	-- index++ that focuses the next stop; no model round-trip.
+	local item, finished = review.advance(1)
+	if item then
+		return
+	end
 
-  if finished then
-    local prompt = review.finish()
-    if prompt then
-      local comment_lines = review.pending_comment_lines()
-      if comment_lines then
-        ui.append_block("review-comments", table.concat(comment_lines, "\n"), REVIEW_LANE)
-      end
-      send_review_prompt(prompt, "Summarize unresolved review comments", { open_log = false })
-    else
-      M.complete_review_summary("Review complete. No unresolved comments.")
-      ui.notify("Strider review complete", vim.log.levels.INFO)
-    end
-  end
+	if finished then
+		local prompt = review.finish()
+		if prompt then
+			local comment_lines = review.pending_comment_lines()
+			if comment_lines then
+				ui.append_block("review-comments", table.concat(comment_lines, "\n"), REVIEW_LANE)
+			end
+			send_review_prompt(prompt, "Summarize unresolved review comments", { open_log = false })
+		else
+			M.complete_review_summary("Review complete. No unresolved comments.")
+			ui.notify("Strider review complete", vim.log.levels.INFO)
+		end
+	end
 end
 
 function M.prev_step()
-  if not review.has_active_review() then
-    ui.notify("No active Strider review session", vim.log.levels.WARN)
-    return
-  end
-  local _item, past_end, moved = review.advance(-1)
-  if not moved and not past_end then
-    ui.notify("Already at the first review item", vim.log.levels.WARN)
-  end
+	if not review.has_active_review() then
+		ui.notify("No active Strider review session", vim.log.levels.WARN)
+		return
+	end
+	local _item, past_end, moved = review.advance(-1)
+	if not moved and not past_end then
+		ui.notify("Already at the first review item", vim.log.levels.WARN)
+	end
 end
 
 function M.comment(text, opts)
-  local range = range_from_opts(opts)
-  local item = review.current_item()
-  local prefill = trimmed(text)
+	local range = range_from_opts(opts)
+	local item = review.current_item()
+	local prefill = trimmed(text)
 
-  if not item then
-    ui.notify("No active review item to comment on", vim.log.levels.WARN)
-    return
-  end
+	if not item then
+		ui.notify("No active review item to comment on", vim.log.levels.WARN)
+		return
+	end
 
-  local function log_comment(comment)
-    ui.append_block("review", string.format("%s:%d-%d\n%s", comment.path, comment.startLine, comment.endLine, comment.text), REVIEW_LANE)
-  end
+	local function log_comment(comment)
+		ui.append_block(
+			"review",
+			string.format("%s:%d-%d\n%s", comment.path, comment.startLine, comment.endLine, comment.text),
+			REVIEW_LANE
+		)
+	end
 
-  review.open_comment_editor(range, log_comment, {
-    prefill = prefill ~= "" and prefill or nil,
-  })
+	review.open_comment_editor(range, log_comment, {
+		prefill = prefill ~= "" and prefill or nil,
+	})
 end
 
 function M.comments()
-  review.comment_picker()
+	review.comment_picker()
 end
 
 function M.review_items()
-  review.item_picker()
+	review.item_picker()
 end
 
 function M.searches()
-  search.history_picker(FLOW_LANE)
+	search.history_picker(FLOW_LANE)
 end
 
 local function toggle_lane_log(lane)
-  if ui.log_is_visible(lane) then
-    ui.hide_log(lane)
-    return
-  end
-  ensure_session(lane)
-  ui.open_log({}, lane)
+	if ui.log_is_visible(lane) then
+		ui.hide_log(lane)
+		return
+	end
+	ensure_session(lane)
+	ui.open_log({}, lane)
 end
 
 function M.flow_log()
-  toggle_lane_log(FLOW_LANE)
+	toggle_lane_log(FLOW_LANE)
 end
 
 local function latest_q_worker_lane()
-  local session = state.get_session(Q_LANE)
-  local latest = nil
-  for _, card in ipairs(session and session.flow_cards or {}) do
-    if card.kind == "q" and not card.dismissed and (not latest or (card.started_at or 0) > (latest.started_at or 0)) then latest = card end
-  end
-  return latest and latest.worker_lane or Q_LANE
+	local session = state.get_session(Q_LANE)
+	local latest = nil
+	for _, card in ipairs(session and session.flow_cards or {}) do
+		if
+			card.kind == "q"
+			and not card.dismissed
+			and (not latest or (card.started_at or 0) > (latest.started_at or 0))
+		then
+			latest = card
+		end
+	end
+	return latest and latest.worker_lane or Q_LANE
 end
 
 function M.q_log()
-  toggle_lane_log(latest_q_worker_lane())
+	toggle_lane_log(latest_q_worker_lane())
 end
 
 function M.patch_log()
-  toggle_lane_log(PATCH_LANE)
+	toggle_lane_log(PATCH_LANE)
 end
 
 function M.review_log()
-  if ui.log_is_visible(REVIEW_LANE) then
-    ui.hide_log(REVIEW_LANE)
-    return
-  end
-  ensure_session(REVIEW_LANE)
-  ui.open_log({}, REVIEW_LANE)
+	if ui.log_is_visible(REVIEW_LANE) then
+		ui.hide_log(REVIEW_LANE)
+		return
+	end
+	ensure_session(REVIEW_LANE)
+	ui.open_log({}, REVIEW_LANE)
 end
 
 return M

@@ -26,6 +26,8 @@ Sleep 2500ms
 Type ":StriderChat add loading states to the lobby flow"
 Sleep 2800ms
 Enter
+Sleep 900ms
+Ctrl+S
 
 # Let the chat pass complete.
 Sleep 3500ms
@@ -34,6 +36,8 @@ Sleep 3500ms
 Type ":StriderReview walk me through the diff on this branch"
 Sleep 2200ms
 Enter
+Sleep 900ms
+Ctrl+S
 Sleep 3500ms
 
 # Leave a comment on a chunk of the diff.
@@ -46,6 +50,8 @@ Sleep 1600ms
 Type ":StriderComment this branch needs a clearer empty state"
 Sleep 2600ms
 Enter
+Sleep 900ms
+Ctrl+S
 Sleep 2500ms
 
 # Advance past the remaining review items to trigger the summary.

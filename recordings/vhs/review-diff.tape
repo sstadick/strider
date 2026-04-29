@@ -25,6 +25,8 @@ Sleep 2500ms
 Type ":StriderReview diff"
 Sleep 2200ms
 Enter
+Sleep 900ms
+Ctrl+S
 
 # Let the review panel pick up the hunk and explain it.
 Sleep 4500ms

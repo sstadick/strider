@@ -25,6 +25,8 @@ Sleep 2500ms
 Type ":StriderReview file"
 Sleep 2200ms
 Enter
+Sleep 900ms
+Ctrl+S
 Sleep 3500ms
 
 # Navigate to the block we want to ask about.
@@ -41,6 +43,8 @@ Sleep 2000ms
 Type ":StriderReview why does this block matter?"
 Sleep 2800ms
 Enter
+Sleep 900ms
+Ctrl+S
 
 # Wait for the explanation to stream in.
 Sleep 4500ms

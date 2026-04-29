@@ -25,6 +25,8 @@ Sleep 2500ms
 Type ":StriderReview file"
 Sleep 2200ms
 Enter
+Sleep 900ms
+Ctrl+S
 
 # Let the review panel render the first explanation.
 Sleep 4000ms

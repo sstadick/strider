@@ -40,6 +40,8 @@ Sleep 2200ms
 Type ":StriderPatch change the greeting literal from hi to hello"
 Sleep 2800ms
 Enter
+Sleep 900ms
+Ctrl+S
 
 # Wait for the fake pi to apply the edit and the buffer to refresh.
 Sleep 4500ms

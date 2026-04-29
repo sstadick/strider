@@ -37,6 +37,8 @@ Sleep 2000ms
 Type ":StriderReview searches"
 Sleep 2200ms
 Enter
+Sleep 900ms
+Ctrl+S
 
 Sleep 4500ms
 

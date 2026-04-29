@@ -48,9 +48,11 @@ VHS_BIN=/opt/homebrew/bin/vhs recordings/vhs/render-all.sh
 1. Edit the matching `recordings/vhs/*.tape` file.
 2. Render the changed tape with `recordings/vhs/render-all.sh <name>`.
    The script validates selected tapes before rendering.
-3. Open the GIF and check that it starts after setup, has no error prompts,
+3. For commands that open a Strider popup or compose buffer, include the
+   explicit `Ctrl+S` submit step in the tape after the command-line `Enter`.
+4. Open the GIF and check that it starts after setup, has no error prompts,
    and ends on the intended Strider surface.
-4. Run `recordings/vhs/render-all.sh` before committing a full refresh.
+5. Run `recordings/vhs/render-all.sh` before committing a full refresh.
 
 ## Demos
 
@@ -64,7 +66,7 @@ VHS_BIN=/opt/homebrew/bin/vhs recordings/vhs/render-all.sh
 - `patch.gif` — `:StriderPatch` on a visual-line selection
 - `chat-review.gif` — `:StriderChat` followed by reviewing the resulting diff
 - `reasoning-log.gif` — a chat turn showing faint reasoning text, compact tool output, inline diff rows, and the final answer
-- `tangent.gif` — `:StriderQ` opens a flow-lane tangent, asks an unrelated question, and keeps the main chat surfaces out of the way
+- `tangent.gif` — `:StriderQ` opens a side-question card and keeps the main chat surfaces out of the way
 
 ## How it works
 

@@ -14,6 +14,8 @@ local compose_working_hl = G.compose_working
 local FOLDED_HEIGHT = 3
 local STACK_GAP = 1
 local STACK_MARGIN_BOTTOM = 2
+local FOLDED_ZINDEX = 40
+local EXPANDED_ZINDEX = 70
 local EXPANDED_TOP_MARGIN = 1
 local EXPANDED_BOTTOM_MARGIN = 3
 local Q_COMPOSE_HEIGHT = 6
@@ -236,7 +238,7 @@ local function card_config(session, card, stack_index)
 		title_pos = "left",
 		style = "minimal",
 		focusable = true,
-		zindex = expanded and 60 or 40,
+		zindex = expanded and EXPANDED_ZINDEX or FOLDED_ZINDEX,
 	}
 end
 local function compose_config(answer_config)
@@ -252,7 +254,7 @@ local function compose_config(answer_config)
 		title_pos = "left",
 		style = "minimal",
 		focusable = true,
-		zindex = 61,
+		zindex = EXPANDED_ZINDEX + 1,
 	}
 end
 local function configure_card_window(win)

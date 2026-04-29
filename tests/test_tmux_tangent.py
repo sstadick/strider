@@ -482,6 +482,58 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertIn("StriderPatch #1: change the greeting · running", labels)
                 self.assertEqual(["StriderQ #1: why is this named? · running"], q_labels)
 
+    def test_q_picker_raises_selected_card_above_open_chat(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+
+                h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui'); "
+                    "  state.ensure_session('q', vim.fn.getcwd()); "
+                    "  ui.open_q_answer('queued question', 'q', { new = true }); "
+                    "  ui.finish_q_answer('queued answer', 'success', 'q'); "
+                    "  return true "
+                    "end)()"
+                )
+                h.lua(
+                    "(function() "
+                    "  local picker = require('strider.picker'); "
+                    "  local original_select = picker.select; "
+                    "  picker.select = function(_, items, on_select) "
+                    "    on_select(items[1]); "
+                    "    return true "
+                    "  end; "
+                    "  local ok, err = pcall(function() return require('strider').q_cards() end); "
+                    "  picker.select = original_select; "
+                    "  if not ok then error(err) end; "
+                    "  return true "
+                    "end)()"
+                )
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://StriderQCompose", timeout=3.0)
+
+                zindexes = h.lua(
+                    "(function() "
+                    "  local function zindex(name) "
+                    "    local buf = vim.fn.bufnr(name); "
+                    "    local win = vim.fn.win_findbuf(buf)[1]; "
+                    "    return vim.api.nvim_win_get_config(win).zindex or 0 "
+                    "  end; "
+                    "  return table.concat({ "
+                    "    zindex('strider://log'), "
+                    "    zindex('strider://compose'), "
+                    "    zindex('strider://StriderQAnswer'), "
+                    "    zindex('strider://StriderQCompose') "
+                    "  }, ',') "
+                    "end)()"
+                )
+                chat_log, chat_compose, q_answer, q_compose = map(int, zindexes.split(","))
+                self.assertGreater(q_answer, chat_log)
+                self.assertGreater(q_answer, chat_compose)
+                self.assertGreater(q_compose, chat_compose)
+
     def test_card_keymaps_open_log_and_dismiss(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

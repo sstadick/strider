@@ -151,8 +151,8 @@ running chat, patch turn, or earlier Q.
    request's exact card; the first card keeps `strider://StriderQAnswer`, later
    cards use `strider://flow-card/q/N`
 6. cards stay compact until selected, picked through `:StriderQs` or
-   `:StriderCards`, or toggled by bare `:StriderQ`; the bare command always
-   targets the latest Q card
+   `:StriderCards`, or toggled by bare `:StriderQ`; expanded cards rise above
+   the chat float, and the bare command always targets the latest Q card
 7. focused cards support `q`/`<Esc>` fold, `d` dismiss, `o` open worker log,
    and `[c`/`]c` lane-local card navigation; `:StriderCardsClear` dismisses
    completed cards in bulk
@@ -223,6 +223,7 @@ Purpose:
 - compact Chat/Q/Patch cards reserve shared right-edge stack slots
 - `:StriderQs` picks named Q cards, and `:StriderCards` picks all named card
   surfaces, through telescope/fzf/`vim.ui.select`
+- picked or focused flow cards expand above the chat float
 - `:StriderCardsClear` and card-local `d` dismiss completed card surfaces
 - tail new output only while the log window is already at the bottom;
   scrolling up pauses follow-mode until the user jumps back to the tail

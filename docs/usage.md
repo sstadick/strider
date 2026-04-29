@@ -53,21 +53,20 @@ Each new StriderQ card gets its own Q worker process. Search transcript lives in
 flow cards in the bottom-right. Cards stay compact while running and after
 completion; select/focus one to expand it into a near full-height right-side
 panel. Every card has a stable name such as `StriderQ #2: why is this flag?`,
-and `:StriderQs`/`:StriderCards` open pickers for existing Q cards or all Chat/Q/Patch cards. Expanded
-cards stay open when you return to code; press `q` or `<Esc>` inside the card to
-fold it, `d` to dismiss it, `o` to open its worker log, or `[c`/`]c` to move
-between cards in that lane. Bare `:StriderQ` toggles the latest Q card. Expanded
-Q cards show the question plus assistant answer above a separate follow-up
-compose float; type there and press `<C-s>` to ask on the same Q worker/card.
-Patch cards show
-the request, target, touched files, diffs, and final
-summary. Reasoning, tool calls, and full tool output remain in the operation's
-log. When flow-worker operations finish, Strider always leaves a
-bottom-left green-dot completion cue; if that worker's log is hidden, it also
-sends a notification. `:StriderStopFlow` aborts active flow-worker turns.
-`:StriderReview` runs on a dedicated review
-lane whose transcript lives in `:StriderLogReview`; that review log is
-manual/diagnostic and does not open on review start or review end.
+and `:StriderQs`/`:StriderCards` open pickers for existing Q cards or all
+Chat/Q/Patch cards. Expanded cards rise above the chat float, stay open when
+you return to code, and fold with `q` or `<Esc>` inside the card. Use `d` to
+dismiss it, `o` to open its worker log, or `[c`/`]c` to move between cards in
+that lane. Bare `:StriderQ` toggles the latest Q card. Expanded Q cards show
+the question plus assistant answer above a separate follow-up compose float;
+type there and press `<C-s>` to ask on the same Q worker/card. Patch cards show
+the request, target, touched files, diffs, and final summary. Reasoning, tool
+calls, and full tool output remain in the operation's log. When flow-worker
+operations finish, Strider always leaves a bottom-left green-dot completion cue;
+if that worker's log is hidden, it also sends a notification.
+`:StriderStopFlow` aborts active flow-worker turns. `:StriderReview` runs on a
+dedicated review lane whose transcript lives in `:StriderLogReview`; that review
+log is manual/diagnostic and does not open on review start or review end.
 
 ## Chat Compose
 

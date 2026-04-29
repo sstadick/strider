@@ -214,7 +214,6 @@ functions plus a plugin-prefixed augroup are the normal pattern.
 2. Introduce a generic card API:
    - `create_card(kind, opts, lane)`
    - `update_card(id, fields, lane)`
-   - `finish_card(id, status, fields, lane)`
    - `reflow(lane)`
 3. Preserve current Q behavior exactly:
    - bottom-right folded card

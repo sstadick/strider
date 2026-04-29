@@ -668,12 +668,6 @@ function M.update_card(id, fields, lane)
 	M.reflow(lane)
 	return card
 end
-function M.finish_card(id, status, fields, lane)
-	fields = fields or {}
-	fields.status = status or fields.status or "success"
-	fields.finished_at = fields.finished_at or vim.uv.hrtime()
-	return M.update_card(id, fields, lane)
-end
 local function q_card_count(session)
 	local count = 0
 	for _, card in ipairs(ensure_card_state(session)) do

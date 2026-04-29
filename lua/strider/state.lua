@@ -331,16 +331,6 @@ function M.is_q_lane(lane)
 	return M.q_lane_index(lane) ~= nil
 end
 
-function M.q_lanes()
-	local lanes = {}
-	for _, lane in ipairs(M.lanes()) do
-		if M.is_q_lane(lane) then
-			table.insert(lanes, lane)
-		end
-	end
-	return lanes
-end
-
 function M.next_q_worker_lane()
 	local max_index = 0
 	for lane in pairs(M.sessions) do

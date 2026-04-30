@@ -21,7 +21,7 @@ without reintroducing disruptive floating answer cards.
 
 Inside a Q answer split:
 
-- `i` or `a` opens the lightweight Q prompt for a follow-up.
+- `a` opens the lightweight Q prompt for a follow-up.
 - The prompt is pre-scoped to the selected Q record.
 - Submit sends the follow-up to the same Q worker/card.
 - The follow-up inherits the original Q model preset (`fast` or `deep`).
@@ -34,7 +34,7 @@ Inside a Q answer split:
 ## Minimal implementation plan
 
 1. Add answer-split keymaps
-   - In the Q answer buffer/window path, map `i` and `a` to start a follow-up.
+   - In the Q answer buffer/window path, map `a` to start a follow-up.
    - Reuse the existing lightweight prompt editor rather than a split-local
      compose buffer.
 
@@ -57,7 +57,7 @@ Inside a Q answer split:
 
 5. Test coverage
    - Open a completed Q via `:StriderQs` into a normal split.
-   - Press `i`, submit a follow-up, and assert:
+   - Press `a`, submit a follow-up, and assert:
      - the same worker log receives the follow-up
      - the same answer buffer contains both turns
      - no floating Q answer/card is opened

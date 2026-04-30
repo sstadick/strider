@@ -379,7 +379,7 @@ local function card_winbar(card, lane)
 		if card.kind == "patch" then
 			text = card.status == "success" and "StriderPatch complete" or "StriderPatch stopped"
 		end
-		local hint = card.kind == "q" and "i/a follow-up · q close · d dismiss · o log"
+		local hint = card.kind == "q" and "a follow-up · q close · d dismiss · o log"
 			or "q/Esc fold · d/:q dismiss"
 		return escape_status_text(text) .. (expanded and "%=" .. escape_status_text(hint) or "")
 	end

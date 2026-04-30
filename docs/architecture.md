@@ -154,7 +154,7 @@ running chat, patch turn, or earlier Q.
 6. no Q answer window opens automatically; completion emits a low-disruption
    notification and `:StriderQLatest`, `:StriderQs`, or `:StriderCards` can open
    the ready answer
-7. selecting a Q opens its answer buffer in a normal split; `i`/`a` opens a
+7. selecting a Q opens its answer buffer in a normal split; `a` opens a
    follow-up prompt on the same worker/record, `q` closes that window, `d`
    dismisses the record, `o` opens the worker log, and `[c`/`]c` navigate
    lane-local Q records

@@ -171,7 +171,7 @@ class TmuxTangentTests(unittest.TestCase):
                     "end)()"
                 ).split(",")
 
-                h.send("i", pause=0.3)
+                h.send("a", pause=0.3)
                 h.wait_until(lambda: h.popup_open(), timeout=3.0)
                 self.assertNotIn("strider://StriderQCompose", h.json_expr(
                     "map(getwininfo(), {_, v -> bufname(v.bufnr)})"

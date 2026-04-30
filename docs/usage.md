@@ -259,7 +259,7 @@ process; the first keeps the legacy `strider://StriderQAnswer` buffer and later
 records use `strider://flow-card/q/N`. No answer window opens automatically;
 completion leaves a low-disruption cue. Use `:StriderQLatest` to open the newest
 answer directly, or pick answers with `:StriderQs` / `:StriderCards`; all open in
-a normal split. In the split, `i`/`a` opens a follow-up prompt that reuses the
+a normal split. In the split, `a` opens a follow-up prompt that reuses the
 same Q worker and answer record, `q` closes the split, `d` dismisses the answer
 record, `o` opens its worker log, and `[c`/`]c` moves between Q records.
 `:StriderQ!` behaves like `:StriderQ` and is kept for muscle memory; every new

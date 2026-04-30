@@ -233,12 +233,6 @@ function M.attach_answer(card)
 	end
 	vim.keymap.set(
 		"n",
-		"i",
-		start,
-		{ buffer = card.buf, nowait = true, silent = true, desc = "Compose StriderQ follow-up" }
-	)
-	vim.keymap.set(
-		"n",
 		"a",
 		start,
 		{ buffer = card.buf, nowait = true, silent = true, desc = "Compose StriderQ follow-up" }

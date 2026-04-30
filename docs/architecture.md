@@ -152,10 +152,12 @@ running chat, patch turn, or earlier Q.
    request's exact record; the first record keeps `strider://StriderQAnswer`,
    later records use `strider://flow-card/q/N`
 6. no Q answer window opens automatically; completion emits a low-disruption
-   notification and `:StriderQs`/`:StriderCards` pickers show the ready answer
-7. selecting a Q opens its answer buffer in a normal split; `q` closes that
-   window, `d` dismisses the record, `o` opens the worker log, and `[c`/`]c`
-   navigate lane-local Q records
+   notification and `:StriderQLatest`, `:StriderQs`, or `:StriderCards` can open
+   the ready answer
+7. selecting a Q opens its answer buffer in a normal split; `i`/`a` opens a
+   follow-up prompt on the same worker/record, `q` closes that window, `d`
+   dismisses the record, `o` opens the worker log, and `[c`/`]c` navigate
+   lane-local Q records
 8. the full transcript lands in that record's worker log (`:StriderLogQ` for the
    first worker, `strider://StriderLogQ-N` for later workers), including
    reasoning, tool calls, and tool output; chat is not auto-opened
@@ -387,8 +389,9 @@ Working today:
 - plain-prompt agent turns with clarify available
 - side questions, search, and patches on separate flow-worker processes; each Q
   answer gets its own Q worker, Q completion notifies without opening a window,
-  and Q answers open on demand in normal splits while full transcripts land in
-  their worker logs (`:StriderLogQ`, `:StriderLogPatch`, `:StriderLogFlow`);
+  `:StriderQLatest`/`:StriderQs` open answers on demand in normal splits, and
+  split-local follow-ups reuse the same Q worker/record while full transcripts
+  land in worker logs (`:StriderLogQ`, `:StriderLogPatch`, `:StriderLogFlow`);
   patch results still use compact flow cards, and `:StriderCardsClear`/`d`
   dismiss cards when the stack gets noisy
 - clarify and plan-proposal flows rendered inline in the chat log with

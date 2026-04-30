@@ -26,6 +26,7 @@ README.
 | `:StriderQ! [--fast\|--deep] [prompt]` | Same as `:StriderQ`; kept for muscle memory |
 | `:'<,'>StriderQ [--fast\|--deep] [prompt]` | Open the StriderQ popup with a selection-scoped Q-worker question |
 | `:StriderQs` | Pick a StriderQ answer and open it in a normal split |
+| `:StriderQLatest` | Open the newest StriderQ answer directly in a normal split |
 | `:StriderCards` | Pick an existing named Chat/Q/Patch card with telescope/fzf fallback |
 | `:StriderCardsClear[!]` | Dismiss completed cards; `!` also dismisses running cards |
 | `:StriderChat` | Toggle the chat log + compose split; collapsed state leaves a compact card |
@@ -256,13 +257,15 @@ Q model before submitting. Range-based Q includes the selected excerpt in the
 prompt. Each submitted question creates a named answer record and its own worker
 process; the first keeps the legacy `strider://StriderQAnswer` buffer and later
 records use `strider://flow-card/q/N`. No answer window opens automatically;
-completion leaves a low-disruption cue. Pick answers with `:StriderQs` or
-`:StriderCards` to open them in a normal split. Use `q` to close the split, `d`
-to dismiss the answer record, `o` to open its worker log, and `[c`/`]c` to move
-between Q records. `:StriderQ!` behaves like `:StriderQ` and is kept for muscle
-memory; every submission starts another Q worker, so multiple StriderQ answers
-can run concurrently. The full transcript, including reasoning and tool calls,
-lands in that answer's worker log (`:StriderLogQ` for the first Q,
+completion leaves a low-disruption cue. Use `:StriderQLatest` to open the newest
+answer directly, or pick answers with `:StriderQs` / `:StriderCards`; all open in
+a normal split. In the split, `i`/`a` opens a follow-up prompt that reuses the
+same Q worker and answer record, `q` closes the split, `d` dismisses the answer
+record, `o` opens its worker log, and `[c`/`]c` moves between Q records.
+`:StriderQ!` behaves like `:StriderQ` and is kept for muscle memory; every new
+submission starts another Q worker, so multiple StriderQ answers can run
+concurrently. The full transcript, including reasoning and tool calls, lands in
+that answer's worker log (`:StriderLogQ` for the first Q,
 `strider://StriderLogQ-N` for later Qs).
 
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It

@@ -44,11 +44,12 @@ Patch a small selected range:
 :'<,'>StriderPatch change the greeting literal from hi to hello
 ```
 
-Ask a side question on a dedicated Q worker, then pick the answer when the low-key completion cue appears:
+Ask a side question on a dedicated Q worker, then open the latest answer when the low-key completion cue appears:
 
 ```vim
 :StriderQ --fast what does this flag actually do?
 :'<,'>StriderQ --deep why is this loop written this way?
+:StriderQLatest
 :StriderQs
 ```
 
@@ -172,6 +173,7 @@ panes:
 | `:StriderSearch {prompt}` | Structured code search |
 | `:StriderQ[!] [--fast\|--deep] [prompt]` | Quick side question; choose fast/deep model before submit |
 | `:StriderQs` | Pick a completed/running StriderQ answer and open it in a split |
+| `:StriderQLatest` | Open the newest StriderQ answer directly in a split |
 | `:StriderCards` | Pick an existing Chat/Q/Patch card |
 | `:StriderCardsClear[!]` | Dismiss completed cards; `!` includes running cards |
 | `:'<,'>StriderPatch [prompt]` | Selection-scoped patch |

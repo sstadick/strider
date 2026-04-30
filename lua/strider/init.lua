@@ -788,6 +788,15 @@ function M.q_cards()
 	return pick_cards("StriderQ Answers", { kind = "q" })
 end
 
+function M.q_latest()
+	local win = ui.open_q_answer_split(nil, Q_LANE)
+	if not win then
+		ui.notify("No StriderQ answers yet", vim.log.levels.INFO)
+		return false
+	end
+	return true
+end
+
 function M.cards_clear(opts)
 	local count = ui.clear_flow_cards({ all = opts and opts.bang }) or 0
 	ui.notify(string.format("Dismissed %d Strider card%s", count, count == 1 and "" or "s"), vim.log.levels.INFO)

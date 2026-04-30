@@ -80,7 +80,7 @@ end, {
 	bang = true,
 	nargs = "*",
 	range = true,
-	desc = "Open the StriderQ editor; bare toggles the latest card, ! creates a new one",
+	desc = "Open the StriderQ editor; use --fast/--deep to choose the model",
 })
 
 vim.api.nvim_create_user_command("StriderCards", function()
@@ -89,7 +89,11 @@ end, { desc = "Pick a Strider card" })
 
 vim.api.nvim_create_user_command("StriderQs", function()
 	require("strider").q_cards()
-end, { desc = "Pick a StriderQ card" })
+end, { desc = "Pick a StriderQ answer" })
+
+vim.api.nvim_create_user_command("StriderQLatest", function()
+	require("strider").q_latest()
+end, { desc = "Open the latest StriderQ answer" })
 
 vim.api.nvim_create_user_command("StriderCardsClear", function(opts)
 	require("strider").cards_clear(opts)

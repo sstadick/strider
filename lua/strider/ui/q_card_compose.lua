@@ -101,6 +101,15 @@ local function fold(card)
 	end
 end
 
+local function dispatch_followup(card, text)
+	local ok, strider = pcall(require, "strider")
+	if not ok or not strider.q_followup then
+		vim.notify("StriderQ follow-up is unavailable", vim.log.levels.ERROR)
+		return false
+	end
+	return strider.q_followup(text, card.id) ~= false
+end
+
 local function submit(card)
 	local buf = M.ensure_buffer(card)
 	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -110,12 +119,7 @@ local function submit(card)
 		M.focus(card, { insert = true })
 		return
 	end
-	local ok, strider = pcall(require, "strider")
-	if not ok or not strider.q_followup then
-		vim.notify("StriderQ follow-up is unavailable", vim.log.levels.ERROR)
-		return
-	end
-	if strider.q_followup(text, card.id) ~= false then
+	if dispatch_followup(card, text) then
 		clear_buffer(card)
 	end
 end
@@ -185,13 +189,47 @@ function M.ensure_buffer(card)
 	return buf
 end
 
+local function followup_hint(card)
+	local lines = { "Follow up on " .. (card.name or "this StriderQ answer") .. "." }
+	if card.model_label then
+		table.insert(lines, "Uses the same Q worker and " .. card.model_label .. " model.")
+	else
+		table.insert(lines, "Uses the same Q worker and model.")
+	end
+	table.insert(lines, "Answer updates in this split.")
+	return lines
+end
+
+local function open_followup_prompt(card)
+	local ok, prompt_editor = pcall(require, "strider.ui.prompt_editor")
+	if not ok or not prompt_editor.open_prompt_editor then
+		vim.notify("StriderQ follow-up prompt is unavailable", vim.log.levels.ERROR)
+		return false
+	end
+	prompt_editor.open_prompt_editor("StriderQ follow-up", function(text)
+		return dispatch_followup(card, text)
+	end, { hint_lines = followup_hint(card) })
+	return true
+end
+
+local function current_window_is_regular_answer(card)
+	local win = vim.api.nvim_get_current_win()
+	return vim.api.nvim_win_get_buf(win) == card.buf and vim.api.nvim_win_get_config(win).relative == ""
+end
+
 function M.attach_answer(card)
 	if not card or not card.buf or vim.b[card.buf].strider_q_compose_answer_attached then
 		return
 	end
 	vim.b[card.buf].strider_q_compose_answer_attached = true
 	local function start()
-		M.focus(card, { insert = true })
+		if current_window_is_regular_answer(card) then
+			open_followup_prompt(card)
+			return
+		end
+		if not M.focus(card, { insert = true }) then
+			open_followup_prompt(card)
+		end
 	end
 	vim.keymap.set(
 		"n",

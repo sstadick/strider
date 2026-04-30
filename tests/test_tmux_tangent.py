@@ -149,6 +149,74 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertIn("Checking the relevant files first", q_log)
                 self.assertIn("Finished a broader work pass", q_log)
 
+    def test_q_answer_split_followup_reuses_worker_and_record(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderQ first question")
+                h.submit_popup()
+                h.wait_until(
+                    lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://StriderQAnswer")),
+                    timeout=5.0,
+                )
+
+                h.lua("(function() require('strider.ui').open_q_answer_split(nil, 'q'); return true end)()")
+                h.wait_until(lambda: h.expr("bufname('%')") == "strider://StriderQAnswer", timeout=3.0)
+                before = h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui.flow_cards'); "
+                    "  local session = state.get_session('q'); "
+                    "  local card = ui.get_card(session.q_answer_card_id, 'q'); "
+                    "  return table.concat({ card.id, card.worker_lane or '', tostring(#card.turns), card.model_label or '' }, ',') "
+                    "end)()"
+                ).split(",")
+
+                h.send("i", pause=0.3)
+                h.wait_until(lambda: h.popup_open(), timeout=3.0)
+                self.assertNotIn("strider://StriderQCompose", h.json_expr(
+                    "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+                ))
+                h.submit_popup("what about follow ups?")
+                h.wait_until(
+                    lambda: "what about follow ups?" in "\n".join(h.q_log_lines()),
+                    timeout=5.0,
+                )
+                h.wait_until(
+                    lambda: h.lua_bool(
+                        "(function() "
+                        "  local state = require('strider.state'); "
+                        "  local ui = require('strider.ui.flow_cards'); "
+                        "  local session = state.get_session('q'); "
+                        "  local card = ui.get_card(session.q_answer_card_id, 'q'); "
+                        "  return #card.turns == 2 and card.turns[2].status ~= 'running' "
+                        "end)()"
+                    ),
+                    timeout=5.0,
+                )
+
+                after = h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui.flow_cards'); "
+                    "  local session = state.get_session('q'); "
+                    "  local card = ui.get_card(session.q_answer_card_id, 'q'); "
+                    "  return table.concat({ card.id, card.worker_lane or '', tostring(#card.turns), card.model_label or '' }, ',') "
+                    "end)()"
+                ).split(",")
+                self.assertEqual(before[0], after[0])
+                self.assertEqual(before[1], after[1])
+                self.assertEqual("2", after[2])
+                self.assertEqual("fast", after[3])
+                self.assertFalse(h.lua_bool("require('strider.state').get_session('q-2') ~= nil"))
+                self.assertEqual("strider://StriderQAnswer", h.expr("bufname('%')"))
+                self.assertTrue(h.lua_bool("vim.api.nvim_win_get_config(0).relative == ''"))
+                answer = "\n".join(h.buffer_lines("strider://StriderQAnswer"))
+                self.assertIn("first question", answer)
+                self.assertIn("what about follow ups?", answer)
+                self.assertNotIn("strider://StriderQCompose", h.json_expr(
+                    "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+                ))
+
     def test_bare_q_after_answer_opens_new_prompt_not_card_toggle(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
@@ -449,7 +517,7 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertTrue(job_ids[1])
                 self.assertNotEqual(job_ids[0], job_ids[1])
 
-    def test_multiple_striderq_cards_are_named_and_picker_opens_latest(self) -> None:
+    def test_multiple_striderq_cards_are_named_and_latest_command_opens_latest(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("StriderQ first card question")
@@ -475,18 +543,9 @@ class TmuxTangentTests(unittest.TestCase):
                 ).split("\n")
                 self.assertEqual(["StriderQ #1: first card question", "StriderQ #2: second card question"], names)
 
-                h.lua(
-                    "(function() "
-                    "  local picker = require('strider.picker'); "
-                    "  local original_select = picker.select; "
-                    "  picker.select = function(_, items, on_select) on_select(items[1]); return true end; "
-                    "  local ok, err = pcall(function() return require('strider').q_cards() end); "
-                    "  picker.select = original_select; "
-                    "  if not ok then error(err) end; "
-                    "  return true "
-                    "end)()"
-                )
+                h.ex("StriderQLatest")
                 h.wait_until(lambda: h.expr("bufname('%')") == "strider://flow-card/q/2", timeout=3.0)
+                self.assertTrue(h.lua_bool("vim.api.nvim_win_get_config(0).relative == ''"))
                 self.assertIn("second card question", "\n".join(h.buffer_lines("strider://flow-card/q/2")))
 
     def test_striderq_bang_opens_new_prompt_instead_of_toggling_latest(self) -> None:

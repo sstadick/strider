@@ -1,6 +1,6 @@
 # Ready for work
+- Still need a way to queue up follow up messages
 - Generally speed up the review process. Unsure how to do this. But for small reviews maybe steal some context from... somewhere?
-- steering and follow up prompts hsould have their own color line start indicator
 - we need to do a round of tidy up on the flow related logs and such to make sure we have commands to see everything
 - Sometimes the Chat/Log uis get weird if I open a file in them
 
@@ -80,3 +80,4 @@
 - I think we lost the "Search/Patch/Q" done green dot in the bottom left, open to other ways to indicate doneness though.
     - at a minimum the message is getting burried, or not showing for some reason?
 okay first, updat my ~/aihome/dotfiles with
+- Update Strider’s prompt rendering so steering prompts and follow-up prompts each have their own distinct colored line-start indicator, separate from normal user prompts. Include tests/docs if the rendering behavior is user-visible.

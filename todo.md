@@ -1,6 +1,9 @@
 # Ready for work
 - Generally speed up the review process. Unsure how to do this. But for small reviews maybe steal some context from... somewhere?
 - steering and follow up prompts hsould have their own color line start indicator
+- we need to do a round of tidy up on the flow related logs and such to make sure we have commands to see everything
+- Sometimes the Chat/Log uis get weird if I open a file in them
+
 
 # Need refinement
 - When a tool call hangs, we need a way to kick the model to move on
@@ -76,3 +79,4 @@
     - I don't think we need to put that in the side bar, but maybe we need a "final buffer" or something that says review end, and shows the summary in-buffer. Give the user a shot to edit that in the buffer, and then send it to the main flow?
 - I think we lost the "Search/Patch/Q" done green dot in the bottom left, open to other ways to indicate doneness though.
     - at a minimum the message is getting burried, or not showing for some reason?
+okay first, updat my ~/aihome/dotfiles with

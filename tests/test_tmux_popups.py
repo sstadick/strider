@@ -1,5 +1,6 @@
-"""Tests for the floating prompt editors used when Strider commands are called
-with no arguments. Exercises search/review/prompt/patch popups end-to-end
+"""Tests for prompt editors and the main chat compose/log surfaces.
+
+Exercises search/review/prompt/patch popups plus split chat behavior end-to-end
 through a real Neovim session with the fake pi backend.
 """
 import base64
@@ -91,6 +92,30 @@ class TmuxPopupTests(unittest.TestCase):
                 # Message reached the fake backend.
                 log_text = "\n".join(h.log_lines())
                 self.assertIn("add a banner", log_text)
+
+    def test_striderchat_uses_normal_split_windows(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("edit src/main.tsx")
+                source_buf = int(h.lua("vim.api.nvim_get_current_buf()"))
+                h.ex("StriderChat")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+
+                result = h.lua(
+                    "(function() "
+                    f"  local source_buf = {source_buf}; "
+                    "  local function kind(name) "
+                    "    local buf = vim.fn.bufnr(name); "
+                    "    local win = vim.fn.win_findbuf(buf)[1]; "
+                    "    local rel = vim.api.nvim_win_get_config(win).relative; "
+                    "    return rel == '' and 'regular' or rel; "
+                    "  end; "
+                    "  local source_win = vim.fn.win_findbuf(source_buf)[1]; "
+                    "  local shrunk = vim.api.nvim_win_get_width(source_win) < vim.o.columns; "
+                    "  return table.concat({ kind('strider://log'), kind('strider://compose'), tostring(shrunk) }, '|'); "
+                    "end)()"
+                )
+                self.assertEqual("regular|regular|true", result)
 
     def test_chat_read_only_adds_badge_and_prompt_guard(self) -> None:
         with FixtureProject(self.project_root) as project_root:

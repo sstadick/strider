@@ -165,7 +165,7 @@ running chat, patch turn, or earlier Q.
 
 ### Chat
 
-1. user runs `:StriderChat` (no args) to toggle the floating log + compose stack;
+1. user runs `:StriderChat` (no args) to toggle the right-side split log + compose stack;
    collapsing it leaves a compact `Strider chat` card placeholder
 2. `:[range]StriderChat [message]` opens chat and prefills compose with the
    range pointer and/or inline text instead of sending immediately

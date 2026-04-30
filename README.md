@@ -69,7 +69,7 @@ Work, then review the diff:
 ```
 
 Most popup commands submit with `<C-s>` and cancel with `<Esc><Esc>`.
-`:StriderChat` opens a right-side floating log plus compose stack; toggling it
+`:StriderChat` opens a right-side split log plus compose stack; toggling it
 closed leaves a compact chat card. With arguments it prefills compose so you can
 edit before sending.
 
@@ -82,7 +82,7 @@ edit before sending.
   have their own transcript, in-flight state, and pi worker process.
 - Scoped guardrails: review/search/plan are read-only; patch prompts are
   selection-scoped and intended for small local edits.
-- Native Neovim UI: floating chat log/compose with a compact card placeholder,
+- Native Neovim UI: split chat log/compose with a compact card placeholder,
   stacked compact Chat/Q/Patch cards, split-style Q-card follow-up compose,
   quickfix/pickers, inline review annotations, comments, and touched-file
   navigation.

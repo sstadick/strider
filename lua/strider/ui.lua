@@ -1,5 +1,4 @@
 local chat_card = require("strider.ui.chat_card")
-local chat_float = require("strider.ui.chat_float")
 local clipboard = require("strider.clipboard")
 local flow_cards = require("strider.ui.flow_cards")
 local highlights = require("strider.ui.highlights")
@@ -435,6 +434,20 @@ function M.refresh_log_winbar(lane)
 	end
 end
 
+local function configure_log_window(win)
+	vim.wo[win].wrap = true
+	vim.wo[win].linebreak = true
+	vim.wo[win].number = false
+	vim.wo[win].relativenumber = false
+	vim.wo[win].signcolumn = "no"
+	vim.wo[win].foldcolumn = "0"
+	vim.wo[win].cursorline = false
+	pcall(function()
+		vim.wo[win].conceallevel = 2
+		vim.wo[win].concealcursor = "nc"
+	end)
+end
+
 function M.open_log(opts, lane)
 	opts = opts or {}
 	lane = normalize_lane(lane)
@@ -443,6 +456,7 @@ function M.open_log(opts, lane)
 	local buf = M.ensure_log_buffer(lane)
 	for _, win in ipairs(vim.fn.win_findbuf(buf)) do
 		if vim.api.nvim_win_is_valid(win) then
+			configure_log_window(win)
 			if log_follow_value(win) == nil then
 				update_log_follow_state(win)
 			end
@@ -452,7 +466,7 @@ function M.open_log(opts, lane)
 			scroll_log_windows(buf)
 			M.refresh_log_winbar(lane)
 			log_pin.refresh_for_window(win)
-			return
+			return win, false
 		end
 	end
 	-- Log opens as a right-hand vertical split. Compose window, if opened,
@@ -460,20 +474,15 @@ function M.open_log(opts, lane)
 	vim.cmd("botright vsplit")
 	local win = vim.api.nvim_get_current_win()
 	vim.api.nvim_win_set_buf(win, buf)
+	configure_log_window(win)
 	set_log_follow(win, true)
-	-- conceallevel is window-local. render-markdown.nvim and markdown's
-	-- built-in syntax rely on it to hide fence markers / inline markers.
-	-- Set it on the log window so fenced tool output renders cleanly.
-	pcall(function()
-		vim.wo[win].conceallevel = 2
-		vim.wo[win].concealcursor = "nc"
-	end)
 	scroll_log_windows(buf)
 	M.refresh_log_winbar(lane)
 	log_pin.refresh_for_window(win)
 	if previous and vim.api.nvim_win_is_valid(previous) then
 		vim.api.nvim_set_current_win(previous)
 	end
+	return win, true
 end
 
 function M.hide_log(lane)
@@ -751,18 +760,22 @@ function M.show_chat_card()
 	return chat_card.open()
 end
 
-function M.open_chat_float(on_send)
-	return chat_float.open(on_send, {
-		close_windows_for_buffer = close_windows_for_buffer,
-		ensure_compose_buffer = M.ensure_compose_buffer,
-		ensure_log_buffer = M.ensure_log_buffer,
-		ensure_log_follow_autocmds = ensure_log_follow_autocmds,
-		log_pin_refresh_for_window = log_pin.refresh_for_window,
-		refresh_compose_winbar = M.refresh_compose_winbar,
-		refresh_log_winbar = M.refresh_log_winbar,
-		scroll_log_windows = scroll_log_windows,
-		set_log_follow = set_log_follow,
-	})
+local function chat_split_width()
+	local info = vim.api.nvim_list_uis()[1] or { width = 120 }
+	return math.min(96, math.max(48, math.floor(info.width * 0.42)))
+end
+
+function M.open_chat_split(on_send)
+	local session = state.get_session("main")
+	if session then
+		session.chat_collapsed = false
+	end
+	chat_card.close()
+	local log_win, created = M.open_log({}, "main")
+	if created and log_win and vim.api.nvim_win_is_valid(log_win) then
+		pcall(vim.api.nvim_win_set_width, log_win, chat_split_width())
+	end
+	return M.open_compose(on_send)
 end
 
 function M.hide_compose()

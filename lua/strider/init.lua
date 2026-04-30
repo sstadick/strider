@@ -739,7 +739,7 @@ local function open_chat_surface(prefill)
 	if prefill and prefill ~= "" then
 		ui.prefill_compose(prefill)
 	end
-	ui.open_chat_float(function(text)
+	ui.open_chat_split(function(text)
 		return dispatch_compose(text)
 	end)
 	return true
@@ -750,10 +750,10 @@ function M.chat(prompt, opts)
 	local range = range_from_opts(opts)
 	local prefill = chat_prefill(prompt, range)
 
-    if prefill == "" and ui.chat_is_visible() then
-      ui.hide_chat()
-      return
-    end
+	if prefill == "" and ui.chat_is_visible() then
+		ui.hide_chat({ show_card = true })
+		return
+	end
 
 	open_chat_surface(prefill)
 end

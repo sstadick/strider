@@ -43,7 +43,7 @@ README.
 `<Esc><Esc>`.
 
 `:StriderChat` keeps persistent main log and compose buffers, shown as a
-right-side floating log/compose stack. Toggling it closed leaves a compact
+right-side split log/compose stack. Toggling it closed leaves a compact
 `Strider chat` card; bare `:StriderChat` pops it back open. Use
 `:StriderChatReadOnly` (or `gR` in normal mode / `<C-g>r` in insert mode inside
 `strider://compose`) to toggle a chat-only read-only guard; the compose winbar

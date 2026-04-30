@@ -72,7 +72,8 @@ Work, then review the diff:
 Most popup commands submit with `<C-s>` and cancel with `<Esc><Esc>`.
 `:StriderChat` opens a right-side split log plus compose stack; toggling it
 closed leaves a compact chat card. With arguments it prefills compose so you can
-edit before sending.
+edit before sending. The empty compose hint says when `<C-s>` sends a new prompt
+versus a steer for an in-flight turn.
 
 ## Features
 
@@ -86,7 +87,8 @@ edit before sending.
 - Native Neovim UI: split chat log/compose with a compact card placeholder,
   on-demand split Q answers, compact Chat/Patch cards, quickfix/pickers,
   inline review annotations, comments, and touched-file
-  navigation.
+  navigation. Prompt markers distinguish normal prompts (`›`), steers (`»`),
+  and Q follow-ups (`↳`).
 - Useful transcript rendering: edit tools show inline diff rows; read/write
   output keeps syntax-highlighted code fences; command/search output uses
   compact rows that do not accidentally render as markdown.

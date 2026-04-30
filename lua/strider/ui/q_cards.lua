@@ -76,11 +76,12 @@ local function answer_lines(turn)
 	return { "Waiting for Strider…" }
 end
 
-local function append_question(lines, prompt)
+local function append_question(lines, prompt, followup)
 	local question = vim.trim(prompt or "")
 	local question_lines = vim.split(question ~= "" and question or "(no question)", "\n", { plain = true })
+	local marker = followup and "↳ " or "› "
 	for index, line in ipairs(question_lines) do
-		table.insert(lines, (index == 1 and "› " or "  ") .. line)
+		table.insert(lines, (index == 1 and marker or "  ") .. line)
 	end
 	return #question_lines
 end
@@ -89,7 +90,7 @@ local function append_turn(lines, turn, index)
 	if index > 1 then
 		table.insert(lines, "")
 	end
-	local question_count = append_question(lines, turn.prompt)
+	local question_count = append_question(lines, turn.prompt, index > 1)
 	local separator_row = #lines
 	table.insert(
 		lines,

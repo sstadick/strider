@@ -8,6 +8,7 @@ local M = {}
 local ns = vim.api.nvim_create_namespace("strider-flow-cards")
 local G = highlights.groups
 local log_user_hl = G.log_user
+local log_followup_hl = G.log_followup
 local log_rule_hl = G.log_rule
 local log_muted_hl = G.log_muted
 local compose_working_hl = G.compose_working
@@ -325,6 +326,53 @@ local function generic_card_lines(card, expanded)
 	end
 	return lines, 1, 1, 2
 end
+local function q_marker(line)
+	if vim.startswith(line, "↳ ") then
+		return "↳ ", log_followup_hl
+	end
+	if vim.startswith(line, "› ") then
+		return "› ", log_user_hl
+	end
+	return nil, nil
+end
+local function highlight_q_rows(buf, lines)
+	for row = 0, #lines - 1 do
+		local line = lines[row + 1] or ""
+		local marker, marker_hl = q_marker(line)
+		if marker then
+			pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
+				end_row = row + 1,
+				hl_group = log_user_hl,
+				priority = 10,
+			})
+			pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
+				end_col = #marker,
+				hl_group = marker_hl,
+				priority = 12,
+			})
+		elseif line:match("^─") then
+			pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
+				end_row = row + 1,
+				hl_group = log_rule_hl,
+				priority = 10,
+			})
+		end
+	end
+end
+local function highlight_generic_prompt(buf, question_count, separator_row)
+	for row = 0, question_count - 1 do
+		pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
+			end_row = row + 1,
+			hl_group = log_user_hl,
+			priority = 10,
+		})
+	end
+	pcall(vim.api.nvim_buf_set_extmark, buf, ns, separator_row, 0, {
+		end_row = separator_row + 1,
+		hl_group = log_rule_hl,
+		priority = 10,
+	})
+end
 local function render_card(session, card, force_expanded)
 	local buf = ensure_card_buffer(card, session.lane)
 	local expanded = force_expanded or card_is_expanded(session, card) or #regular_card_windows(card) > 0
@@ -338,18 +386,11 @@ local function render_card(session, card, force_expanded)
 	vim.bo[buf].modifiable = true
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 	vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-	for row = 0, question_count - 1 do
-		pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
-			end_row = row + 1,
-			hl_group = log_user_hl,
-			priority = 10,
-		})
+	if card.kind == "q" then
+		highlight_q_rows(buf, lines)
+	else
+		highlight_generic_prompt(buf, question_count, separator_row)
 	end
-	pcall(vim.api.nvim_buf_set_extmark, buf, ns, separator_row, 0, {
-		end_row = separator_row + 1,
-		hl_group = log_rule_hl,
-		priority = 10,
-	})
 	if card.status == "running" and vim.trim(card.answer_text or "") == "" then
 		pcall(vim.api.nvim_buf_set_extmark, buf, ns, body_row, 0, {
 			end_row = body_row + 1,

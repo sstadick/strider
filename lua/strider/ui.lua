@@ -20,12 +20,16 @@ local G = highlights.groups
 local ensure_chunk_style = highlights.ensure
 local log_assistant_hl = G.log_assistant
 local log_user_hl = G.log_user
+local log_steer_hl = G.log_steer
+local log_followup_hl = G.log_followup
 local log_tool_hl = G.log_tool
 local log_thinking_hl = G.log_thinking
 local log_rule_hl = G.log_rule
 local log_error_hl = G.log_error
 local log_muted_hl = G.log_muted
 local log_user_prefix = "› "
+local log_steer_prefix = "» "
+local log_followup_prefix = "↳ "
 local log_user_continuation = "  "
 local log_user_bg_hl = G.log_user_bg
 local log_error_bg_hl = G.log_error_bg
@@ -507,9 +511,9 @@ local function compose_hint_text()
 		return prefix .. "Answer clarify · <C-s> send · <Esc><Esc> reject"
 	end
 	if state.peek_pending_request() then
-		return prefix .. "Turn in flight · type to steer · <C-s> send · :StriderStop cancel"
+		return prefix .. "Turn in flight · type steer text · <C-s> send steer · :StriderStop cancel"
 	end
-	return prefix .. "Type a message · <C-v> screenshot · <C-s> send · gR RO"
+	return prefix .. "New prompt · <C-s> send prompt · while Working <C-s> steers · <C-v> screenshot · gR RO"
 end
 
 function M.ensure_compose_buffer(on_send)
@@ -869,6 +873,8 @@ end
 local log_label_hl = {
 	assistant = log_assistant_hl,
 	user = log_user_hl,
+	steer = log_steer_hl,
+	followup = log_followup_hl,
 	tool = log_tool_hl,
 	thinking = log_thinking_hl,
 	strider = log_tool_hl,
@@ -998,14 +1004,14 @@ local function insert_log_items(buf, items, opts)
 	return start_line
 end
 
-local function user_block_lines(text)
+local function prompt_block_lines(text, prefix)
 	local lines = { "" }
 	local first = true
 	for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
 		if line == "" then
 			table.insert(lines, "")
 		else
-			table.insert(lines, (first and log_user_prefix or log_user_continuation) .. line)
+			table.insert(lines, (first and prefix or log_user_continuation) .. line)
 			first = false
 		end
 	end
@@ -1013,7 +1019,17 @@ local function user_block_lines(text)
 	return lines
 end
 
-local function highlight_user_block(buf, start_line, items)
+local function prompt_marker(label)
+	if label == "steer" then
+		return log_steer_prefix, log_steer_hl
+	end
+	if label == "followup" then
+		return log_followup_prefix, log_followup_hl
+	end
+	return log_user_prefix, log_user_hl
+end
+
+local function highlight_prompt_block(buf, start_line, items, prefix, marker_hl)
 	pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, start_line, 0, {
 		end_row = start_line + #items,
 		hl_group = log_user_bg_hl,
@@ -1029,18 +1045,29 @@ local function highlight_user_block(buf, start_line, items)
 				hl_group = log_user_hl,
 				priority = 10,
 			})
+			if line_text:sub(1, #prefix) == prefix then
+				pcall(vim.api.nvim_buf_set_extmark, buf, log_namespace, row, 0, {
+					end_col = #prefix,
+					hl_group = marker_hl,
+					priority = 12,
+				})
+			end
 		end
 	end
 end
 
-local function append_user_block(buf, text, lane, opts)
-	local items = log_lines(user_block_lines(text))
+local function append_prompt_block(buf, label, text, lane, opts)
+	local prefix, marker_hl = prompt_marker(label)
+	local items = log_lines(prompt_block_lines(text, prefix))
 	local start_line = insert_log_items(buf, items, opts)
 	if not start_line then
 		return false
 	end
-	log_pin.record_user_message(lane, text, buf, start_line, start_line + #items - 1)
-	highlight_user_block(buf, start_line, items)
+	log_pin.record_user_message(lane, text, buf, start_line, start_line + #items - 1, {
+		marker_hl = marker_hl,
+		prefix = prefix,
+	})
+	highlight_prompt_block(buf, start_line, items, prefix, marker_hl)
 	scroll_log_windows(buf)
 	return true
 end
@@ -1125,8 +1152,8 @@ function M.append_block(label, text, lane, opts)
 	ensure_chunk_style()
 	local buf = M.ensure_log_buffer(lane)
 
-	if label == "user" then
-		append_user_block(buf, text, lane, opts)
+	if label == "user" or label == "steer" or label == "followup" then
+		append_prompt_block(buf, label, text, lane, opts)
 		return
 	end
 

@@ -52,7 +52,7 @@ function M.pending_action(lane)
 		if pending.operation == "command" then
 			return "wait for the command to finish before sending another slash-command"
 		end
-		return "type to steer this turn; :StriderStop cancels it"
+		return "type steer text; <C-s> sends steer; :StriderStop cancels it"
 	end
 	if pending and state.is_flow_lane(lane) then
 		return ":StriderStopFlow cancels this flow worker"
@@ -132,7 +132,7 @@ function M.lines()
 	table.insert(lines, "## Controls")
 	table.insert(lines, "- `:StriderStop` aborts the main in-flight turn.")
 	table.insert(lines, "- `:StriderStopFlow` aborts active Q/Search/Patch flow workers.")
-	table.insert(lines, "- Empty compose text shows whether `<C-s>` will send, steer, or answer clarify.")
+	table.insert(lines, "- Empty compose text shows whether `<C-s>` sends a prompt, steer, or clarify answer.")
 	table.insert(lines, "- `:StriderNext!` accepts the current review stop and advances.")
 	table.insert(lines, "- `:StriderRetry` retries a stalled review plan.")
 	return lines

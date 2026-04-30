@@ -1,7 +1,7 @@
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("strider-q-card-compose")
-local HINT = "Type a StriderQ follow-up · <C-s> send"
+local HINT = "Type a StriderQ follow-up · <C-s> sends follow-up"
 
 local function trim_lines(lines)
 	while #lines > 0 and lines[#lines] == "" do
@@ -196,7 +196,7 @@ local function followup_hint(card)
 	else
 		table.insert(lines, "Uses the same Q worker and model.")
 	end
-	table.insert(lines, "Answer updates in this split.")
+	table.insert(lines, "<C-s> sends a follow-up; answer updates in this split.")
 	return lines
 end
 

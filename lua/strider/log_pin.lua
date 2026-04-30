@@ -107,14 +107,14 @@ local function add_ellipsis(line, width)
 	return head .. ellipsis
 end
 
-local function push_wrapped(rows, line, width, max_rows)
+local function push_wrapped(rows, line, width, max_rows, marker_prefix)
 	local rest = line
 	local first = true
 	repeat
 		if #rows >= max_rows then
 			return false
 		end
-		local prefix = first and pin_user_prefix or pin_user_continuation
+		local prefix = first and (marker_prefix or pin_user_prefix) or pin_user_continuation
 		local body_width = math.max(width - vim.fn.strdisplaywidth(prefix), 1)
 		local chunk
 		chunk, rest = split_display(rest, body_width)
@@ -124,14 +124,14 @@ local function push_wrapped(rows, line, width, max_rows)
 	return true
 end
 
-local function preview_lines(text, width, max_rows)
+local function preview_lines(text, width, max_rows, marker_prefix)
 	local rows = {}
 	local lines = vim.split(text or "", "\n", { plain = true })
 	if #lines == 0 then
 		lines = { "" }
 	end
 	for _, line in ipairs(lines) do
-		if not push_wrapped(rows, line, width, max_rows) then
+		if not push_wrapped(rows, line, width, max_rows, marker_prefix) then
 			rows[#rows] = add_ellipsis(rows[#rows], width)
 			return rows
 		end
@@ -194,17 +194,27 @@ local function ensure_pin_buf(win)
 	return buf
 end
 
-local function set_pin_lines(buf, lines)
+local function set_pin_lines(buf, lines, marker_prefix, marker_hl)
+	marker_prefix = marker_prefix or pin_user_prefix
+	marker_hl = marker_hl or pin_text_hl
 	vim.bo[buf].modifiable = true
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 	vim.api.nvim_buf_clear_namespace(buf, pin_namespace, 0, -1)
 	for row = 0, #lines - 1 do
+		local line = lines[row + 1] or ""
 		pcall(vim.api.nvim_buf_set_extmark, buf, pin_namespace, row, 0, {
 			end_row = row + 1,
 			hl_group = pin_text_hl,
 			hl_eol = true,
 			priority = 10,
 		})
+		if line:sub(1, #marker_prefix) == marker_prefix then
+			pcall(vim.api.nvim_buf_set_extmark, buf, pin_namespace, row, 0, {
+				end_col = #marker_prefix,
+				hl_group = marker_hl,
+				priority = 12,
+			})
+		end
 	end
 	vim.bo[buf].modifiable = false
 end
@@ -237,9 +247,9 @@ local function pin_config(win, width, height)
 	}
 end
 
-local function upsert_pin(win, lines, width)
+local function upsert_pin(win, lines, width, marker_prefix, marker_hl)
 	local buf = ensure_pin_buf(win)
-	set_pin_lines(buf, lines)
+	set_pin_lines(buf, lines, marker_prefix, marker_hl)
 	local height = #lines
 	local pin_win = win_var(win, "strider_log_pin_win")
 	if pin_win and vim.api.nvim_win_is_valid(pin_win) then
@@ -271,12 +281,14 @@ function M.refresh_for_window(win)
 	end
 
 	local width = math.max(vim.api.nvim_win_get_width(win), 1)
-	local lines = preview_lines(message.text, width, max_rows)
+	local marker_prefix = message.prefix or pin_user_prefix
+	local marker_hl = message.marker_hl or pin_text_hl
+	local lines = preview_lines(message.text, width, max_rows, marker_prefix)
 	if #lines == 0 then
 		close_pin(win)
 		return
 	end
-	upsert_pin(win, lines, width)
+	upsert_pin(win, lines, width, marker_prefix, marker_hl)
 end
 
 function M.refresh_for_buffer(buf)
@@ -290,7 +302,8 @@ function M.refresh_for_buffer(buf)
 	end
 end
 
-function M.record_user_message(lane, text, buf, start_row, end_row)
+function M.record_user_message(lane, text, buf, start_row, end_row, opts)
+	opts = opts or {}
 	local session = state.get_session(lane)
 	if not session or not buf or not vim.api.nvim_buf_is_valid(buf) then
 		return
@@ -302,6 +315,8 @@ function M.record_user_message(lane, text, buf, start_row, end_row)
 		end_right_gravity = false,
 	})
 	session.last_user_message = {
+		marker_hl = opts.marker_hl,
+		prefix = opts.prefix,
 		text = text or "",
 		mark_id = mark_id,
 	}

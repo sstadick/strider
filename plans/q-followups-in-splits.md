@@ -26,6 +26,8 @@ Inside a Q answer split:
 - Submit sends the follow-up to the same Q worker/card.
 - The follow-up inherits the original Q model preset (`fast` or `deep`).
 - The answer buffer updates as a threaded conversation with the new turn.
+- Follow-up question rows use a distinct `↳` marker/highlight from the initial
+  `›` prompt.
 - `q` still closes the split only.
 - `d` still dismisses the whole Q record.
 - `o` still opens that Q worker log.
@@ -54,12 +56,14 @@ Inside a Q answer split:
    - Existing Q card state already supports multiple turns.
    - Ensure the normal split answer view re-renders expanded/threaded content
      after follow-up streaming and completion.
+   - Render follow-up prompt markers/highlights distinctly from initial prompts.
 
 5. Test coverage
    - Open a completed Q via `:StriderQs` into a normal split.
    - Press `a`, submit a follow-up, and assert:
      - the same worker log receives the follow-up
      - the same answer buffer contains both turns
+     - the follow-up row uses the `↳` marker/highlight
      - no floating Q answer/card is opened
      - the split remains a normal window
    - Add a model inheritance assertion if practical.

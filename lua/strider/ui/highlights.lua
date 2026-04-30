@@ -7,6 +7,8 @@ M.groups = {
 	annotation = "StriderAnnotation",
 	log_assistant = "StriderLogAssistant",
 	log_user = "StriderLogUser",
+	log_steer = "StriderLogSteer",
+	log_followup = "StriderLogFollowup",
 	log_tool = "StriderLogTool",
 	log_thinking = "StriderLogThinking",
 	log_rule = "StriderLogRule",
@@ -105,6 +107,8 @@ end
 local function install_log_label_groups()
 	set(G.log_assistant, { fg = "#73C991", bold = true })
 	set(G.log_user, { fg = "#7BB5FF", bold = true })
+	set(G.log_steer, { fg = "#D7BA7D", bold = true })
+	set(G.log_followup, { fg = "#C586C0", bold = true })
 	set(G.log_tool, { link = "Normal" })
 	set(G.log_thinking, { fg = "#6B7280", italic = true })
 	set(G.log_rule, { link = "NonText" })

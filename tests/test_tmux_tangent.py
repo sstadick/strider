@@ -211,8 +211,19 @@ class TmuxTangentTests(unittest.TestCase):
                 self.assertEqual("strider://StriderQAnswer", h.expr("bufname('%')"))
                 self.assertTrue(h.lua_bool("vim.api.nvim_win_get_config(0).relative == ''"))
                 answer = "\n".join(h.buffer_lines("strider://StriderQAnswer"))
-                self.assertIn("first question", answer)
-                self.assertIn("what about follow ups?", answer)
+                self.assertIn("› first question", answer)
+                self.assertIn("↳ what about follow ups?", answer)
+                self.assertTrue(h.lua_bool(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://StriderQAnswer'); "
+                    "  local ns = vim.api.nvim_create_namespace('strider-flow-cards'); "
+                    "  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do "
+                    "    if mark[4] and mark[4].hl_group == 'StriderLogFollowup' then return true end "
+                    "  end; "
+                    "  return false "
+                    "end)()"
+                ))
+                self.assertIn("↳ what about follow ups?", "\n".join(h.q_log_lines()))
                 self.assertNotIn("strider://StriderQCompose", h.json_expr(
                     "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
                 ))

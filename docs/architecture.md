@@ -155,9 +155,9 @@ running chat, patch turn, or earlier Q.
    notification and `:StriderQLatest`, `:StriderQs`, or `:StriderCards` can open
    the ready answer
 7. selecting a Q opens its answer buffer in a normal split; `a` opens a
-   follow-up prompt on the same worker/record, `q` closes that window, `d`
-   dismisses the record, `o` opens the worker log, and `[c`/`]c` navigate
-   lane-local Q records
+   follow-up prompt on the same worker/record, follow-up prompt rows use the
+   distinct `↳` marker/highlight, `q` closes that window, `d` dismisses the
+   record, `o` opens the worker log, and `[c`/`]c` navigate lane-local Q records
 8. the full transcript lands in that record's worker log (`:StriderLogQ` for the
    first worker, `strider://StriderLogQ-N` for later workers), including
    reasoning, tool calls, and tool output; chat is not auto-opened
@@ -170,12 +170,14 @@ running chat, patch turn, or earlier Q.
 2. `:[range]StriderChat [message]` opens chat and prefills compose with the
    range pointer and/or inline text instead of sending immediately
 3. compose `<C-s>` sends `/prompt <message>` if no request is pending, or
-   `/steer <message>` to redirect a running turn
+   `/steer <message>` to redirect a running turn; the empty compose hint says
+   which send mode is active
 4. assistant handles the request under the user's global pi system
    prompt; Strider adds no mode-specific guidance beyond making
    `strider_clarify` available
 5. the compose buffer persists across sends; user can fire off steers
-   any time, even while a reply is streaming
+   any time, even while a reply is streaming; normal prompts render with `›`,
+   while steer prompts render with a distinct `»` marker/highlight
 6. user can follow up with `:StriderReview` to walk through the result
 
 ## Review state model

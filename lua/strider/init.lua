@@ -182,7 +182,7 @@ local function send(command, user_text, opts)
 		return false
 	end
 	if user_text and user_text ~= "" then
-		ui.append_block("user", user_text, lane)
+		ui.append_block(opts.user_label or "user", user_text, lane)
 	end
 	if opts.debug_prompt and opts.debug_prompt ~= "" then
 		ui.append_block("review-prompt", opts.debug_prompt, lane)
@@ -606,8 +606,8 @@ end
 
 -- Send a user message from the compose buffer. If a request is already
 -- in flight, deliver as a steer (mid-turn redirect) instead of a new
--- prompt. Either way the log gets a [user] block so the transcript
--- reads correctly. dispatch_compose is referenced by
+-- prompt. The log gets a prompt block with a normal or steer marker so the
+-- transcript reads correctly. dispatch_compose is referenced by
 -- M.open_compose_for_clarify (defined just below as the clarify-reply
 -- entrypoint) before its own definition further down, so it is
 -- forward-declared here.
@@ -715,7 +715,7 @@ function dispatch_compose(text)
 		end
 		-- Steer: the pending request stays the same, the model gets the
 		-- new message mid-stream. No new operation, no new activity.
-		ui.append_block("user", text, MAIN_LANE)
+		ui.append_block("steer", text, MAIN_LANE)
 		local ok = rpc.send_steer(MAIN_LANE, text)
 		if not ok then
 			ui.notify("Steer failed to send", vim.log.levels.ERROR)
@@ -971,6 +971,7 @@ local function dispatch_q(prompt, range, opts)
 	return send("/prompt " .. message, prompt, {
 		lane = lane,
 		operation = "q",
+		user_label = opts.user_label,
 		metadata = {
 			card_id = opts.card_id,
 			card_lane = Q_LANE,
@@ -998,6 +999,7 @@ function M.q_followup(prompt, card_id)
 	return dispatch_q(prompt, nil, {
 		card_id = card_id,
 		model_label = card and card.model_label,
+		user_label = "followup",
 		worker_lane = worker_lane,
 	})
 end

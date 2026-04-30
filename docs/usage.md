@@ -90,11 +90,14 @@ Some pi TUI commands (`/session`, `/copy`, `/share`, `/hotkeys`,
 Strider.
 
 Compose clears on successful send and survives across turns. Empty compose
-ghost text and the winbar show whether `<C-s>` will send, steer, or answer a
-clarify. Commands that use dedicated RPC messages, such as `/compact`, `/new`,
-and `/export`, also set the main lane busy and show `Working` in the compose
-and log winbars until pi replies. Sending while a reply is streaming steers the
-running turn via pi's `steer` command. Slash commands are rejected mid-turn.
+ghost text and the winbar distinguish `<C-s>` sending a new prompt from `<C-s>`
+sending a steer while a turn is in flight; clarify answers use the same send key
+with their own hint. Commands that use dedicated RPC messages, such as
+`/compact`, `/new`, and `/export`, also set the main lane busy and show
+`Working` in the compose and log winbars until pi replies. Sending while a reply
+is streaming steers the running turn via pi's `steer` command. Slash commands
+are rejected mid-turn. In logs, normal prompts start with `›`, steers start with
+`»`, and Q follow-ups start with `↳` so their markers are visually distinct.
 
 `:StriderStop` aborts the main-lane turn; `:StriderStopFlow` aborts active
 Q/search/patch worker turns. `:StriderStatus` opens a compact summary of lane
@@ -260,7 +263,8 @@ records use `strider://flow-card/q/N`. No answer window opens automatically;
 completion leaves a low-disruption cue. Use `:StriderQLatest` to open the newest
 answer directly, or pick answers with `:StriderQs` / `:StriderCards`; all open in
 a normal split. In the split, `a` opens a follow-up prompt that reuses the
-same Q worker and answer record, `q` closes the split, `d` dismisses the answer
+same Q worker and answer record; follow-up question lines use the distinct `↳`
+marker. `q` closes the split, `d` dismisses the answer
 record, `o` opens its worker log, and `[c`/`]c` moves between Q records.
 `:StriderQ!` behaves like `:StriderQ` and is kept for muscle memory; every new
 submission starts another Q worker, so multiple StriderQ answers can run

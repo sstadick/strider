@@ -39,6 +39,24 @@ def _winbar_for_buffer(h, name: str) -> str:
     )
 
 
+def _compose_hint(h) -> str:
+    return h.lua(
+        "(function() "
+        "  local buf = vim.fn.bufnr('strider://compose'); "
+        "  if buf <= 0 then return '' end; "
+        "  local ns = vim.api.nvim_create_namespace('strider-compose-hint'); "
+        "  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true }); "
+        "  for _, mark in ipairs(marks) do "
+        "    local chunks = mark[4] and mark[4].virt_text or {}; "
+        "    local parts = {}; "
+        "    for _, chunk in ipairs(chunks) do table.insert(parts, chunk[1] or '') end; "
+        "    if #parts > 0 then return table.concat(parts, '') end "
+        "  end; "
+        "  return '' "
+        "end)()"
+    )
+
+
 class TmuxPopupTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[1]
@@ -294,7 +312,7 @@ class TmuxPopupTests(unittest.TestCase):
         # While a request is pending, compose <C-s> dispatches via
         # send_steer instead of starting a new prompt. The fake pi sees
         # it as a separate line of input and records it; we verify the
-        # log shows both [user] blocks (original + steer).
+        # log shows a distinct steer marker.
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("StriderChat")
@@ -318,7 +336,17 @@ class TmuxPopupTests(unittest.TestCase):
                     timeout=3.0,
                 )
                 log_text = "\n".join(h.log_lines())
-                self.assertIn("steering input", log_text)
+                self.assertIn("» steering input", log_text)
+                self.assertTrue(h.lua_bool(
+                    "(function() "
+                    "  local buf = vim.fn.bufnr('strider://log'); "
+                    "  local ns = vim.api.nvim_create_namespace('strider-log'); "
+                    "  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do "
+                    "    if mark[4] and mark[4].hl_group == 'StriderLogSteer' then return true end "
+                    "  end; "
+                    "  return false "
+                    "end)()"
+                ))
 
     def test_striderchat_toggles_both_surfaces(self) -> None:
         # :StriderChat with no args toggles log + compose. Collapsing leaves a
@@ -451,6 +479,9 @@ class TmuxPopupTests(unittest.TestCase):
                     lambda: "Strider is ready" in _winbar_for_buffer(h, "strider://compose"),
                     timeout=3.0,
                 )
+                hint = _compose_hint(h)
+                self.assertIn("<C-s> send prompt", hint)
+                self.assertIn("<C-s> steers", hint)
 
     def test_compose_winbar_shows_pending_turn_controls(self) -> None:
         with FixtureProject(self.project_root) as project_root:
@@ -470,10 +501,11 @@ class TmuxPopupTests(unittest.TestCase):
                 )
 
                 h.wait_until(
-                    lambda: "type to steer" in _winbar_for_buffer(h, "strider://compose")
+                    lambda: "sends steer" in _winbar_for_buffer(h, "strider://compose")
                     and ":StriderStop" in _winbar_for_buffer(h, "strider://compose"),
                     timeout=3.0,
                 )
+                self.assertIn("<C-s> send steer", _compose_hint(h))
 
     def test_status_surface_lists_lanes_and_controls(self) -> None:
         with FixtureProject(self.project_root) as project_root:

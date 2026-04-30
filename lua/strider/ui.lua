@@ -1250,8 +1250,16 @@ local function ensure_q_answer_buffer(lane)
 	return flow_cards.ensure_q_answer_buffer(lane)
 end
 
+function M.create_q_answer(prompt, lane, opts)
+	return flow_cards.create_q_answer(prompt, lane, opts)
+end
+
 function M.open_q_answer(prompt, lane, opts)
 	return flow_cards.open_q_answer(prompt, lane, opts)
+end
+
+function M.open_q_answer_split(id, lane)
+	return flow_cards.open_q_answer_split(id, lane)
 end
 
 function M.update_q_answer(text, lane, card_id)

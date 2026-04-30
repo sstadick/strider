@@ -106,9 +106,16 @@ local function ensure_card_buffer(card, lane)
 		q_compose.attach_answer(card)
 	end
 	local function fold_card()
+		local current = vim.api.nvim_get_current_win()
+		local current_is_regular = vim.api.nvim_win_get_buf(current) == buf
+			and vim.api.nvim_win_get_config(current).relative == ""
 		local session = state.get_session(lane)
 		if session then
 			session.active_flow_card_id = nil
+		end
+		if current_is_regular and pcall(vim.api.nvim_win_close, current, true) then
+			M.refresh_layouts()
+			return
 		end
 		for _, win in ipairs(vim.api.nvim_list_wins()) do
 			if vim.api.nvim_win_get_buf(win) ~= buf and vim.api.nvim_win_get_config(win).relative == "" then
@@ -144,20 +151,36 @@ local function card_window(card)
 		return nil
 	end
 	if card.win and vim.api.nvim_win_is_valid(card.win) then
-		return card.win
+		if vim.api.nvim_win_get_config(card.win).relative ~= "" then
+			return card.win
+		end
+		card.win = nil
 	end
 	local buf = card.buf
 	if not buf or not vim.api.nvim_buf_is_valid(buf) then
 		return nil
 	end
 	for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-		if vim.api.nvim_win_is_valid(win) then
+		if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_config(win).relative ~= "" then
 			card.win = win
 			return win
 		end
 	end
 	card.win = nil
 	return nil
+end
+local function regular_card_windows(card)
+	local buf = card and card.buf
+	if not buf or not vim.api.nvim_buf_is_valid(buf) then
+		return {}
+	end
+	local wins = {}
+	for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+		if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_config(win).relative == "" then
+			table.insert(wins, win)
+		end
+	end
+	return wins
 end
 local function focus_regular_window(exclude_buf)
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -268,6 +291,16 @@ local function configure_card_window(win)
 	vim.wo[win].cursorline = false
 	vim.wo[win].winhighlight = "NormalFloat:Normal,FloatBorder:FloatBorder"
 end
+local function configure_answer_split(win)
+	vim.wo[win].wrap = true
+	vim.wo[win].linebreak = true
+	vim.wo[win].number = false
+	vim.wo[win].relativenumber = false
+	vim.wo[win].signcolumn = "no"
+	vim.wo[win].foldcolumn = "0"
+	vim.wo[win].cursorline = false
+	vim.wo[win].winfixwidth = true
+end
 local function preview_text(text)
 	local preview = vim.trim((text or ""):gsub("%s+", " "))
 	if preview == "" then
@@ -292,9 +325,9 @@ local function generic_card_lines(card, expanded)
 	end
 	return lines, 1, 1, 2
 end
-local function render_card(session, card)
+local function render_card(session, card, force_expanded)
 	local buf = ensure_card_buffer(card, session.lane)
-	local expanded = card_is_expanded(session, card)
+	local expanded = force_expanded or card_is_expanded(session, card) or #regular_card_windows(card) > 0
 	local lines, question_count, separator_row, body_row
 	if card.kind == "q" then
 		lines, question_count, separator_row, body_row = q_cards.lines(card, expanded)
@@ -337,7 +370,7 @@ local function card_winbar(card, lane)
 		local left = working_label() .. escape_status_text(string.format(" (%s) · %s", elapsed, title))
 		return left .. "%=" .. escape_status_text(stop_hint(lane))
 	end
-	local expanded = card_is_expanded(session, card)
+	local expanded = card_is_expanded(session, card) or #regular_card_windows(card) > 0
 	if card.status ~= "running" then
 		local text = card.title or "Strider flow"
 		if card.kind == "q" then
@@ -346,7 +379,7 @@ local function card_winbar(card, lane)
 		if card.kind == "patch" then
 			text = card.status == "success" and "StriderPatch complete" or "StriderPatch stopped"
 		end
-		local hint = card.kind == "q" and "i follow-up · q/Esc fold · d/:q dismiss"
+		local hint = card.kind == "q" and "q close · d dismiss · o log"
 			or "q/Esc fold · d/:q dismiss"
 		return escape_status_text(text) .. (expanded and "%=" .. escape_status_text(hint) or "")
 	end
@@ -382,6 +415,9 @@ local function close_card_surfaces(card)
 	local win = card_window(card)
 	if win then
 		pcall(vim.api.nvim_win_close, win, true)
+	end
+	for _, regular in ipairs(regular_card_windows(card)) do
+		pcall(vim.api.nvim_win_close, regular, true)
 	end
 	card.win = nil
 end
@@ -477,6 +513,16 @@ function M.reflow(lane)
 			card.win = nil
 			sync_legacy_q(session, card)
 		end
+		local regular_wins = regular_card_windows(card)
+		if #regular_wins > 0 then
+			render_card(session, card, true)
+			for _, regular in ipairs(regular_wins) do
+				configure_answer_split(regular)
+				pcall(function()
+					vim.wo[regular].winbar = card_winbar(card, lane)
+				end)
+			end
+		end
 	end
 end
 function M.refresh_layouts()
@@ -495,6 +541,11 @@ function M.refresh_winbars(lane)
 		if win and vim.api.nvim_win_is_valid(win) then
 			pcall(function()
 				vim.wo[win].winbar = card_winbar(card, lane)
+			end)
+		end
+		for _, regular in ipairs(regular_card_windows(card)) do
+			pcall(function()
+				vim.wo[regular].winbar = card_winbar(card, lane)
 			end)
 		end
 	end
@@ -601,15 +652,15 @@ function M.focus_card(id, lane)
 	if not card then
 		return false
 	end
+	if card.kind == "q" then
+		return M.open_q_answer_split(card.id, lane) ~= nil
+	end
 	session.active_flow_card_id = card.id
 	render_card(session, card)
 	local win = open_card_window(session, card)
 	M.refresh_layouts()
 	if win and vim.api.nvim_win_is_valid(win) then
 		vim.api.nvim_set_current_win(win)
-	end
-	if card.kind == "q" then
-		q_compose.focus(card, { insert = true })
 	end
 	return true
 end
@@ -737,6 +788,7 @@ local function create_q_card(prompt, lane, session, opts)
 		turns = { { prompt = prompt or "", answer_text = "", status = "running", started_at = started } },
 		current_turn_index = 1,
 		buffer_name = q_card_count(session) == 0 and q_cards.answer_name(lane) or nil,
+		model_label = opts.model_label,
 		worker_lane = opts.worker_lane,
 	}, lane)
 	local card = card_by_id(session, id)
@@ -761,6 +813,9 @@ local function ensure_q_card(prompt, lane, opts)
 	if opts.worker_lane then
 		card.worker_lane = opts.worker_lane
 	end
+	if opts.model_label then
+		card.model_label = opts.model_label
+	end
 	session.q_answer_card_id = card.id
 	start_q_turn(card, prompt, opts)
 	sync_legacy_q(session, card)
@@ -780,6 +835,20 @@ function M.ensure_q_answer_buffer(lane)
 	sync_legacy_q(session, card)
 	return buf
 end
+function M.create_q_answer(prompt, lane, opts)
+	ensure_autocmds()
+	lane = normalize_lane(lane)
+	local session = state.get_session(lane)
+	if not session then
+		return nil
+	end
+	local card = ensure_q_card(prompt, lane, opts)
+	if not card then
+		return nil
+	end
+	render_card(session, card)
+	return card.id
+end
 function M.open_q_answer(prompt, lane, opts)
 	ensure_autocmds()
 	lane = normalize_lane(lane)
@@ -795,6 +864,36 @@ function M.open_q_answer(prompt, lane, opts)
 	open_card_window(session, card)
 	M.refresh_layouts()
 	return card.id
+end
+function M.open_q_answer_split(id, lane)
+	ensure_autocmds()
+	lane = normalize_lane(lane)
+	local session = state.get_session(lane)
+	if not session then
+		return nil
+	end
+	local card = card_by_id(session, id) or latest_card(session, "q")
+	if not card then
+		return nil
+	end
+	local buf = ensure_card_buffer(card, lane)
+	render_card(session, card, true)
+	local win = regular_card_windows(card)[1]
+	if win and vim.api.nvim_win_is_valid(win) then
+		vim.api.nvim_set_current_win(win)
+	else
+		vim.cmd("botright vsplit")
+		win = vim.api.nvim_get_current_win()
+		vim.api.nvim_win_set_buf(win, buf)
+		local width = math.min(math.max(math.floor(vim.o.columns * 0.38), 44), 82)
+		pcall(vim.api.nvim_win_set_width, win, width)
+	end
+	configure_answer_split(win)
+	pcall(function()
+		vim.wo[win].winbar = card_winbar(card, lane)
+	end)
+	pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
+	return win
 end
 local function q_card_for_update(session, card_id)
 	return card_by_id(session, card_id) or card_by_id(session, session.q_answer_card_id)

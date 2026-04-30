@@ -167,8 +167,9 @@ end
 function M.lines(card, expanded)
 	local turns = ensure_turns(card)
 	if not expanded then
+		local model = card.model_label and ("[" .. card.model_label .. "] ") or ""
 		return {
-			"› " .. preview_text(card.prompt or current_turn(card).prompt),
+			"› " .. model .. preview_text(card.prompt or current_turn(card).prompt),
 			"────────────────────────────────",
 			compact_status(card),
 		},

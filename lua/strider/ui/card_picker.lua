@@ -74,8 +74,9 @@ local function flow_items(opts)
 		local session = state.get_session(lane)
 		for _, card in ipairs(session and session.flow_cards or {}) do
 			if not card.dismissed and (not opts.kind or opts.kind == card.kind) then
+				local model = card.kind == "q" and card.model_label and (" · " .. card.model_label) or ""
 				table.insert(items, {
-					label = string.format("%s · %s", card_names.for_card(card), status_text(card)),
+					label = string.format("%s%s · %s", card_names.for_card(card), model, status_text(card)),
 					order = card.started_at or 0,
 					rank = flow_order[card.kind] or 9,
 					value = {

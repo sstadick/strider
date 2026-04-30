@@ -152,8 +152,9 @@ local function send(command, user_text, opts)
 		metadata.card_lane = metadata.card_lane or Q_LANE
 		ensure_session(metadata.card_lane)
 		metadata.worker_lane = lane
-		metadata.card_id = ui.open_q_answer(user_text, metadata.card_lane, {
+		metadata.card_id = ui.create_q_answer(user_text, metadata.card_lane, {
 			card_id = metadata.card_id,
+			model_label = metadata.model_label,
 			new = metadata.card_id == nil,
 			preserve_name = metadata.card_id ~= nil,
 			seq = metadata.q_seq,
@@ -770,7 +771,11 @@ local function pick_cards(title, opts)
 			open_chat_surface("")
 		end
 		if value.type == "flow" then
-			ui.focus_flow_card(value.id, value.lane)
+			if value.kind == "q" then
+				ui.open_q_answer_split(value.id, value.lane)
+			else
+				ui.focus_flow_card(value.id, value.lane)
+			end
 		end
 	end)
 end
@@ -780,7 +785,7 @@ function M.cards()
 end
 
 function M.q_cards()
-	return pick_cards("StriderQ Cards", { kind = "q" })
+	return pick_cards("StriderQ Answers", { kind = "q" })
 end
 
 function M.cards_clear(opts)
@@ -920,6 +925,18 @@ local function resolve_patch_range(opts)
 	return range
 end
 
+local function q_model_label(label)
+	label = vim.trim(label or state.get_config().q_default_model or "fast")
+	return label ~= "" and label or "fast"
+end
+
+local function apply_q_model(lane, label)
+	local profile, resolved = state.resolve_q_model(q_model_label(label))
+	state.ensure_session(lane, current_cwd())
+	state.set_model_override(lane, profile, resolved)
+	return resolved
+end
+
 local function dispatch_q(prompt, range, opts)
 	local message
 	if range then
@@ -937,22 +954,29 @@ local function dispatch_q(prompt, range, opts)
 	end
 	opts = opts or {}
 	local lane, seq = opts.worker_lane, opts.q_seq
+	local model_label = opts.model_label
 	if not lane then
 		lane, seq = state.next_q_worker_lane()
+		model_label = apply_q_model(lane, model_label)
 	end
 	return send("/prompt " .. message, prompt, {
 		lane = lane,
 		operation = "q",
-		metadata = { card_id = opts.card_id, card_lane = Q_LANE, q_seq = seq or state.q_lane_index(lane) },
+		metadata = {
+			card_id = opts.card_id,
+			card_lane = Q_LANE,
+			model_label = model_label,
+			q_seq = seq or state.q_lane_index(lane),
+		},
 	})
 end
 
-local function submit_q_request(prompt, range)
+local function submit_q_request(prompt, range, opts)
 	prompt = trimmed(prompt)
 	if prompt == "" then
 		return nil
 	end
-	return dispatch_q(prompt, range)
+	return dispatch_q(prompt, range, opts)
 end
 
 function M.q_followup(prompt, card_id)
@@ -962,38 +986,55 @@ function M.q_followup(prompt, card_id)
 	end
 	local card = ui.get_flow_card(card_id, Q_LANE)
 	local worker_lane = card and card.worker_lane or Q_LANE
-	return dispatch_q(prompt, nil, { card_id = card_id, worker_lane = worker_lane })
+	return dispatch_q(prompt, nil, {
+		card_id = card_id,
+		model_label = card and card.model_label,
+		worker_lane = worker_lane,
+	})
 end
 
-local function toggle_existing_q_card()
-	local session = state.get_session(Q_LANE)
-	if not session or not session.q_answer_card_id then
-		return false
+local function parse_q_prompt(prompt)
+	prompt = trimmed(prompt)
+	local model = prompt:match("^%-%-(fast)%s*") or prompt:match("^%-%-(deep)%s*")
+	if model then
+		prompt = trimmed(prompt:gsub("^%-%-" .. model .. "%s*", "", 1))
 	end
-	return ui.toggle_q_answer(Q_LANE)
+	return prompt, q_model_label(model)
 end
 
 function M.q(prompt, opts)
-	prompt = trimmed(prompt)
+	local q_prompt, selected_model = parse_q_prompt(prompt)
 	opts = opts or {}
 	local range = range_from_opts(opts)
-	if not opts.bang and prompt == "" and not range and toggle_existing_q_card() then
-		return
-	end
-	local hint_lines = {
-		"Ask a side question without opening chat.",
-		"Answers land in StriderLogQ.",
-	}
 	local pointer = range_pointer(range)
-	if pointer then
-		table.insert(hint_lines, string.format("Range: %s", pointer))
+	local function hint_lines()
+		local other = selected_model == "fast" and "deep" or "fast"
+		local lines = {
+			string.format("Model: %s · <Tab> switch to %s", selected_model, other),
+			"Ask a side question without opening chat.",
+			"Answer notifies when ready; use :StriderQs to read it.",
+		}
+		if pointer then
+			table.insert(lines, string.format("Range: %s", pointer))
+		end
+		return lines
 	end
 
 	ui.open_prompt_editor("StriderQ", function(text)
-		return submit_q_request(text, range)
+		return submit_q_request(text, range, { model_label = selected_model })
 	end, {
+		extra_keymaps = {
+			{
+				lhs = "<Tab>",
+				callback = function(ctx)
+					selected_model = selected_model == "fast" and "deep" or "fast"
+					ctx.render_hint()
+				end,
+				desc = "Toggle StriderQ model",
+			},
+		},
 		hint_lines = hint_lines,
-		prefill = prompt ~= "" and prompt or nil,
+		prefill = q_prompt ~= "" and q_prompt or nil,
 	})
 end
 

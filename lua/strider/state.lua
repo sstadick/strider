@@ -36,6 +36,11 @@ local defaults = {
 	model_env_var = "PI_MODEL_ENV",
 	open_log_on_start = true,
 	pi_cmd = { "pi" },
+	q_default_model = "fast",
+	q_models = {
+		fast = { model = "codex-spark" },
+		deep = "chat",
+	},
 }
 
 local function is_dynamic_q_lane(lane)
@@ -142,6 +147,9 @@ local function new_session(cwd, lane)
 		assistant_text = nil,
 		assistant_thinking = {},
 		message_text = nil,
+		model_label = nil,
+		model_profile = nil,
+		model_profile_override = false,
 		chunk_lines = {},
 		chunk_path = nil,
 		chat_read_only = false,
@@ -207,9 +215,17 @@ function M.get_config()
 end
 
 function M.resolve_lane_model(lane)
-	local profiles = configured_lane_models(M.config)
+	lane = normalize_lane(lane)
 	local env_name, requested = env_profile_key(M.config)
 	local meta = { env = env_name, requested = requested }
+	local session = M.sessions[lane]
+	if session and session.model_profile_override then
+		meta.lane = lane
+		meta.profile = session.model_label or "override"
+		meta.override = true
+		return session.model_profile, meta
+	end
+	local profiles = configured_lane_models(M.config)
 	if not profiles then
 		return nil, meta
 	end
@@ -230,6 +246,48 @@ function M.resolve_lane_model(lane)
 		return profile, meta
 	end
 	return nil, meta
+end
+
+local function q_model_spec(label)
+	local config = M.config
+	local models = type(config.q_models) == "table" and config.q_models or {}
+	label = vim.trim(label or config.q_default_model or "fast")
+	if label == "" then
+		label = "fast"
+	end
+	return label, models[label]
+end
+
+local function profile_from_q_spec(spec)
+	if spec == "chat" or spec == "deep" then
+		return M.resolve_lane_model("main")
+	end
+	if spec == "q" or spec == "fast" then
+		return M.resolve_lane_model("q")
+	end
+	if type(spec) == "string" and vim.trim(spec) ~= "" then
+		return { model = spec }, { profile = spec }
+	end
+	if type(spec) == "table" then
+		return vim.deepcopy(spec), { profile = "override" }
+	end
+	return nil, nil
+end
+
+function M.resolve_q_model(label)
+	local resolved, spec = q_model_spec(label)
+	local profile = profile_from_q_spec(spec)
+	return profile, resolved
+end
+
+function M.set_model_override(lane, profile, label)
+	local session = M.get_session(lane)
+	if not session then
+		return
+	end
+	session.model_profile_override = true
+	session.model_profile = type(profile) == "table" and vim.deepcopy(profile) or nil
+	session.model_label = label
 end
 
 function M.lanes()

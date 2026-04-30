@@ -22,13 +22,13 @@ README.
 | `:StriderComments` | Browse recorded review comments |
 | `:StriderPatch [prompt]` | Open the patch popup for the current review item |
 | `:'<,'>StriderPatch [prompt]` | Open the patch popup for a visual selection |
-| `:StriderQ [prompt]` | Open the StriderQ popup; with no args, toggles the latest Q card if one exists |
-| `:StriderQ! [prompt]` | Open a new StriderQ popup instead of toggling the latest card |
-| `:'<,'>StriderQ [prompt]` | Open the StriderQ popup with a selection-scoped Q-worker question |
-| `:StriderQs` | Pick an existing named StriderQ card with telescope/fzf fallback |
+| `:StriderQ [--fast\|--deep] [prompt]` | Open the StriderQ popup; choose fast/deep before submitting |
+| `:StriderQ! [--fast\|--deep] [prompt]` | Same as `:StriderQ`; kept for muscle memory |
+| `:'<,'>StriderQ [--fast\|--deep] [prompt]` | Open the StriderQ popup with a selection-scoped Q-worker question |
+| `:StriderQs` | Pick a StriderQ answer and open it in a normal split |
 | `:StriderCards` | Pick an existing named Chat/Q/Patch card with telescope/fzf fallback |
 | `:StriderCardsClear[!]` | Dismiss completed cards; `!` also dismisses running cards |
-| `:StriderChat` | Toggle the chat log + compose floats; collapsed state leaves a compact card |
+| `:StriderChat` | Toggle the chat log + compose split; collapsed state leaves a compact card |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:StriderChatReadOnly [on\|off\|toggle]` | Toggle the chat-only read-only prompt guard; compose shows an `RO` badge |
 | `:StriderStop` | Abort the current main-lane turn |
@@ -47,34 +47,28 @@ right-side split log/compose stack. Toggling it closed leaves a compact
 `Strider chat` card; bare `:StriderChat` pops it back open. Use
 `:StriderChatReadOnly` (or `gR` in normal mode / `<C-g>r` in insert mode inside
 `strider://compose`) to toggle a chat-only read-only guard; the compose winbar
-shows `RO` while enabled. Compact Chat, Q, and Patch cards share the same
-right-edge stack instead of overlapping.
+shows `RO` while enabled. Compact Chat and Patch cards share the same right-edge
+stack instead of overlapping.
 `:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on separate flow-worker
 processes, so Q and patch can proceed independently of each other and main chat.
-Each new StriderQ card gets its own Q worker process. Search transcript lives in
-`:StriderLogFlow`, the latest Q worker in `:StriderLogQ`, and patch in
-`:StriderLogPatch`. `:StriderQ` and `:StriderPatch` also open non-focus-stealing
-flow cards in the bottom-right. Cards stay compact while running and after
-completion; select/focus one to expand it into a near full-height right-side
-panel. Every card has a stable name such as `StriderQ #2: why is this flag?`,
-and `:StriderQs`/`:StriderCards` open pickers for existing Q cards or all
-Chat/Q/Patch cards. Expanded cards rise above the chat float, stay open when
-you return to code, and fold with `q` or `<Esc>` inside the card. Use `d` or
-`:q` to dismiss it, `o` to open its worker log, or `[c`/`]c` to move between
-cards in that lane. Bare `:StriderQ` toggles the latest Q card. Expanded Q cards show
-the question plus assistant answer above a separate follow-up compose float;
-type there and press `<C-s>` to ask on the same Q worker/card. Patch cards show
-the request, target, touched files, diffs, and final summary. Reasoning, tool
-calls, and full tool output remain in the operation's log. When flow-worker
-operations finish, Strider always leaves a bottom-left green-dot completion cue;
-if that worker's log is hidden, it also sends a notification.
+Each new StriderQ answer gets its own Q worker process. Search transcript lives
+in `:StriderLogFlow`, the latest Q worker in `:StriderLogQ`, and patch in
+`:StriderLogPatch`. `:StriderQ` records answers without opening a card or split;
+completion leaves a low-disruption cue, and `:StriderQs` opens a picker for
+ready/running Q answers. Selecting a Q opens its answer in a normal split. Use
+`q` to close that split, `d` to dismiss the Q record, `o` to open its worker
+log, or `[c`/`]c` to move between Q records in that lane. `:StriderPatch` still
+uses non-focus-stealing flow cards for patch summaries. Reasoning, tool calls,
+and full tool output remain in the operation's log. When flow-worker operations
+finish, Strider always leaves a bottom-left green-dot completion cue; if that
+worker's log is hidden, it also sends a notification.
 `:StriderStopFlow` aborts active flow-worker turns. `:StriderReview` runs on a
 dedicated review lane whose transcript lives in `:StriderLogReview`; that review
 log is manual/diagnostic and does not open on review start or review end.
 
 ## Chat Compose
 
-Type into the `:StriderChat` compose float. Leading `/` routes to pi
+Type into the `:StriderChat` compose split. Leading `/` routes to pi
 extensions instead of the model. Beyond Strider's own `/prompt`, `/review`,
 and related commands, compose supports:
 
@@ -129,6 +123,11 @@ require("strider").setup({
       work = { model = "openai/gpt-5-search", reasoning = "medium" },
     },
   },
+  q_models = {
+    fast = { model = "codex-spark" },
+    deep = "chat", -- use the resolved chat/main lane model
+  },
+  q_default_model = "fast",
 })
 ```
 
@@ -138,6 +137,13 @@ back to that lane's `default`. Lane keys are `chat`/`main`, `q` (including
 `q-2`, `q-3`, ...), `search`/`flow`, `patch`, `review`, plus a top-level
 `default` fallback. Use either `reasoning` or pi's `thinking` key; both map to
 pi's `--thinking` startup option.
+
+StriderQ also has lightweight per-question presets. `fast` defaults to
+`codex-spark`; `deep` resolves to the same profile the chat/main lane would use.
+These presets override `lane_models.q` for submitted Q workers; set a preset to
+`"q"` if you want it to use the legacy Q lane profile. Pass `--fast` or
+`--deep` to `:StriderQ`, or press `<Tab>` in the Q prompt to switch before
+submitting.
 
 ## Live Neovim Tool
 
@@ -245,19 +251,18 @@ cancellation.
 ## StriderQ And Patch
 
 `:StriderQ` opens a floating editor for a side question without popping open
-main chat. Range-based Q includes the selected excerpt in the prompt. Each
-submitted question creates a named card and its own worker process; the first
-keeps the legacy `strider://StriderQAnswer` buffer and later cards use
-`strider://flow-card/q/N`. Cards stay compact while waiting and after the answer
-is ready; select/focus one, pick it via `:StriderCards`, or run bare
-`:StriderQ` to expand the latest card into a near full-height right-side answer
-panel. `:StriderQ!` opens a fresh prompt even when a Q card already exists;
-submitting it starts another Q worker, so multiple StriderQ cards can run
-concurrently. Expanded Q cards place a separate follow-up compose float beneath
-the answer; type there and press `<C-s>` to ask on the same Q worker/card. Use
-`d` inside a card, or `:StriderCardsClear`, to dismiss completed cards when the
-stack gets noisy. The full transcript, including reasoning and tool calls,
-lands in that card's worker log (`:StriderLogQ` for the first Q,
+main chat. Use `--fast`/`--deep`, or press `<Tab>` in the editor, to choose the
+Q model before submitting. Range-based Q includes the selected excerpt in the
+prompt. Each submitted question creates a named answer record and its own worker
+process; the first keeps the legacy `strider://StriderQAnswer` buffer and later
+records use `strider://flow-card/q/N`. No answer window opens automatically;
+completion leaves a low-disruption cue. Pick answers with `:StriderQs` or
+`:StriderCards` to open them in a normal split. Use `q` to close the split, `d`
+to dismiss the answer record, `o` to open its worker log, and `[c`/`]c` to move
+between Q records. `:StriderQ!` behaves like `:StriderQ` and is kept for muscle
+memory; every submission starts another Q worker, so multiple StriderQ answers
+can run concurrently. The full transcript, including reasoning and tool calls,
+lands in that answer's worker log (`:StriderLogQ` for the first Q,
 `strider://StriderLogQ-N` for later Qs).
 
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It

@@ -311,7 +311,12 @@ local function notify_turn_done(pending, lane)
 			search = "StriderSearch complete",
 			patch = "StriderPatch complete",
 		}
-		ui.notify_flow_done(messages[op] or "Strider flow complete", {
+		local message = messages[op] or "Strider flow complete"
+		if op == "q" then
+			local model = pending.metadata and pending.metadata.model_label
+			message = message .. (model and (" · " .. model) or "") .. " · :StriderQs"
+		end
+		ui.notify_flow_done(message, {
 			notify = not ui.log_is_visible(lane),
 		})
 		return

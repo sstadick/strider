@@ -59,8 +59,9 @@ local function open_scratch_editor(opts, on_submit)
 		local is_empty = (#lines == 0) or (#lines == 1 and lines[1] == "")
 
 		local virt_lines = {}
-		if opts.hint_lines then
-			for _, text in ipairs(opts.hint_lines) do
+		local hint_lines = type(opts.hint_lines) == "function" and opts.hint_lines() or opts.hint_lines
+		if hint_lines then
+			for _, text in ipairs(hint_lines) do
 				table.insert(virt_lines, { { text, "Comment" } })
 			end
 		end
@@ -127,6 +128,12 @@ local function open_scratch_editor(opts, on_submit)
 		finish(false)
 	end, { buffer = buf, nowait = true, silent = true })
 
+	for _, map in ipairs(opts.extra_keymaps or {}) do
+		vim.keymap.set(map.mode or { "n", "i" }, map.lhs, function()
+			map.callback({ buf = buf, render_hint = render_hint })
+		end, { buffer = buf, nowait = true, silent = true, desc = map.desc })
+	end
+
 	vim.schedule(function()
 		if not vim.api.nvim_win_is_valid(win) then
 			return
@@ -170,7 +177,13 @@ local function normalize_prompt_editor_opts(opts)
 	if opts == nil then
 		return {}
 	end
-	if opts.hint_lines ~= nil or opts.prefill ~= nil or opts.allow_empty ~= nil or opts.on_cancel ~= nil then
+	if
+		opts.hint_lines ~= nil
+		or opts.prefill ~= nil
+		or opts.allow_empty ~= nil
+		or opts.on_cancel ~= nil
+		or opts.extra_keymaps ~= nil
+	then
 		return vim.deepcopy(opts)
 	end
 	return { hint_lines = opts }
@@ -184,6 +197,7 @@ function M.open_prompt_editor(label, on_submit, opts)
 		hint_lines = opts.hint_lines,
 		prefill = opts.prefill,
 		on_cancel = opts.on_cancel,
+		extra_keymaps = opts.extra_keymaps,
 	}, on_submit)
 end
 

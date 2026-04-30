@@ -44,12 +44,12 @@ Patch a small selected range:
 :'<,'>StriderPatch change the greeting literal from hi to hello
 ```
 
-Ask a side question on a dedicated Q worker, then run bare `:StriderQ` again to reopen the latest answer card with a compose split for follow-ups:
+Ask a side question on a dedicated Q worker, then pick the answer when the low-key completion cue appears:
 
 ```vim
-:StriderQ what does this flag actually do?
-:'<,'>StriderQ why is this loop written this way?
-:StriderQ
+:StriderQ --fast what does this flag actually do?
+:'<,'>StriderQ --deep why is this loop written this way?
+:StriderQs
 ```
 
 Browse or resume pi sessions:
@@ -78,13 +78,13 @@ edit before sending.
 - Planned reviews: `:StriderReview` builds a full ordered set of stops up front.
   `:StriderNext` and `:StriderPrev` navigate mechanically; `:StriderNext!`
   accepts the current stop before advancing.
-- Dedicated workers: main chat, search, patch, review, and each StriderQ card
+- Dedicated workers: main chat, search, patch, review, and each StriderQ answer
   have their own transcript, in-flight state, and pi worker process.
 - Scoped guardrails: review/search/plan are read-only; patch prompts are
   selection-scoped and intended for small local edits.
 - Native Neovim UI: split chat log/compose with a compact card placeholder,
-  stacked compact Chat/Q/Patch cards, split-style Q-card follow-up compose,
-  quickfix/pickers, inline review annotations, comments, and touched-file
+  on-demand split Q answers, compact Chat/Patch cards, quickfix/pickers,
+  inline review annotations, comments, and touched-file
   navigation.
 - Useful transcript rendering: edit tools show inline diff rows; read/write
   output keeps syntax-highlighted code fences; command/search output uses
@@ -133,11 +133,17 @@ require("strider").setup({
       work = { model = "openai/gpt-5-search", reasoning = "medium" },
     },
   },
+  q_models = {
+    fast = { model = "codex-spark" },
+    deep = "chat", -- use the resolved chat/main lane model
+  },
+  q_default_model = "fast",
 })
 ```
 
 Unset/empty/`default` uses each lane's `default`; `PI_MODEL_ENV=work` selects
-`work` where present.
+`work` where present. StriderQ uses `q_models.fast`/`q_models.deep` per question;
+set a preset to `"q"` to route it through `lane_models.q`.
 
 Install the Tree-sitter parsers you expect Strider to render in logs and review
 panes:
@@ -164,8 +170,8 @@ panes:
 | `:StriderChatReadOnly [on\|off\|toggle]` | Toggle chat-only read-only prompting; compose shows `RO` |
 | `:StriderReview [prompt]` | Planned review walkthrough or current-stop question |
 | `:StriderSearch {prompt}` | Structured code search |
-| `:StriderQ[!] [prompt]` | Named side-question card; bare toggles latest, `!` opens a new Q prompt |
-| `:StriderQs` | Pick an existing StriderQ card |
+| `:StriderQ[!] [--fast\|--deep] [prompt]` | Quick side question; choose fast/deep model before submit |
+| `:StriderQs` | Pick a completed/running StriderQ answer and open it in a split |
 | `:StriderCards` | Pick an existing Chat/Q/Patch card |
 | `:StriderCardsClear[!]` | Dismiss completed cards; `!` includes running cards |
 | `:'<,'>StriderPatch [prompt]` | Selection-scoped patch |

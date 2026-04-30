@@ -134,34 +134,32 @@ Important UX rule:
 ### Tangent
 
 `:StriderQ` opens a floating editor for a one-shot side question. Each submitted
-StriderQ creates a named card and runs on its own Q worker process, separate
-from main chat, search, patch, review, and other Q cards. This keeps the main
+StriderQ creates an answer record and runs on its own Q worker process, separate
+from main chat, search, patch, review, and other Q records. This keeps the main
 session clean and lets the user ask quick questions without interrupting a
 running chat, patch turn, or earlier Q.
 
-1. user runs `:StriderQ [prompt]` (optionally with a visual range)
+1. user runs `:StriderQ [--fast|--deep] [prompt]` (optionally with a visual range)
 2. plugin opens the floating editor, prefilled when inline args were given;
-   `:StriderQ!` forces a new prompt even if a Q card already exists
+   `<Tab>` toggles between `fast` and `deep` before submit
 3. on submit, plugin allocates a Q worker lane (`q`, then `q-2`, `q-3`, ...),
-   creates a named StriderQ card, and stores `card_id`, `card_lane`, and
-   `worker_lane` on `pending_request.metadata`
+   resolves the requested Q model preset, creates a named StriderQ record, and
+   stores `card_id`, `card_lane`, `worker_lane`, and `model_label` on
+   `pending_request.metadata`
 4. plugin dispatches the question as `/prompt ...` on that Q worker (with an
    excerpt block when a range was given)
 5. streamed text deltas and final text from the worker update the pending
-   request's exact card; the first card keeps `strider://StriderQAnswer`, later
-   cards use `strider://flow-card/q/N`
-6. cards stay compact until selected, picked through `:StriderQs` or
-   `:StriderCards`, or toggled by bare `:StriderQ`; expanded cards rise above
-   the chat float, and the bare command always targets the latest Q card
-7. focused cards support `q`/`<Esc>` fold, `d` dismiss, `o` open worker log,
-   and `[c`/`]c` lane-local card navigation; `:StriderCardsClear` dismisses
-   completed cards in bulk
-8. expanded Q cards open a separate follow-up compose float beneath the answer;
-   `<C-s>` sends that draft as another `/prompt` on the same Q worker/card
-9. the full transcript lands in that card's worker log (`:StriderLogQ` for the
+   request's exact record; the first record keeps `strider://StriderQAnswer`,
+   later records use `strider://flow-card/q/N`
+6. no Q answer window opens automatically; completion emits a low-disruption
+   notification and `:StriderQs`/`:StriderCards` pickers show the ready answer
+7. selecting a Q opens its answer buffer in a normal split; `q` closes that
+   window, `d` dismisses the record, `o` opens the worker log, and `[c`/`]c`
+   navigate lane-local Q records
+8. the full transcript lands in that record's worker log (`:StriderLogQ` for the
    first worker, `strider://StriderLogQ-N` for later workers), including
    reasoning, tool calls, and tool output; chat is not auto-opened
-10. no tree anchoring needed — each Q worker has its own independent session
+9. no tree anchoring needed — each Q worker has its own independent session
 
 ### Chat
 
@@ -218,12 +216,14 @@ Buffer name:
 Purpose:
 - keep the full transcript, tool activity, and stderr
 - useful for debugging and history
-- toggled via `:StriderChat` along with compose; main chat uses a floating
-  log/compose stack and a compact card placeholder when collapsed
-- compact Chat/Q/Patch cards reserve shared right-edge stack slots
-- `:StriderQs` picks named Q cards, and `:StriderCards` picks all named card
-  surfaces, through telescope/fzf/`vim.ui.select`
-- picked or focused flow cards expand above the chat float
+- toggled via `:StriderChat` along with compose; main chat uses a right-side
+  split log/compose stack and a compact card placeholder when collapsed
+- compact Chat/Patch cards reserve shared right-edge stack slots
+- `:StriderQs` picks named Q answers and opens them in normal splits;
+  `:StriderCards` picks all named Chat/Q/Patch surfaces through
+  telescope/fzf/`vim.ui.select`
+- picked or focused patch cards expand as right-edge cards; picked Q answers use
+  normal windows
 - `:StriderCardsClear` and card-local `d` dismiss completed card surfaces
 - tail new output only while the log window is already at the bottom;
   scrolling up pauses follow-mode until the user jumps back to the tail
@@ -378,7 +378,7 @@ Shell parsing remains intentionally lightweight.
 ## Current implementation status
 
 Working today:
-- floating main chat log/compose stack with compact card placeholder
+- right-side split main chat log/compose stack with compact card placeholder
 - structured search with picker + quickfix behavior
 - pre-planned review with in-buffer annotations and sidebar TOC
 - dedicated review pane
@@ -386,13 +386,11 @@ Working today:
 - selection-scoped patching
 - plain-prompt agent turns with clarify available
 - side questions, search, and patches on separate flow-worker processes; each Q
-  card gets its own Q worker, and Q/patch results open in compact flow cards
-  while full transcripts land in their worker logs (`:StriderLogQ`,
-  `:StriderLogPatch`, `:StriderLogFlow`); each Q
-  submission creates a named card, expanded Q cards open a separate follow-up
-  compose float, bare `:StriderQ` toggles the latest card, `:StriderQs` and
-  `:StriderCards` open pickers for named card surfaces, and
-  `:StriderCardsClear`/`d` dismiss cards when the stack gets noisy
+  answer gets its own Q worker, Q completion notifies without opening a window,
+  and Q answers open on demand in normal splits while full transcripts land in
+  their worker logs (`:StriderLogQ`, `:StriderLogPatch`, `:StriderLogFlow`);
+  patch results still use compact flow cards, and `:StriderCardsClear`/`d`
+  dismiss cards when the stack gets noisy
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
 - `:StriderStatus` for a compact lane/status/control summary

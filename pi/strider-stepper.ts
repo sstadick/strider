@@ -493,7 +493,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("sessions", {
 		description: "Browse saved sessions for this project",
 		handler: async (_args: any, ctx: any) => {
-			await browseSessions(ctx, updateWidget);
+			await browseSessions(ctx);
 		},
 	});
 
@@ -502,10 +502,10 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args: any, ctx: any) => {
 			const input = args?.trim();
 			if (!input) {
-				await browseSessions(ctx, updateWidget);
+				await browseSessions(ctx);
 				return;
 			}
-			await resumeSession(input, ctx, updateWidget);
+			await resumeSession(input, ctx);
 		},
 	});
 
@@ -517,7 +517,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Usage: /switch_session <path-or-id>", "warning");
 				return;
 			}
-			await resumeSession(input, ctx, updateWidget);
+			await resumeSession(input, ctx);
 		},
 	});
 

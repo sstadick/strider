@@ -138,31 +138,36 @@ async function chooseResolvedSession(input: string, ctx: any): Promise<string | 
 	return pickSession(ctx, `Resume session matching "${input}"`, resolved);
 }
 
-export async function switchToSession(
-	path: string,
-	ctx: any,
-	update: (nextCtx: any) => void = () => {},
-): Promise<boolean> {
+function safeNotify(ctx: any, message: string, level: string) {
+	try {
+		ctx.ui.notify(message, level);
+	} catch {
+		// The command ctx may already be stale after a successful session replacement.
+	}
+}
+
+export async function switchToSession(path: string, ctx: any): Promise<boolean> {
 	if (!existsSync(path)) {
 		ctx.ui.notify(`Session file not found: ${path}`, "error");
 		return false;
 	}
+	let replaced = false;
 	try {
 		const result = await ctx.switchSession(path, {
 			withSession: async (nextCtx: any) => {
-				update(nextCtx);
+				replaced = true;
 				nextCtx.ui.notify(`Resumed session ${sessionSwitchLabel(nextCtx)}`, "info");
 			},
 		});
 		if (result?.cancelled) ctx.ui.notify("Session switch cancelled", "info");
 		return !result?.cancelled;
 	} catch (err: any) {
-		ctx.ui.notify(`Session switch failed: ${err?.message ?? err}`, "error");
+		if (!replaced) safeNotify(ctx, `Session switch failed: ${err?.message ?? err}`, "error");
 		return false;
 	}
 }
 
-export async function browseSessions(ctx: any, update: (nextCtx: any) => void): Promise<boolean> {
+export async function browseSessions(ctx: any): Promise<boolean> {
 	const sessions = await localSessions(ctx);
 	if (sessions.length === 0) {
 		ctx.ui.notify("No saved sessions found", "warning");
@@ -173,14 +178,10 @@ export async function browseSessions(ctx: any, update: (nextCtx: any) => void): 
 		return false;
 	}
 	const path = await pickSession(ctx, "Resume session", sessions);
-	return path ? switchToSession(path, ctx, update) : false;
+	return path ? switchToSession(path, ctx) : false;
 }
 
-export async function resumeSession(
-	input: string,
-	ctx: any,
-	update: (nextCtx: any) => void,
-): Promise<boolean> {
+export async function resumeSession(input: string, ctx: any): Promise<boolean> {
 	const path = await chooseResolvedSession(input, ctx);
-	return path ? switchToSession(path, ctx, update) : false;
+	return path ? switchToSession(path, ctx) : false;
 }

@@ -58,8 +58,9 @@ the original range or the diff. Gaps are auto-filled or surfaced as
    — no model call. `:StriderReviewItems` opens a picker over the plan.
 7. **Mid-review questions.** `:StriderReview <question>` with an active
    review sends a `/review` scoped to the current stop, carrying the
-   question as the user focus. This is the one place per-stop model
-   round-trips happen.
+   question as the user focus. Plain follow-up answers render in the review
+   pane under the current stop; visual-range questions render inline over the
+   selected range. The review log stays hidden unless opened explicitly.
 8. **Mid-review plan growth (free scope only).** The model may call
    `strider_append_stops` during a `/review` turn to add more stops.
    Append-only — no reorder, no deletion. Selection/diff plans are fixed.
@@ -89,9 +90,9 @@ the original range or the diff. Gaps are auto-filled or surfaced as
   auto-jump the buffer. Jumps happen only on stop changes (`:StriderNext`,
   `:StriderPrev`, picker selection).
 - The **review log buffer** (`strider://StriderLogReview`) is secondary —
-  transcript and tool activity for debugging. Review start and review end do
-  not open it automatically; users can toggle it explicitly with
-  `:StriderLogReview`.
+  transcript and tool activity for debugging. Review start, mid-review
+  questions, and review end do not open it automatically; users can toggle it
+  explicitly with `:StriderLogReview`.
 
 Implementation boundary:
 - `lua/strider/review.lua` owns state changes: starting reviews, ingesting

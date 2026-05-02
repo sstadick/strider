@@ -262,8 +262,27 @@ class TmuxReviewTests(unittest.TestCase):
 
             review_text = "\n".join(h.buffer_lines("strider://review"))
             self.assertIn("accepted", review_text)
+            self.assertIn(":StriderNext!` accepts + advances", review_text)
             accepted_count = int(h.lua("#require('strider.state').review_acceptances('review')"))
             self.assertEqual(1, accepted_count)
+
+    def test_active_review_question_stays_in_review_pane_without_opening_log(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            self._submit_review(h, "StriderReview explain src/main.tsx")
+            self._advance_to_first_stop(h)
+
+            h.ex("StriderReview")
+            h.submit_popup("why does this mount App?")
+            h.wait_until(
+                lambda: "Follow-up answers" in "\n".join(h.buffer_lines("strider://review"))
+                and "why does this mount App?" in "\n".join(h.buffer_lines("strider://review"))
+                and "This stop focuses on src/main.tsx" in "\n".join(h.buffer_lines("strider://review")),
+                timeout=5.0,
+            )
+
+            self.assertReviewLogHidden(h)
+            log_text = "\n".join(h.review_log_lines())
+            self.assertIn("why does this mount App?", log_text)
 
     def test_file_review_keeps_focus_on_named_file_when_log_opens_on_start(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:

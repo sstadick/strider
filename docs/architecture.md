@@ -101,7 +101,9 @@ front via the `strider_plan` tool; the plugin then walks that fixed list.
    sidebar flips to the pre-written explanation for the new stop.
 6. `:StriderReview <question>` with an active review is the only way to
    trigger a per-stop model call. It sends `/review ...` scoped to the
-   current stop, carrying the question.
+   current stop, carrying the question. Plain answers stream into the review
+   pane; ranged answers render inline over the selected range. The diagnostic
+   review log stays hidden unless opened explicitly.
 7. during a free-scope review, the model may call `strider_append_stops`
    mid-review to add more stops (append-only — no reorder, no deletion)
 8. walking past the last stop ends the review; unresolved comments are
@@ -166,7 +168,8 @@ running chat, patch turn, or earlier Q.
 ### Chat
 
 1. user runs `:StriderChat` (no args) to toggle the right-side split log + compose stack;
-   collapsing it leaves a compact `Strider chat` card placeholder
+   hiding it closes the chat windows, creating a new empty buffer first if chat
+   owns every normal window
 2. `:[range]StriderChat [message]` opens chat and prefills compose with the
    range pointer and/or inline text instead of sending immediately
 3. compose `<C-s>` sends `/prompt <message>` if no request is pending, or
@@ -221,8 +224,9 @@ Purpose:
 - keep the full transcript, tool activity, and stderr
 - useful for debugging and history
 - toggled via `:StriderChat` along with compose; main chat uses a right-side
-  split log/compose stack and a compact card placeholder when collapsed
-- compact Chat/Patch cards reserve shared right-edge stack slots
+  split log/compose stack and leaves an empty buffer behind when hiding from a
+  chat-only layout
+- compact Q/Patch cards reserve shared right-edge stack slots
 - `:StriderQs` picks named Q answers and opens them in normal splits;
   `:StriderCards` picks all named Chat/Q/Patch surfaces through
   telescope/fzf/`vim.ui.select`
@@ -383,7 +387,7 @@ Shell parsing remains intentionally lightweight.
 ## Current implementation status
 
 Working today:
-- right-side split main chat log/compose stack with compact card placeholder
+- right-side split main chat log/compose stack with safe hide from chat-only layouts
 - structured search with picker + quickfix behavior
 - pre-planned review with in-buffer annotations and sidebar TOC
 - dedicated review pane

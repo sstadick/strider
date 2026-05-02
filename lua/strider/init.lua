@@ -855,7 +855,7 @@ function M.chat(prompt, opts)
 	local prefill = chat_prefill(prompt, range)
 
 	if prefill == "" and ui.chat_is_visible() then
-		ui.hide_chat({ show_card = true })
+		ui.hide_chat()
 		return
 	end
 
@@ -935,10 +935,9 @@ local function submit_review_request(text, range, opts)
 	end
 
 	if review.has_active_review() and range then
-		review.begin_ranged_question(range, text)
 		local prompt = review.build_prompt(text)
-		if prompt then
-			send_review_prompt(prompt, text)
+		if prompt and send_review_prompt(prompt, text, { open_log = false }) then
+			review.begin_ranged_question(range, text)
 		end
 		return
 	end
@@ -949,7 +948,9 @@ local function submit_review_request(text, range, opts)
 			ui.notify("No active Strider review item", vim.log.levels.WARN)
 			return
 		end
-		send_review_prompt(prompt, text)
+		if send_review_prompt(prompt, text, { open_log = false }) then
+			review.begin_item_question(text)
+		end
 		return
 	end
 

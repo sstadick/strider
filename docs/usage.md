@@ -46,12 +46,12 @@ review editor to toggle between a fresh review context and copying the current
 main chat transcript as background.
 
 `:StriderChat` keeps persistent main log and compose buffers, shown as a
-right-side split log/compose stack. Toggling it closed leaves a compact
-`Strider chat` card; bare `:StriderChat` pops it back open. Use
-`:StriderChatReadOnly` (or `gR` in normal mode / `<C-g>r` in insert mode inside
-`strider://compose`) to toggle a chat-only read-only guard; the compose winbar
-shows `RO` while enabled. Compact Chat and Patch cards share the same right-edge
-stack instead of overlapping.
+right-side split log/compose stack. Toggling it closed hides those surfaces; if
+chat was the only visible normal window, Strider leaves you in a new empty
+buffer. Use `:StriderChatReadOnly` (or `gR` in normal mode / `<C-g>r` in insert
+mode inside `strider://compose`) to toggle a chat-only read-only guard; the
+compose winbar shows `RO` while enabled. Compact Q and Patch cards share the
+same right-edge stack instead of overlapping.
 `:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on separate flow-worker
 processes, so Q and patch can proceed independently of each other and main chat.
 Each new StriderQ answer gets its own Q worker process. Search transcript lives
@@ -209,7 +209,8 @@ front, and `:StriderNext` / `:StriderPrev` move mechanically through that plan.
 4. `:StriderNext` / `:StriderPrev` walk the fixed plan. `:StriderNext!` accepts
    the current stop before advancing.
 5. `:StriderReview <question>` during a review asks about the current stop.
-   Ranged questions render as inline block annotations.
+   Plain answers render in the review pane without opening the review log;
+   ranged questions render as inline block annotations.
 
 Review mode is read-only. Comments stay local and are fed back to the agent
 when the review ends. No external sync is performed.

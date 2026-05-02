@@ -349,8 +349,8 @@ class TmuxPopupTests(unittest.TestCase):
                 ))
 
     def test_striderchat_toggles_both_surfaces(self) -> None:
-        # :StriderChat with no args toggles log + compose. Collapsing leaves a
-        # compact card placeholder; the next bare :StriderChat pops it back up.
+        # :StriderChat with no args toggles log + compose. Hiding chat should
+        # leave no compact card; the next bare :StriderChat opens the splits.
         visible_expr = "require('strider.ui').chat_is_visible()"
         card_visible = "vim.fn.bufwinnr('strider://StriderChatCard') > 0"
         with FixtureProject(self.project_root) as project_root:
@@ -359,10 +359,37 @@ class TmuxPopupTests(unittest.TestCase):
                 h.wait_until(lambda: h.lua_bool(visible_expr), timeout=3.0)
                 h.ex("StriderChat")
                 h.wait_until(lambda: not h.lua_bool(visible_expr), timeout=3.0)
-                h.wait_until(lambda: h.lua_bool(card_visible), timeout=3.0)
+                self.assertFalse(h.lua_bool(card_visible))
                 h.ex("StriderChat")
                 h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
                 self.assertFalse(h.lua_bool(card_visible))
+
+    def test_striderchat_hide_from_chat_only_windows_lands_on_empty_buffer(self) -> None:
+        visible_expr = "require('strider.ui').chat_is_visible()"
+        window_names = "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+                h.lua(
+                    "(function() "
+                    "  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do "
+                    "    local name = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)); "
+                    "    if not name:match('strider://log$') and not name:match('strider://compose$') then "
+                    "      pcall(vim.api.nvim_win_close, win, true); "
+                    "    end "
+                    "  end; "
+                    "  return true "
+                    "end)()"
+                )
+                h.wait_until(lambda: h.lua_bool(visible_expr), timeout=3.0)
+
+                h.ex("StriderChat")
+                h.wait_until(lambda: not h.lua_bool(visible_expr), timeout=3.0)
+
+                self.assertEqual("", h.current_state()["buf"])
+                self.assertEqual("", h.expr("&buftype"))
+                self.assertEqual([""], h.json_expr(window_names))
 
     def test_collapsed_chat_does_not_reopen_log_on_first_stream(self) -> None:
         with FixtureProject(self.project_root) as project_root:
@@ -376,9 +403,10 @@ class TmuxPopupTests(unittest.TestCase):
                 )
                 h.ex("StriderChat")
                 h.wait_until(
-                    lambda: "Chat running" in "\n".join(h.buffer_lines("strider://StriderChatCard")),
+                    lambda: not h.lua_bool("require('strider.ui').chat_is_visible()"),
                     timeout=3.0,
                 )
+                self.assertEqual("-1", h.expr("bufwinnr('strider://StriderChatCard')"))
                 h.wait_until(
                     lambda: h.lua_bool("require('strider.state').peek_pending_request() == nil"),
                     timeout=5.0,
@@ -386,9 +414,9 @@ class TmuxPopupTests(unittest.TestCase):
                 self.assertNotIn("strider://log", h.json_expr(
                     "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
                 ))
-                self.assertIn("Chat done", "\n".join(h.buffer_lines("strider://StriderChatCard")))
+                self.assertEqual("-1", h.expr("bufwinnr('strider://StriderChatCard')"))
 
-    def test_chat_card_updates_when_turn_finishes(self) -> None:
+    def test_hidden_chat_does_not_show_card_when_turn_finishes(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("StriderChat")
@@ -400,17 +428,15 @@ class TmuxPopupTests(unittest.TestCase):
                 )
                 h.ex("StriderChat")
                 h.wait_until(
-                    lambda: "Chat running" in "\n".join(h.buffer_lines("strider://StriderChatCard")),
+                    lambda: not h.lua_bool("require('strider.ui').chat_is_visible()"),
                     timeout=3.0,
                 )
+                self.assertEqual("-1", h.expr("bufwinnr('strider://StriderChatCard')"))
                 h.wait_until(
                     lambda: h.lua_bool("require('strider.state').peek_pending_request() == nil"),
                     timeout=3.0,
                 )
-                h.wait_until(
-                    lambda: "Chat done" in "\n".join(h.buffer_lines("strider://StriderChatCard")),
-                    timeout=3.0,
-                )
+                self.assertEqual("-1", h.expr("bufwinnr('strider://StriderChatCard')"))
 
     def test_chat_with_range_prefills_pointer(self) -> None:
         with FixtureProject(self.project_root) as project_root:

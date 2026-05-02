@@ -35,6 +35,28 @@ local function current_item(review)
 	return review.items[review.current_index]
 end
 
+local function item_by_id(review, id)
+	if not review or not id then
+		return nil
+	end
+	for _, item in ipairs(review.items or {}) do
+		if item.id == id then
+			return item
+		end
+	end
+	return nil
+end
+
+local function pending_item_followup(review)
+	local pending = review and review.pending_item_question
+	if not pending then
+		return nil, nil
+	end
+	local item = item_by_id(review, pending.stop_item_id) or review.items[pending.stop_index or 0]
+	local followup = item and item.followups and item.followups[pending.followup_index]
+	return item, followup
+end
+
 local function comment_lines(comments)
 	local lines = {}
 	for index, comment in ipairs(comments or {}) do
@@ -87,13 +109,39 @@ function M.render()
 	return true
 end
 
+local function capture_item_question_answer(review, text, opts)
+	local item, followup = pending_item_followup(review)
+	if not followup then
+		if not opts.partial then
+			review.pending_item_question = nil
+		end
+		return false
+	end
+	followup.answer = text or ""
+	followup.pending = opts.partial == true
+	if not opts.partial then
+		review.pending_item_question = nil
+		if item and (item.status == nil or item.status == "pending") then
+			item.status = "reviewed"
+		end
+	end
+	M.render()
+	return true
+end
+
+local function mark_current_item_reviewed(review)
+	local item = current_item(review)
+	if item and (item.status == nil or item.status == "pending") then
+		item.status = "reviewed"
+	end
+end
+
 function M.capture_assistant_text(text, opts)
 	opts = opts or {}
 	local review = review_state()
 	if not review then
 		return false
 	end
-	-- End-of-review summary turn: feed the summary into the sidebar.
 	if review.awaiting_summary then
 		review.summary = text
 		if not opts.partial then
@@ -102,22 +150,14 @@ function M.capture_assistant_text(text, opts)
 		M.render()
 		return true
 	end
-
-	-- Ranged question: render the answer inline over the question's range.
 	if review.pending_question then
 		return M.capture_ranged_question_answer(text, opts)
 	end
-
-	-- Plain question (no pending_question, no awaiting_summary): the
-	-- answer goes to the log via the rpc's append_block. Do NOT touch
-	-- item.explanation — that's reserved for the pre-computed explanation
-	-- rendered inline in the buffer, and overwriting it would clobber the
-	-- stop's own context.
+	if review.pending_item_question then
+		return capture_item_question_answer(review, text, opts)
+	end
 	if not opts.partial then
-		local item = current_item(review)
-		if item and item.status == nil then
-			item.status = "reviewed"
-		end
+		mark_current_item_reviewed(review)
 	end
 	return true
 end
@@ -173,6 +213,27 @@ function M.begin_ranged_question(range, text)
 		question = text,
 		stop_item_id = item and item.id or nil,
 	}
+	return true
+end
+
+function M.begin_item_question(text)
+	local review = active_review()
+	local item = current_item(review)
+	if not review or not item then
+		return false
+	end
+	item.followups = item.followups or {}
+	table.insert(item.followups, {
+		answer = "",
+		pending = true,
+		question = text,
+	})
+	review.pending_item_question = {
+		followup_index = #item.followups,
+		stop_index = review.current_index,
+		stop_item_id = item.id,
+	}
+	M.render()
 	return true
 end
 
@@ -271,6 +332,8 @@ function M.start_planning(focus, opts)
 		planning = true,
 		scope = nil,
 		source = opts.source or "review",
+		start_context = opts.start_context,
+		context_source = opts.context_source,
 		summary = nil,
 		title = opts.title or "Strider review",
 	}
@@ -412,6 +475,8 @@ function M.start_planned(scope, opts)
 		plan_message = nil,
 		scope = plan.scope,
 		source = source,
+		start_context = opts.start_context,
+		context_source = opts.context_source,
 		summary = nil,
 		title = opts.title or ("Strider review: " .. source),
 	}

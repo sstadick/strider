@@ -821,18 +821,46 @@ function M.chat_is_visible()
 	return false
 end
 
--- Hide both chat surfaces. Optionally leave behind a compact chat card.
-function M.hide_chat(opts)
-	opts = opts or {}
+local function is_main_chat_surface(session, buf)
+	return session
+		and ((session.log_buf and buf == session.log_buf) or (session.compose_buf and buf == session.compose_buf))
+end
+
+local function only_main_chat_window(session)
+	local fallback_win
+	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+		if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_config(win).relative == "" then
+			local buf = vim.api.nvim_win_get_buf(win)
+			if not is_main_chat_surface(session, buf) then
+				return nil
+			end
+			fallback_win = fallback_win or win
+		end
+	end
+	return fallback_win
+end
+
+local function replace_chat_only_window(session)
+	local win = only_main_chat_window(session)
+	if not win or not vim.api.nvim_win_is_valid(win) then
+		return
+	end
+	local buf = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_set_current_win(win)
+	vim.api.nvim_win_set_buf(win, buf)
+end
+
+-- Hide both chat surfaces. If chat owns every normal window, leave one new
+-- empty buffer behind so Neovim does not strand the user in strider://log.
+function M.hide_chat()
 	local session = state.get_session("main")
 	if session then
 		session.chat_collapsed = true
 	end
+	chat_card.close()
+	replace_chat_only_window(session)
 	M.hide_compose()
 	M.hide_log()
-	if opts.show_card then
-		M.show_chat_card()
-	end
 end
 
 function M.should_auto_open_stream_log(lane)

@@ -219,13 +219,19 @@ local function review_status_lines(review, item)
 		status_text = "waiting for summary"
 	elseif review.pending_question then
 		status_text = "answering ranged question"
+	elseif review.pending_item_question then
+		status_text = "answering follow-up"
 	elseif not review.active then
 		status_text = "complete"
 	end
 
 	local lines = {
 		string.format("- state: `%s`", status_text),
-		string.format("- accepted: `%d/%d`", accepted_count(review), #review.items),
+		string.format(
+			"- accepted: `%d/%d` (`:StriderNext!` accepts + advances)",
+			accepted_count(review),
+			#review.items
+		),
 	}
 	if item and item.status then
 		table.insert(lines, string.format("- current stop: `%s`", item.status))
@@ -242,6 +248,8 @@ local function review_status_lines(review, item)
 	end
 	if review.pending_question then
 		table.insert(lines, "- waiting: ranged answer is streaming inline; moving stops will clear it")
+	elseif review.pending_item_question then
+		table.insert(lines, "- waiting: follow-up answer is streaming in this pane")
 	end
 	return lines
 end
@@ -354,6 +362,18 @@ local function append_excerpt(lines, item)
 	end
 end
 
+local function append_item_followups(lines, item, on_msg0)
+	if on_msg0 or not item or not item.followups or #item.followups == 0 then
+		return
+	end
+	local rendered = {}
+	for index, followup in ipairs(item.followups) do
+		table.insert(rendered, string.format("%d. Q: %s", index, followup.question or ""))
+		table.insert(rendered, followup.answer ~= "" and followup.answer or "_Waiting for answer..._")
+	end
+	append_section(lines, "Follow-up answers", rendered)
+end
+
 local function append_item_comments(lines, review, item, on_msg0)
 	if on_msg0 then
 		return
@@ -426,7 +446,7 @@ local function append_controls(lines, review)
 
 	append_section(lines, "Controls", {
 		"- `:StriderNext` / `:StriderPrev` move between review items",
-		"- `:StriderNext!` accepts the current stop and moves on",
+		"- `:StriderNext!` marks the current stop accepted and moves on",
 		"- `:StriderReview <question>` asks about the current review item",
 		"- `:'<,'>StriderReview <question>` asks about a selected range",
 		"- `:StriderChat` toggles the chat surfaces (log + compose)",
@@ -455,6 +475,7 @@ function M.panel_lines(review, opts)
 	append_section(lines, "Status", review_status_lines(review, item))
 	append_item_summary(lines, review, item, cwd, on_msg0)
 	append_explanation(lines, review, item, on_msg0)
+	append_item_followups(lines, item, on_msg0)
 	append_excerpt(lines, item)
 	append_item_comments(lines, review, item, on_msg0)
 	append_review_plan(lines, review, cwd, has_msg0)

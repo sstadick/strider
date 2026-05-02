@@ -289,6 +289,50 @@ local function start_free_review(focus)
 	})
 end
 
+local function main_chat_review_context()
+	local session = state.get_session(MAIN_LANE)
+	if not session then
+		return nil
+	end
+	local log_buf = session.log_buf
+	local has_log = log_buf and vim.api.nvim_buf_is_valid(log_buf)
+	if has_log then
+		local lines = vim.api.nvim_buf_get_lines(log_buf, 0, -1, false)
+		local text = trimmed(table.concat(lines, "\n"))
+		if text ~= "" then
+			return table.concat({
+				"Main chat history:",
+				text,
+			}, "\n")
+		end
+	end
+	local parts = {}
+	local summary = trimmed(session.last_summary)
+	if summary ~= "" then
+		table.insert(parts, "Main chat summary:")
+		table.insert(parts, summary)
+	end
+	local prompt = session.last_user_message and trimmed(session.last_user_message.text) or ""
+	if prompt ~= "" then
+		table.insert(parts, "Latest main chat request:")
+		table.insert(parts, prompt)
+	end
+	return #parts > 0 and table.concat(parts, "\n") or nil
+end
+
+local function review_context_start_picker(on_choice)
+	vim.schedule(function()
+		vim.ui.select({
+			"Start with no context",
+			"Copy context from main chat",
+		}, {
+			prompt = "Review start context:",
+		}, function(choice)
+			on_choice(choice)
+		end)
+	end)
+end
+
 -- Called from rpc.lua after a /plan turn finishes and a plan has been
 -- ingested. Dispatches the first /review for stop 1 so the model's next
 -- turn explains the first stop instead of idling.
@@ -887,11 +931,29 @@ function M.review(args, opts)
 	else
 		hint_lines = {
 			"Describe what you want reviewed.",
+			"Choose review context source after submit.",
 		}
 	end
 
 	ui.open_prompt_editor(title, function(input)
-		submit_review_request(input, range)
+		if review.has_active_review() or range then
+			submit_review_request(input, range)
+			return
+		end
+		review_context_start_picker(function(choice)
+			if not choice then
+				return
+			end
+			if choice == "Copy context from main chat" then
+				local copied = main_chat_review_context()
+				if copied then
+					input = string.format("%s\n\n%s", input, copied)
+				else
+					ui.notify("No main chat context found; starting with no context", vim.log.levels.WARN)
+				end
+			end
+			submit_review_request(input, range)
+		end)
 	end, {
 		hint_lines = hint_lines,
 		prefill = text ~= "" and text or nil,

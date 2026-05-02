@@ -69,7 +69,9 @@ Work, then review the diff:
 :StriderNext
 ```
 
-Most popup commands submit with `<C-s>` and cancel with `<Esc><Esc>`.
+Most popup commands submit with `<C-s>` and cancel with `<Esc><Esc>`. When
+starting a new `:StriderReview`, `<C-g>c` toggles whether that review starts
+fresh or copies the main chat transcript as background context.
 `:StriderChat` opens a right-side split log plus compose stack; toggling it
 closed leaves a compact chat card. With arguments it prefills compose so you can
 edit before sending. The empty compose hint says when `<C-s>` sends a new prompt

@@ -249,8 +249,9 @@ per-command guidance as `Comment`-highlighted virtual lines plus a
 `<C-s> to submit · <Esc><Esc> to cancel` hint. Inline command arguments
 prefill the editor instead of dispatching directly. For `:StriderReview`,
 the editor has two modes: when no review is active the text describes the
-review scope; when a review is active, the text is treated as a question
-about the current review item.
+review scope and `<C-g>c` toggles fresh vs main-chat-backed context; when a
+review is active, the text is treated as a question about the current review
+item.
 
 ## RPC events used by the plugin
 

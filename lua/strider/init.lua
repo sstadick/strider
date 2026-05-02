@@ -16,6 +16,12 @@ local Q_LANE = "q"
 local PATCH_LANE = "patch"
 local REVIEW_LANE = "review"
 local FLOW_LANES = { FLOW_LANE, PATCH_LANE }
+local REVIEW_CONTEXT_FRESH = "fresh"
+local REVIEW_CONTEXT_MAIN = "main"
+local REVIEW_MAIN_CONTEXT_LIMIT = 20000
+
+local build_review_start_prompt
+local main_chat_review_context
 
 -- Cached CWD + hrtime to short-circuit ensure_backend's per-lane cwd check.
 -- CWD changes are user-initiated and rare; avoid calling getcwd() + comparing
@@ -258,7 +264,8 @@ local function start_selection_review(opts)
 		ui.notify("No review items found for the selected range", vim.log.levels.WARN)
 		return false
 	end
-	local prompt = review.build_prompt(opts and opts.focus)
+	local prompt_focus = build_review_start_prompt(opts and opts.focus or "", opts and opts.start_context)
+	local prompt = review.build_prompt(prompt_focus)
 	if not prompt then
 		return false
 	end
@@ -266,7 +273,8 @@ local function start_selection_review(opts)
 	return send_review_prompt(prompt, label, { open_log = false })
 end
 
-local function start_free_review(focus)
+local function start_free_review(focus, opts)
+	opts = opts or {}
 	local text = trimmed(focus)
 	if text == "" then
 		ui.notify("StriderReview requires input", vim.log.levels.WARN)
@@ -278,59 +286,108 @@ local function start_free_review(focus)
 	if warn_if_lane_busy(REVIEW_LANE) then
 		return false
 	end
-	if not review.start_planning(text) then
+	if
+		not review.start_planning(text, {
+			context_source = opts.context_source,
+			start_context = opts.start_context,
+		})
+	then
 		return false
 	end
-	return send("/plan " .. text, text, {
+	local request = build_review_start_prompt(text, opts.start_context)
+	return send("/plan " .. request, text, {
 		lane = REVIEW_LANE,
 		operation = "plan",
-		debug_prompt = text,
+		debug_prompt = request,
 		open_log = false,
 	})
 end
 
-local function main_chat_review_context()
+local function truncate_review_context(text)
+	text = trimmed(text)
+	if text == "" then
+		return nil
+	end
+	if #text <= REVIEW_MAIN_CONTEXT_LIMIT then
+		return text
+	end
+	local omitted = #text - REVIEW_MAIN_CONTEXT_LIMIT
+	return string.format(
+		"[... %d chars omitted from earlier main chat log ...]\n%s",
+		omitted,
+		text:sub(-REVIEW_MAIN_CONTEXT_LIMIT)
+	)
+end
+
+local function main_log_context(session)
+	local log_buf = session.log_buf
+	if not log_buf or not vim.api.nvim_buf_is_valid(log_buf) then
+		return nil
+	end
+	local lines = vim.api.nvim_buf_get_lines(log_buf, 0, -1, false)
+	local kept = {}
+	for _, line in ipairs(lines) do
+		if not line:match("^%[strider%] backend started") then
+			table.insert(kept, line)
+		end
+	end
+	return truncate_review_context(table.concat(kept, "\n"))
+end
+
+main_chat_review_context = function()
 	local session = state.get_session(MAIN_LANE)
 	if not session then
 		return nil
 	end
-	local log_buf = session.log_buf
-	local has_log = log_buf and vim.api.nvim_buf_is_valid(log_buf)
-	if has_log then
-		local lines = vim.api.nvim_buf_get_lines(log_buf, 0, -1, false)
-		local text = trimmed(table.concat(lines, "\n"))
-		if text ~= "" then
-			return table.concat({
-				"Main chat history:",
-				text,
-			}, "\n")
-		end
+	local log_context = main_log_context(session)
+	if log_context then
+		return log_context
 	end
 	local parts = {}
 	local summary = trimmed(session.last_summary)
 	if summary ~= "" then
-		table.insert(parts, "Main chat summary:")
-		table.insert(parts, summary)
+		table.insert(parts, "Main chat summary:\n" .. summary)
 	end
 	local prompt = session.last_user_message and trimmed(session.last_user_message.text) or ""
 	if prompt ~= "" then
-		table.insert(parts, "Latest main chat request:")
-		table.insert(parts, prompt)
+		table.insert(parts, "Latest main chat request:\n" .. prompt)
 	end
-	return #parts > 0 and table.concat(parts, "\n") or nil
+	return truncate_review_context(table.concat(parts, "\n\n"))
 end
 
-local function review_context_start_picker(on_choice)
-	vim.schedule(function()
-		vim.ui.select({
-			"Start with no context",
-			"Copy context from main chat",
-		}, {
-			prompt = "Review start context:",
-		}, function(choice)
-			on_choice(choice)
-		end)
-	end)
+build_review_start_prompt = function(text, start_context)
+	local request = trimmed(text)
+	local copied = trimmed(start_context)
+	if copied == "" then
+		return request
+	end
+	return table.concat({
+		request,
+		"",
+		"<MAIN_CHAT_CONTEXT>",
+		"Use this copied main-chat context as background only. The review request above is authoritative.",
+		copied,
+		"</MAIN_CHAT_CONTEXT>",
+	}, "\n")
+end
+
+local function review_context_hint(source)
+	if source == REVIEW_CONTEXT_MAIN then
+		return "Context: main chat (press <C-g>c for fresh review)"
+	end
+	return "Context: fresh (press <C-g>c to include main chat)"
+end
+
+local function selected_review_start_context(source)
+	if source ~= REVIEW_CONTEXT_MAIN then
+		return nil
+	end
+	local copied = main_chat_review_context()
+	if copied then
+		return copied
+	end
+	ui.notify("No main chat context found; starting fresh", vim.log.levels.WARN)
+	return nil
 end
 
 -- Called from rpc.lua after a /plan turn finishes and a plan has been
@@ -364,15 +421,17 @@ function M.retry()
 	end
 	if review.is_planning() then
 		local session = state.get_session(REVIEW_LANE)
-		local goal = session and session.review and session.review.goal
+		local active = session and session.review
+		local goal = active and active.goal
 		if not goal or goal == "" then
 			ui.notify("Cannot retry plan: review goal is missing", vim.log.levels.WARN)
 			return false
 		end
-		return send("/plan " .. goal, goal, {
+		local request = build_review_start_prompt(goal, active and active.start_context)
+		return send("/plan " .. request, goal, {
 			lane = REVIEW_LANE,
 			operation = "plan",
-			debug_prompt = goal,
+			debug_prompt = request,
 			open_log = false,
 		})
 	end
@@ -865,7 +924,8 @@ function M.search(prompt)
 	})
 end
 
-local function submit_review_request(text, range)
+local function submit_review_request(text, range, opts)
+	opts = opts or {}
 	text = trimmed(text)
 	if text == "" then
 		return
@@ -895,15 +955,20 @@ local function submit_review_request(text, range)
 
 	if range then
 		start_selection_review({
+			context_source = opts.context_source,
 			endLine = range.endLine,
 			focus = text,
 			path = range.path,
+			start_context = opts.start_context,
 			startLine = range.startLine,
 		})
 		return
 	end
 
-	start_free_review(text)
+	start_free_review(text, {
+		context_source = opts.context_source,
+		start_context = opts.start_context,
+	})
 end
 
 function M.review(args, opts)
@@ -911,6 +976,8 @@ function M.review(args, opts)
 	local text = trimmed(args)
 	local title = "Strider review context"
 	local hint_lines
+	local context_source = REVIEW_CONTEXT_FRESH
+	local starting_review = not review.has_active_review()
 
 	if review.has_active_review() and range then
 		title = "Ask about this selected range"
@@ -924,37 +991,56 @@ function M.review(args, opts)
 			"Ask a question about the current review item.",
 		}
 	elseif range then
-		hint_lines = {
-			"Describe what you want reviewed in this selected range.",
-			string.format("Range: %s", range_pointer(range)),
-		}
+		hint_lines = function()
+			return {
+				"Describe what you want reviewed in this selected range.",
+				string.format("Range: %s", range_pointer(range)),
+				review_context_hint(context_source),
+			}
+		end
 	else
-		hint_lines = {
-			"Describe what you want reviewed.",
-			"Choose review context source after submit.",
+		hint_lines = function()
+			return {
+				"Describe what you want reviewed.",
+				review_context_hint(context_source),
+			}
+		end
+	end
+
+	local extra_keymaps
+	if starting_review then
+		extra_keymaps = {
+			{
+				lhs = "<C-g>c",
+				desc = "Toggle review start context",
+				callback = function(editor)
+					context_source = context_source == REVIEW_CONTEXT_MAIN and REVIEW_CONTEXT_FRESH
+						or REVIEW_CONTEXT_MAIN
+					ui.notify(
+						string.format(
+							"Review context: %s",
+							context_source == REVIEW_CONTEXT_MAIN and "main chat" or "fresh"
+						),
+						vim.log.levels.INFO
+					)
+					editor.render_hint()
+				end,
+			},
 		}
 	end
 
 	ui.open_prompt_editor(title, function(input)
-		if review.has_active_review() or range then
+		if review.has_active_review() then
 			submit_review_request(input, range)
 			return
 		end
-		review_context_start_picker(function(choice)
-			if not choice then
-				return
-			end
-			if choice == "Copy context from main chat" then
-				local copied = main_chat_review_context()
-				if copied then
-					input = string.format("%s\n\n%s", input, copied)
-				else
-					ui.notify("No main chat context found; starting with no context", vim.log.levels.WARN)
-				end
-			end
-			submit_review_request(input, range)
-		end)
+		local start_context = selected_review_start_context(context_source)
+		submit_review_request(input, range, {
+			context_source = start_context and context_source or REVIEW_CONTEXT_FRESH,
+			start_context = start_context,
+		})
 	end, {
+		extra_keymaps = extra_keymaps,
 		hint_lines = hint_lines,
 		prefill = text ~= "" and text or nil,
 	})

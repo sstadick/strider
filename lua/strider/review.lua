@@ -271,6 +271,8 @@ function M.start_planning(focus, opts)
 		planning = true,
 		scope = nil,
 		source = opts.source or "review",
+		start_context = opts.start_context,
+		context_source = opts.context_source,
 		summary = nil,
 		title = opts.title or "Strider review",
 	}
@@ -412,6 +414,8 @@ function M.start_planned(scope, opts)
 		plan_message = nil,
 		scope = plan.scope,
 		source = source,
+		start_context = opts.start_context,
+		context_source = opts.context_source,
 		summary = nil,
 		title = opts.title or ("Strider review: " .. source),
 	}

@@ -41,7 +41,9 @@ README.
 
 `:StriderSearch`, `:StriderReview`, `:StriderPatch`, `:StriderQ`, and
 `:StriderComment` use floating editors. Submit with `<C-s>`, cancel with
-`<Esc><Esc>`.
+`<Esc><Esc>`. When starting a new `:StriderReview`, press `<C-g>c` in the
+review editor to toggle between a fresh review context and copying the current
+main chat transcript as background.
 
 `:StriderChat` keeps persistent main log and compose buffers, shown as a
 right-side split log/compose stack. Toggling it closed leaves a compact
@@ -199,7 +201,8 @@ front, and `:StriderNext` / `:StriderPrev` move mechanically through that plan.
 
 1. You prompt. If you mention a diff, PR, or branch changes, the model plans a
    diff review. A visual selection plans a selection review. Otherwise it is
-   free-form.
+   free-form. On the review start editor, `<C-g>c` toggles whether the review
+   starts fresh or copies the main chat transcript as background context.
 2. The model calls `strider_plan` with ordered stops, file ranges, titles,
    hooks, and explanations.
 3. The plan appears in the review pane as a table of contents.

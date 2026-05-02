@@ -581,6 +581,27 @@ class TmuxPopupTests(unittest.TestCase):
             log_text = "\n".join(h.review_log_lines())
             self.assertIn("focus on the mount flow", log_text)
 
+    def test_review_start_can_copy_main_chat_context(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat remember the login timeout decision")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+                h.send("C-s", pause=0.3)
+                h.wait_until(
+                    lambda: h.lua_bool("require('strider.state').peek_pending_request('main') == nil"),
+                    timeout=5.0,
+                )
+
+                h.ex("StriderReview")
+                h.wait_until(lambda: _popup_open(h))
+                h.send("C-g", "c", pause=0.2)
+                h.send("walk through the branch", "C-s", pause=0.3)
+                h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
+
+                log_text = "\n".join(h.review_log_lines())
+                self.assertIn("<MAIN_CHAT_CONTEXT>", log_text)
+                self.assertIn("remember the login timeout decision", log_text)
+
     def test_empty_selection_review_opens_context_editor(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("edit src/main.tsx")

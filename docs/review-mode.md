@@ -34,10 +34,13 @@ the original range or the diff. Gaps are auto-filled or surfaced as
 ## Lifecycle
 
 1. **User starts a review.** `:StriderReview <prose>` with optional visual
-   range. The review pane opens immediately in `stop: planning...` state
-   — the user sees activity from keystroke zero.
-2. **Strider sends `/plan <prose>`** to the extension. The extension's
-   `plan` command tells the model to produce a plan by calling the
+   range. The start editor defaults to a fresh review context; pressing
+   `<C-g>c` toggles copying the current main chat transcript into the review
+   prompt as background. The review pane opens immediately in
+   `stop: planning...` state — the user sees activity from keystroke zero.
+2. **Strider sends `/plan <prose>`** to the extension. If main-chat context was
+   selected, Strider appends it in a bounded `<MAIN_CHAT_CONTEXT>` block. The
+   extension's `plan` command tells the model to produce a plan by calling the
    `strider_plan` tool. No prose explanation yet.
 3. **Model reads what it needs** and calls `strider_plan` with
    `{ scope, base?, stops: [{ path, startLine, endLine, title, why }] }`.

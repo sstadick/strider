@@ -701,6 +701,19 @@ function M.refresh_compose_hint()
 	end
 end
 
+local function focus_compose_at_end(win, buf)
+	vim.api.nvim_set_current_win(win)
+	vim.schedule(function()
+		if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf) then
+			return
+		end
+		local last_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
+		local last_text = vim.api.nvim_buf_get_lines(buf, last_line - 1, last_line, false)[1] or ""
+		pcall(vim.api.nvim_win_set_cursor, win, { last_line, #last_text })
+		vim.cmd("startinsert")
+	end)
+end
+
 -- Open the compose window as a horizontal split below an existing log
 -- window (or, if the log isn't open, in the bottom-right corner).
 -- Focus the compose window and drop into insert.
@@ -712,12 +725,7 @@ function M.open_compose(on_send)
 	for _, win in ipairs(vim.fn.win_findbuf(buf)) do
 		if vim.api.nvim_win_is_valid(win) then
 			M.refresh_compose_winbar()
-			vim.api.nvim_set_current_win(win)
-			vim.schedule(function()
-				if vim.api.nvim_win_is_valid(win) then
-					vim.cmd("startinsert")
-				end
-			end)
+			focus_compose_at_end(win, buf)
 			return win
 		end
 	end
@@ -744,15 +752,7 @@ function M.open_compose(on_send)
 	vim.wo[win].signcolumn = "no"
 	vim.wo[win].winfixheight = true
 	M.refresh_compose_winbar()
-	vim.schedule(function()
-		if not vim.api.nvim_win_is_valid(win) then
-			return
-		end
-		local last_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
-		local last_text = vim.api.nvim_buf_get_lines(buf, last_line - 1, last_line, false)[1] or ""
-		pcall(vim.api.nvim_win_set_cursor, win, { last_line, #last_text })
-		vim.cmd("startinsert")
-	end)
+	focus_compose_at_end(win, buf)
 	return win
 end
 

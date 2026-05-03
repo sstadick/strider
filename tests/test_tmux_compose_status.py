@@ -70,6 +70,40 @@ class TmuxComposeStatusTests(unittest.TestCase):
                 second_id = h.expr("bufnr('strider://compose')")
                 self.assertEqual(first_id, second_id)
 
+    def test_chat_with_range_focuses_visible_compose_at_end(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("edit src/main.tsx")
+                source_buf = int(h.lua("vim.api.nvim_get_current_buf()"))
+                h.ex("StriderChat")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+                h.lua(
+                    "(function() "
+                    f"  for _, win in ipairs(vim.fn.win_findbuf({source_buf})) do "
+                    "    if vim.api.nvim_win_get_config(win).relative == '' then "
+                    "      vim.api.nvim_set_current_win(win); return true "
+                    "    end "
+                    "  end; "
+                    "  return false "
+                    "end)()"
+                )
+
+                h.ex("1,2StriderChat")
+
+                h.wait_until(
+                    lambda: h.lua_bool(
+                        "(function() "
+                        "  if vim.fn.bufname('%') ~= 'strider://compose' then return false end; "
+                        "  local cursor = vim.api.nvim_win_get_cursor(0); "
+                        "  local last = vim.api.nvim_buf_line_count(0); "
+                        "  local line = vim.api.nvim_buf_get_lines(0, last - 1, last, false)[1] or ''; "
+                        "  return cursor[1] == last and cursor[2] == #line "
+                        "end)()"
+                    ),
+                    timeout=3.0,
+                )
+                self.assertIn("src/main.tsx:1-2", "\n".join(h.buffer_lines("strider://compose")))
+
     def test_compose_winbar_is_idle_when_chat_opens(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

@@ -1,8 +1,6 @@
 # Ready for work
-- Still need a way to queue up follow up messages
 - Generally speed up the review process. Unsure how to do this. But for small reviews maybe steal some context from... somewhere?
 - we need to do a round of tidy up on the flow related logs and such to make sure we have commands to see everything
-- I'd still like a way to queue up follow up tasks in addition to steering while the model is runnings
 
 
 # Need refinement

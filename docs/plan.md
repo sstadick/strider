@@ -92,7 +92,7 @@ Keep local for now, but preserve space for:
 Fake pi backend + tmux+nvim harness:
 
 ```bash
-python3 -m unittest tests.test_vim_exec tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_tmux_log_rendering tests.test_rpc_commands tests.test_plan_helpers tests.test_review_render tests.test_rpc_tools tests.test_count_lines
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 Goal: stay in the low-seconds range.

@@ -220,10 +220,10 @@ pi --no-extensions --extension ./pi/strider-stepper.ts
 pi --mode rpc --no-extensions --extension ./pi/strider-stepper.ts
 ```
 
-Run the fake-backend test suite:
+Run the default fake-backend test suite:
 
 ```bash
-python3 -m unittest tests.test_vim_exec tests.test_tmux_search tests.test_tmux_review tests.test_tmux_popups tests.test_tmux_tangent tests.test_tmux_log_rendering tests.test_rpc_commands tests.test_plan_helpers tests.test_review_render tests.test_rpc_tools tests.test_count_lines
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 Format Lua before committing:
@@ -232,10 +232,11 @@ Format Lua before committing:
 stylua lua plugin tests/support/minimal_init.lua
 ```
 
-Check file sizes against the repo conventions:
+Check file sizes and demo freshness against the repo conventions:
 
 ```bash
 python3 scripts/count_lines.py
+python3 scripts/check_recordings.py
 ```
 
 Optional real-pi smoke test:

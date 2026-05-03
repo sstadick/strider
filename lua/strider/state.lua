@@ -1,3 +1,5 @@
+local session_factory = require("strider.state.session")
+
 local M = {}
 
 local lane_order = { "main", "flow", "q", "patch", "review" }
@@ -104,12 +106,7 @@ end
 
 local function has_model_fields(profile)
 	return type(profile) == "table"
-		and (
-			profile.model ~= nil
-			or profile.provider ~= nil
-			or profile.thinking ~= nil
-			or profile.reasoning ~= nil
-		)
+		and (profile.model ~= nil or profile.provider ~= nil or profile.thinking ~= nil or profile.reasoning ~= nil)
 end
 
 local function lane_model_keys(lane)
@@ -140,57 +137,6 @@ local function select_model_profile(profiles, requested)
 		return profiles.default, "default"
 	end
 	return nil, nil
-end
-
-local function new_session(cwd, lane)
-	return {
-		assistant_text = nil,
-		assistant_thinking = {},
-		message_text = nil,
-		model_label = nil,
-		model_profile = nil,
-		model_profile_override = false,
-		chunk_lines = {},
-		chunk_path = nil,
-		chat_read_only = false,
-		comment_buffers = {},
-		compose_buf = nil,
-		cwd = cwd,
-		highlight_buf = nil,
-		job_id = nil,
-		lane = lane,
-		last_summary = nil,
-		last_touched_file = nil,
-		last_error = nil,
-		last_user_message = nil,
-		log_buf = nil,
-		pending_request = nil,
-		progress = nil,
-		active_flow_card_id = nil,
-		flow_cards = {},
-		flow_card_seq = 0,
-		q_answer_buf = nil,
-		q_answer_card_id = nil,
-		q_answer_done = false,
-		q_answer_prompt = nil,
-		q_answer_text = nil,
-		q_answer_win = nil,
-		recent_files = {},
-		request_seq = 0,
-		review = nil,
-		review_acceptances = {},
-		review_buf = nil,
-		review_win = nil,
-		search_history = {},
-		status = {},
-		status_buf = nil,
-		stderr_tail = "",
-		stdout_tail = "",
-		tool_args = {},
-		tool_marks = {},
-		tool_paths = {},
-		widget = {},
-	}
 end
 
 M.config = vim.tbl_deep_extend("force", defaults, {
@@ -325,7 +271,7 @@ function M.ensure_session(arg1, arg2)
 		cwd = current and current.cwd or vim.fn.getcwd()
 	end
 	if not M.sessions[lane] or M.sessions[lane].cwd ~= cwd then
-		M.sessions[lane] = new_session(cwd, lane)
+		M.sessions[lane] = session_factory.new(cwd, lane)
 	end
 	return M.sessions[lane]
 end

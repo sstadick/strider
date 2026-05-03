@@ -25,6 +25,12 @@ metadata when `ffprobe` is available. Run it from the repo root after UI
 changes that affect command names, layouts, fake pi responses, or fixture
 content.
 
+To check whether any tape output is missing or older than its source:
+
+```bash
+python3 scripts/check_recordings.py
+```
+
 ## Render one demo
 
 ```bash
@@ -52,7 +58,8 @@ VHS_BIN=/opt/homebrew/bin/vhs recordings/vhs/render-all.sh
    explicit `Ctrl+S` submit step in the tape after the command-line `Enter`.
 4. Open the GIF and check that it starts after setup, has no error prompts,
    and ends on the intended Strider surface.
-5. Run `recordings/vhs/render-all.sh` before committing a full refresh.
+5. Run `python3 scripts/check_recordings.py` to confirm the GIF is fresh.
+6. Run `recordings/vhs/render-all.sh` before committing a full refresh.
 
 ## Demos
 
@@ -67,7 +74,7 @@ VHS_BIN=/opt/homebrew/bin/vhs recordings/vhs/render-all.sh
 - `chat-review.gif` — `:StriderChat` followed by reviewing the resulting diff
 - `chat-readonly.gif` — `:StriderChatReadOnly` adds an `RO` badge and read-only prompt guard for chat
 - `reasoning-log.gif` — a chat turn showing faint reasoning text, compact tool output, inline diff rows, and the final answer
-- `tangent.gif` — `:StriderQ` opens a side-question card and keeps the main chat surfaces out of the way
+- `tangent.gif` — `:StriderQ` asks a side question, records the answer for `:StriderQs`, and keeps the main chat surfaces out of the way
 
 ## How it works
 

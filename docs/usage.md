@@ -219,7 +219,7 @@ when the review ends. No external sync is performed.
 
 Tool calls show their results inline.
 
-- `edit` operations render under `* Edited <path> (+N -M)` with inline diff
+- `edit` operations render under `• Edited <path> (+N -M)` with inline diff
   rows, a line-number gutter, green/red change markers, and source syntax
   highlighting for the changed code.
 - `read` and `write` output stays in fenced markdown code blocks tagged with
@@ -253,8 +253,8 @@ On flow workers (`:StriderQ`, `:StriderSearch`, `:StriderPatch`), clarify
 prompts stay popup-based and their transcript lands in that worker's log.
 
 Plan proposals pair the `[plan]` body block with an Accept / Modify / Reject
-picker. Modify opens an editor seeded with the proposal body; Reject sends
-cancellation.
+picker. Modify seeds the chat compose buffer with the proposal body so the user
+can edit and send it in place; Reject sends cancellation.
 
 ## StriderQ And Patch
 

@@ -81,6 +81,8 @@ local function review_lines(session)
 		state_text = "planning"
 	elseif review.awaiting_summary then
 		state_text = "waiting for summary"
+	elseif review.summary_confirming then
+		state_text = "waiting for summary confirmation"
 	elseif not review.active then
 		state_text = "complete"
 	elseif review.pending_question then

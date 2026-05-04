@@ -17,6 +17,7 @@ README.
 | `:'<,'>StriderReview [prompt]` | Open the review popup scoped to the selected range |
 | `:StriderNext` / `:StriderPrev` | Walk review stops; `:StriderNext!` accepts the current stop first |
 | `:StriderReviewItems` | Pick any stop from the plan |
+| `:StriderReviewSummary` | Reopen the completed review summary editor and forward it to main chat |
 | `:StriderComment {text}` | Comment on the current stop |
 | `:'<,'>StriderComment {text}` | Comment on a visual sub-range |
 | `:StriderComments` | Browse recorded review comments |
@@ -39,11 +40,11 @@ README.
 | `:StriderResume [id-or-path]` | Resume a saved pi session |
 | `:StriderRetry` | Re-dispatch a stalled plan turn |
 
-`:StriderSearch`, `:StriderReview`, `:StriderPatch`, `:StriderQ`, and
-`:StriderComment` use floating editors. Submit with `<C-s>`, cancel with
-`<Esc><Esc>`. When starting a new `:StriderReview`, press `<C-g>c` in the
-review editor to toggle between a fresh review context and copying the current
-main chat transcript as background.
+`:StriderSearch`, `:StriderReview`, `:StriderPatch`, `:StriderQ`,
+`:StriderComment`, and the end-of-review summary confirmation use floating
+editors. Submit with `<C-s>`, cancel with `<Esc><Esc>`. When starting a new
+`:StriderReview`, press `<C-g>c` in the review editor to toggle between a fresh
+review context and copying the current main chat transcript as background.
 
 `:StriderChat` keeps persistent main log and compose buffers, shown as a
 right-side split log/compose stack. Toggling it closed hides those surfaces; if

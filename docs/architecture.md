@@ -212,7 +212,7 @@ Purpose:
 - show one active review item
 - show the current explanation
 - show excerpt and item-local comments
-- show the end-of-review summary
+- show the end-of-review summary and whether it is awaiting user confirmation
 - show busy state while waiting for agent responses
 
 ### Log buffer
@@ -243,6 +243,7 @@ Purpose:
 
 Buffer names:
 - `strider://prompt` — used by `:StriderSearch`, `:StriderReview`, `:StriderPatch`, `:StriderQ`
+- `strider://review-summary` — editable end-of-review confirmation before forwarding to main chat
 - `strider://compose` — persistent user input buffer used by `:StriderChat`;
   also hijacked to reply to `strider_clarify` questions and to edit
   plan-proposal bodies (the `[Clarify]` badge marks this state)

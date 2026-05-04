@@ -33,6 +33,7 @@ class TmuxReviewTests(unittest.TestCase):
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             self.assertEqual("0", h.expr("exists(':StriderTeach')"))
             self.assertEqual("2", h.expr("exists(':StriderReview')"))
+            self.assertEqual("2", h.expr("exists(':StriderReviewSummary')"))
             self.assertEqual("2", h.expr("exists(':StriderQ')"))
             self.assertEqual("0", h.expr("exists(':StriderQCard')"))
             self.assertEqual("2", h.expr("exists(':StriderLogQ')"))
@@ -149,13 +150,18 @@ class TmuxReviewTests(unittest.TestCase):
             )
 
             self.assertReviewLogHidden(h)
+            self.assertTrue(h.popup_open("strider://review-summary"))
             review_text = "\n".join(h.buffer_lines("strider://review"))
             self.assertIn("# Strider Review Complete", review_text)
-            self.assertIn("forwarded to main chat", review_text)
+            self.assertIn("awaiting your confirmation", review_text)
+
+            h.submit_popup(" Edited before forwarding.", name="strider://review-summary")
+            h.wait_until(lambda: "forwarded to main chat" in "\n".join(h.buffer_lines("strider://review")))
 
             log_text = "\n".join(h.review_log_lines())
             self.assertIn("Summarize unresolved review comments", log_text)
             self.assertIn("I found unresolved review comments", log_text)
+            self.assertIn("Edited before forwarding", "\n".join(h.log_lines()))
 
     def test_review_end_without_comments_stays_in_review_pane(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
@@ -172,9 +178,13 @@ class TmuxReviewTests(unittest.TestCase):
             )
 
             review_text = "\n".join(h.buffer_lines("strider://review"))
-            self.assertIn("forwarded to main chat", review_text)
+            self.assertIn("awaiting your confirmation", review_text)
             self.assertIn("## Next actions", review_text)
+            self.assertTrue(h.popup_open("strider://review-summary"))
             self.assertReviewLogHidden(h)
+
+            h.submit_popup(name="strider://review-summary")
+            h.wait_until(lambda: "forwarded to main chat" in "\n".join(h.buffer_lines("strider://review")))
 
     def test_manually_opened_review_log_survives_review_completion(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:

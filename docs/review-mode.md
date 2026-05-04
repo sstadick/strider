@@ -67,9 +67,10 @@ the original range or the diff. Gaps are auto-filled or surfaced as
 9. **End of review.** Walking past the last stop ends the review in the
    `strider://review` pane. The review log is not opened automatically. If any
    comments are unresolved, Strider sends a final `/review` in the background
-   that feeds the comments back to the agent for summary/follow-up; the final
-   summary renders in the review pane and is forwarded into the main chat
-   transcript.
+   that feeds the comments back to the agent for summary/follow-up. The final
+   summary renders in the review pane, then opens an editable confirmation
+   popup; submitting it forwards the summary into the main chat transcript.
+   If the popup is dismissed, `:StriderReviewSummary` reopens it.
 
 ## Tools (extension)
 

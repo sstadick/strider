@@ -239,17 +239,77 @@ local function append_review_summary_to_main(summary)
 	return true
 end
 
-function M.complete_review_summary(summary)
+function M.forward_review_summary(summary)
 	summary = trimmed(summary)
 	if summary == "" then
+		ui.notify("Review summary cannot be empty", vim.log.levels.WARN)
 		return false
 	end
 	local forwarded = append_review_summary_to_main(summary)
 	if forwarded then
 		review.mark_summary_forwarded(summary)
+		ui.notify("Review summary forwarded to main chat", vim.log.levels.INFO)
 	end
-	rpc.stop(REVIEW_LANE)
 	return forwarded
+end
+
+local summary_editor_name = "strider://review-summary"
+local summary_editor_open = false
+
+local function open_review_summary_editor(summary)
+	summary = trimmed(summary)
+	if summary == "" then
+		return false
+	end
+	if summary_editor_open and vim.fn.bufexists(summary_editor_name) == 1 then
+		ui.notify("Review summary editor is already open", vim.log.levels.WARN)
+		return false
+	end
+	summary_editor_open = false
+	if not review.begin_summary_confirmation(summary) then
+		return false
+	end
+	summary_editor_open = true
+	rpc.stop(REVIEW_LANE)
+	ui.open_prompt_editor("Strider review summary", function(text)
+		local forwarded = M.forward_review_summary(text)
+		if forwarded then
+			summary_editor_open = false
+		end
+		return forwarded
+	end, {
+		allow_empty = true,
+		hint_lines = {
+			"Edit the final review text, then forward it to the main chat transcript.",
+			"Cancel keeps the summary in the review pane; :StriderReviewSummary reopens it.",
+		},
+		name = summary_editor_name,
+		on_cancel = function()
+			summary_editor_open = false
+			review.end_summary_confirmation()
+			ui.notify("Review summary kept in the review pane", vim.log.levels.INFO)
+		end,
+		prefill = summary,
+		submit_hint = "<C-s> to forward · <Esc><Esc> to keep in review pane",
+	})
+	return true
+end
+
+function M.complete_review_summary(summary)
+	return open_review_summary_editor(summary)
+end
+
+function M.review_summary()
+	if review.summary_forwarded() then
+		ui.notify("Review summary is already forwarded to main chat", vim.log.levels.INFO)
+		return false
+	end
+	local summary = trimmed(review.summary_text() or "")
+	if summary == "" then
+		ui.notify("No completed review summary to forward", vim.log.levels.WARN)
+		return false
+	end
+	return open_review_summary_editor(summary)
 end
 
 local function start_selection_review(opts)

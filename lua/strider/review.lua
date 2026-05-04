@@ -475,6 +475,42 @@ function M.pending_comment_lines()
 	return comments.pending_comment_lines(review_deps())
 end
 
+function M.summary_text()
+	local review = review_state()
+	return review and review.summary or nil
+end
+
+function M.summary_forwarded()
+	local review = review_state()
+	return review ~= nil and review.summary_forwarded == true
+end
+
+function M.begin_summary_confirmation(summary)
+	local review = review_state()
+	if not review then
+		return false
+	end
+	local text = vim.trim(summary or "")
+	if text ~= "" then
+		review.summary = text
+	end
+	review.awaiting_summary = false
+	review.summary_forwarded = false
+	review.summary_confirming = true
+	M.render()
+	return true
+end
+
+function M.end_summary_confirmation()
+	local review = review_state()
+	if not review then
+		return false
+	end
+	review.summary_confirming = false
+	M.render()
+	return true
+end
+
 function M.mark_summary_forwarded(summary)
 	return comments.mark_summary_forwarded(summary, review_deps())
 end

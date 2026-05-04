@@ -183,6 +183,7 @@ panes:
 | `:StriderCardsClear[!]` | Dismiss completed cards; `!` includes running cards |
 | `:'<,'>StriderPatch [prompt]` | Selection-scoped patch |
 | `:StriderNext` / `:StriderPrev` | Move through review stops |
+| `:StriderReviewSummary` | Edit/confirm the completed review summary before forwarding |
 | `:StriderComment [text]` | Record a review comment |
 | `:StriderStatus` | Show lane/status/control summary |
 | `:StriderStop` | Abort the main-lane turn |

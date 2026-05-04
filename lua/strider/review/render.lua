@@ -217,6 +217,8 @@ local function review_status_lines(review, item)
 		status_text = "planning"
 	elseif review.awaiting_summary then
 		status_text = "waiting for summary"
+	elseif review.summary_confirming then
+		status_text = "waiting for summary confirmation"
 	elseif review.pending_question then
 		status_text = "answering ranged question"
 	elseif review.pending_item_question then
@@ -243,8 +245,10 @@ local function review_status_lines(review, item)
 		table.insert(lines, "- summary: `forwarded to main chat`")
 	elseif review.awaiting_summary then
 		table.insert(lines, "- summary: `waiting for agent`")
+	elseif review.summary_confirming then
+		table.insert(lines, "- summary: `awaiting your confirmation`")
 	elseif not review.active and review.summary and review.summary ~= "" then
-		table.insert(lines, "- summary: `ready`")
+		table.insert(lines, "- summary: `ready to forward`")
 	end
 	if review.pending_question then
 		table.insert(lines, "- waiting: ranged answer is streaming inline; moving stops will clear it")
@@ -437,8 +441,10 @@ local function append_controls(lines, review)
 			table.insert(actions, 2, "- `:StriderChat` opens the main chat with the forwarded review summary.")
 		elseif review.awaiting_summary then
 			table.insert(actions, 2, "- Waiting for the agent to summarize unresolved comments before forwarding.")
+		elseif review.summary_confirming then
+			table.insert(actions, 2, "- Edit/confirm the popped-up summary to forward it to main chat.")
 		elseif review.summary and review.summary ~= "" then
-			table.insert(actions, 2, "- Summary is ready in this pane.")
+			table.insert(actions, 2, "- Summary is ready here; `:StriderReviewSummary` reopens the editor to forward it.")
 		end
 		append_section(lines, "Next actions", actions)
 		return

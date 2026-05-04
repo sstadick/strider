@@ -46,6 +46,10 @@ vim.api.nvim_create_user_command("StriderReviewItems", function()
 	require("strider").review_items()
 end, { desc = "Open Strider review items" })
 
+vim.api.nvim_create_user_command("StriderReviewSummary", function()
+	require("strider").review_summary()
+end, { desc = "Edit and forward the completed Strider review summary" })
+
 vim.api.nvim_create_user_command("StriderNext", function(opts)
 	require("strider").next_step(opts.bang)
 end, { bang = true, desc = "Advance to the next Strider review item; ! accepts the current stop first" })

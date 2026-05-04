@@ -37,10 +37,11 @@ function M.mark_summary_forwarded(summary, deps)
 		return false
 	end
 	local text = vim.trim(summary or "")
-	if text ~= "" and (not review.summary or review.summary == "") then
+	if text ~= "" then
 		review.summary = text
 	end
 	review.awaiting_summary = false
+	review.summary_confirming = false
 	review.summary_forwarded = true
 	deps.render()
 	return true

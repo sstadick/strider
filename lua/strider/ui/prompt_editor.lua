@@ -48,7 +48,7 @@ local function open_scratch_editor(opts, on_submit)
 	vim.wo[win].linebreak = true
 	vim.wo[win].winhighlight = "NormalFloat:Normal,FloatBorder:FloatBorder"
 
-	local submit_hint = "<C-s> to submit · <Esc><Esc> to cancel"
+	local submit_hint = opts.submit_hint or "<C-s> to submit · <Esc><Esc> to cancel"
 
 	local function render_hint()
 		if not vim.api.nvim_buf_is_valid(buf) then
@@ -181,8 +181,10 @@ local function normalize_prompt_editor_opts(opts)
 		opts.hint_lines ~= nil
 		or opts.prefill ~= nil
 		or opts.allow_empty ~= nil
+		or opts.name ~= nil
 		or opts.on_cancel ~= nil
 		or opts.extra_keymaps ~= nil
+		or opts.submit_hint ~= nil
 	then
 		return vim.deepcopy(opts)
 	end
@@ -192,12 +194,14 @@ end
 function M.open_prompt_editor(label, on_submit, opts)
 	opts = normalize_prompt_editor_opts(opts)
 	open_scratch_editor({
-		name = "strider://prompt",
+		allow_empty = opts.allow_empty,
+		name = opts.name or "strider://prompt",
 		title = label,
 		hint_lines = opts.hint_lines,
 		prefill = opts.prefill,
 		on_cancel = opts.on_cancel,
 		extra_keymaps = opts.extra_keymaps,
+		submit_hint = opts.submit_hint,
 	}, on_submit)
 end
 

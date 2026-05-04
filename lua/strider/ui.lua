@@ -6,6 +6,7 @@ local log_diff = require("strider.log.diff")
 local log_pin = require("strider.log_pin")
 local log_follow = require("strider.ui.log_follow")
 local live_block = require("strider.ui.live_block")
+local markdown_render = require("strider.ui.markdown_render")
 local patch_cards = require("strider.ui.patch_cards")
 local marks = require("strider.ui.marks")
 local prompt_editor = require("strider.ui.prompt_editor")
@@ -154,6 +155,19 @@ local function stop_hint(lane)
 	return stop_command(lane) .. " to interrupt"
 end
 
+local function compose_buffer_name()
+	return "strider://compose"
+end
+
+local function is_compose_buffer(buf)
+	return buf and vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf) == compose_buffer_name()
+end
+
+local function compose_buffer_from_session(session)
+	local buf = session and session.compose_buf
+	return is_compose_buffer(buf) and buf or nil
+end
+
 local function compose_status_line(progress, lane)
 	local session = state.get_session(lane)
 	local statuses = session and session.status or {}
@@ -196,8 +210,8 @@ end
 function M.refresh_compose_winbar(lane)
 	lane = normalize_lane(lane)
 	local session = state.get_session(lane)
-	local buf = session and session.compose_buf
-	if not buf or not vim.api.nvim_buf_is_valid(buf) then
+	local buf = compose_buffer_from_session(session)
+	if not buf then
 		return
 	end
 	local left, right, left_is_statusline = compose_status_line(session and session.progress, lane)
@@ -226,8 +240,8 @@ local function spin_tick(lane)
 		return
 	end
 	spin.index = (spin.index + 1) % (#WORKING_LABEL + WORKING_SHINE_PADDING * 2)
-	local cbuf = session.compose_buf
-	if cbuf and vim.api.nvim_buf_is_valid(cbuf) and #vim.fn.win_findbuf(cbuf) > 0 then
+	local cbuf = compose_buffer_from_session(session)
+	if cbuf and #vim.fn.win_findbuf(cbuf) > 0 then
 		M.refresh_compose_winbar(lane)
 	end
 	M.refresh_log_winbar(lane)
@@ -300,6 +314,9 @@ local function configure_scratch_buffer(buf, filetype)
 	vim.bo[buf].modifiable = true
 	if filetype then
 		vim.bo[buf].filetype = filetype
+		if filetype == "markdown" then
+			markdown_render.keep_conceal(buf)
+		end
 	end
 end
 
@@ -374,6 +391,7 @@ function M.show_status(lines)
 		vim.wo[win].relativenumber = false
 		vim.wo[win].signcolumn = "no"
 	end
+	markdown_render.apply_to_window(win)
 	pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
 	if previous and vim.api.nvim_win_is_valid(previous) then
 		vim.api.nvim_set_current_win(previous)
@@ -446,10 +464,7 @@ local function configure_log_window(win)
 	vim.wo[win].signcolumn = "no"
 	vim.wo[win].foldcolumn = "0"
 	vim.wo[win].cursorline = false
-	pcall(function()
-		vim.wo[win].conceallevel = 2
-		vim.wo[win].concealcursor = "nc"
-	end)
+	markdown_render.apply_to_window(win)
 end
 
 function M.open_log(opts, lane)
@@ -500,8 +515,22 @@ end
 -- successful send but kept alive across sends.
 local compose_ns = vim.api.nvim_create_namespace("strider-compose-hint")
 
-local function compose_buffer_name()
-	return "strider://compose"
+local function configure_compose_buffer(buf)
+	vim.bo[buf].buftype = "nofile"
+	vim.bo[buf].swapfile = false
+	vim.bo[buf].bufhidden = "hide"
+	vim.bo[buf].filetype = ""
+end
+
+local function configure_compose_window(win)
+	vim.wo[win].wrap = true
+	vim.wo[win].linebreak = true
+	vim.wo[win].number = false
+	vim.wo[win].relativenumber = false
+	vim.wo[win].signcolumn = "no"
+	vim.wo[win].winfixheight = true
+	pcall(vim.api.nvim_set_option_value, "conceallevel", 0, { scope = "local", win = win })
+	pcall(vim.api.nvim_set_option_value, "concealcursor", "", { scope = "local", win = win })
 end
 
 local function compose_hint_text()
@@ -517,17 +546,22 @@ local function compose_hint_text()
 end
 
 function M.ensure_compose_buffer(on_send)
-	local session = state.get_session()
-	if session.compose_buf and vim.api.nvim_buf_is_valid(session.compose_buf) then
-		return session.compose_buf
+	local session = state.get_session() or state.ensure_session("main", vim.fn.getcwd())
+	local buf = compose_buffer_from_session(session)
+	if buf and vim.b[buf].strider_compose_attached and session.compose_hint_renderer then
+		configure_compose_buffer(buf)
+		return buf
 	end
 
-	local buf = vim.api.nvim_create_buf(false, true)
+	if not buf then
+		session.compose_buf = nil
+		local existing = vim.fn.bufnr(compose_buffer_name())
+		buf = is_compose_buffer(existing) and existing or vim.api.nvim_create_buf(false, true)
+	end
 	pcall(vim.api.nvim_buf_set_name, buf, compose_buffer_name())
-	vim.bo[buf].buftype = "nofile"
-	vim.bo[buf].swapfile = false
-	vim.bo[buf].bufhidden = "hide"
+	configure_compose_buffer(buf)
 	session.compose_buf = buf
+	vim.b[buf].strider_compose_attached = true
 
 	local function render_hint()
 		if not vim.api.nvim_buf_is_valid(buf) then
@@ -557,7 +591,7 @@ function M.ensure_compose_buffer(on_send)
 			return
 		end
 		vim.schedule(function()
-			if vim.api.nvim_win_is_valid(compose_win) then
+			if vim.api.nvim_win_is_valid(compose_win) and vim.api.nvim_win_get_buf(compose_win) == buf then
 				vim.api.nvim_set_current_win(compose_win)
 				local last = math.max(vim.api.nvim_buf_line_count(buf), 1)
 				local lnum = math.max(1, math.min(cursor_lnum or last, last))
@@ -704,7 +738,7 @@ end
 local function focus_compose_at_end(win, buf)
 	vim.api.nvim_set_current_win(win)
 	vim.schedule(function()
-		if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf) then
+		if not vim.api.nvim_win_is_valid(win) or not is_compose_buffer(buf) or vim.api.nvim_win_get_buf(win) ~= buf then
 			return
 		end
 		local last_line = math.max(vim.api.nvim_buf_line_count(buf), 1)
@@ -724,6 +758,7 @@ function M.open_compose(on_send)
 	-- Already visible somewhere? Just focus.
 	for _, win in ipairs(vim.fn.win_findbuf(buf)) do
 		if vim.api.nvim_win_is_valid(win) then
+			configure_compose_window(win)
 			M.refresh_compose_winbar()
 			focus_compose_at_end(win, buf)
 			return win
@@ -745,12 +780,7 @@ function M.open_compose(on_send)
 	vim.api.nvim_win_set_buf(win, buf)
 	-- Compose is a thin input surface; keep it short by default.
 	pcall(vim.api.nvim_win_set_height, win, 8)
-	vim.wo[win].wrap = true
-	vim.wo[win].linebreak = true
-	vim.wo[win].number = false
-	vim.wo[win].relativenumber = false
-	vim.wo[win].signcolumn = "no"
-	vim.wo[win].winfixheight = true
+	configure_compose_window(win)
 	M.refresh_compose_winbar()
 	focus_compose_at_end(win, buf)
 	return win
@@ -784,7 +814,7 @@ end
 
 function M.hide_compose()
 	local session = state.get_session()
-	close_windows_for_buffer(session and session.compose_buf)
+	close_windows_for_buffer(compose_buffer_from_session(session))
 end
 
 -- True if either chat surface (log or compose) has a live window.
@@ -809,7 +839,7 @@ function M.chat_is_visible()
 	if not session then
 		return false
 	end
-	for _, buf in ipairs({ session.log_buf, session.compose_buf }) do
+	for _, buf in ipairs({ session.log_buf, compose_buffer_from_session(session) }) do
 		if buf and vim.api.nvim_buf_is_valid(buf) then
 			for _, win in ipairs(vim.fn.win_findbuf(buf)) do
 				if vim.api.nvim_win_is_valid(win) then
@@ -823,7 +853,7 @@ end
 
 local function is_main_chat_surface(session, buf)
 	return session
-		and ((session.log_buf and buf == session.log_buf) or (session.compose_buf and buf == session.compose_buf))
+		and ((session.log_buf and buf == session.log_buf) or (compose_buffer_from_session(session) == buf))
 end
 
 local function only_main_chat_window(session)
@@ -1260,6 +1290,7 @@ local function configure_review_window(win)
 	vim.wo[win].signcolumn = "no"
 	vim.wo[win].cursorline = false
 	vim.wo[win].winfixwidth = true
+	markdown_render.apply_to_window(win)
 end
 
 function M.show_review()
@@ -1475,8 +1506,8 @@ end
 -- the user was already typing.
 function M.seed_compose(text)
 	local session = state.get_session()
-	local buf = session and session.compose_buf
-	if not buf or not vim.api.nvim_buf_is_valid(buf) then
+	local buf = compose_buffer_from_session(session)
+	if not buf then
 		return false
 	end
 	if compose_has_text(buf) then
@@ -1501,8 +1532,8 @@ function M.prefill_compose(text)
 		return false
 	end
 	local session = state.get_session()
-	local buf = session and session.compose_buf
-	if not buf or not vim.api.nvim_buf_is_valid(buf) then
+	local buf = compose_buffer_from_session(session)
+	if not buf then
 		return false
 	end
 

@@ -1,6 +1,7 @@
 local card_names = require("strider.ui.card_names")
 local chat_card = require("strider.ui.chat_card")
 local highlights = require("strider.ui.highlights")
+local markdown_render = require("strider.ui.markdown_render")
 local q_cards = require("strider.ui.q_cards")
 local q_compose = require("strider.ui.q_card_compose")
 local state = require("strider.state")
@@ -60,6 +61,9 @@ local function configure_scratch_buffer(buf, filetype)
 	vim.bo[buf].modifiable = true
 	if filetype then
 		vim.bo[buf].filetype = filetype
+		if filetype == "markdown" then
+			markdown_render.keep_conceal(buf)
+		end
 	end
 end
 local function ensure_card_state(session)
@@ -291,6 +295,7 @@ local function configure_card_window(win)
 	vim.wo[win].foldcolumn = "0"
 	vim.wo[win].cursorline = false
 	vim.wo[win].winhighlight = "NormalFloat:Normal,FloatBorder:FloatBorder"
+	markdown_render.apply_to_window(win)
 end
 local function configure_answer_split(win)
 	vim.wo[win].wrap = true
@@ -301,6 +306,7 @@ local function configure_answer_split(win)
 	vim.wo[win].foldcolumn = "0"
 	vim.wo[win].cursorline = false
 	vim.wo[win].winfixwidth = true
+	markdown_render.apply_to_window(win)
 end
 local function preview_text(text)
 	local preview = vim.trim((text or ""):gsub("%s+", " "))

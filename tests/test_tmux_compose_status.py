@@ -70,6 +70,39 @@ class TmuxComposeStatusTests(unittest.TestCase):
                 second_id = h.expr("bufnr('strider://compose')")
                 self.assertEqual(first_id, second_id)
 
+    def test_compose_rejects_stale_session_buffer_handle(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("edit src/App.tsx")
+                source_buf = int(h.lua("vim.api.nvim_get_current_buf()"))
+                h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local session = state.ensure_session('main', vim.fn.getcwd()); "
+                    f"  session.compose_buf = {source_buf}; "
+                    "  return true "
+                    "end)()"
+                )
+
+                h.ex("StriderChat")
+
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+                compose_buf = int(h.expr("bufnr('strider://compose')"))
+                self.assertNotEqual(source_buf, compose_buf)
+                self.assertEqual(
+                    "",
+                    h.lua(
+                        "(function() "
+                        f"  for _, win in ipairs(vim.fn.win_findbuf({source_buf})) do "
+                        "    if vim.api.nvim_win_is_valid(win) and (vim.wo[win].winbar or ''):match('Strider') then "
+                        "      return vim.wo[win].winbar "
+                        "    end "
+                        "  end; "
+                        "  return '' "
+                        "end)()"
+                    ),
+                )
+
     def test_chat_with_range_focuses_visible_compose_at_end(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

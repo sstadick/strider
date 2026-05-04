@@ -214,6 +214,32 @@ class TmuxFlowCardTests(unittest.TestCase):
                 self.assertTrue(h.lua_bool("vim.api.nvim_win_get_config(0).relative == ''"))
                 self.assertIn("queued answer", "\n".join(h.buffer_lines("strider://StriderQAnswer")))
 
+    def test_chat_and_q_answer_windows_keep_markdown_conceal(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                opts = h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); "
+                    "  local ui = require('strider.ui'); "
+                    "  state.ensure_session('main', vim.fn.getcwd()); "
+                    "  ui.open_chat_split(function() return true end); "
+                    "  state.ensure_session('q', vim.fn.getcwd()); "
+                    "  ui.open_q_answer('why **bold**?', 'q', { new = true }); "
+                    "  ui.finish_q_answer('answer with **bold**', 'success', 'q'); "
+                    "  ui.open_q_answer_split(nil, 'q'); "
+                    "  local function options(name) "
+                    "    local buf = vim.fn.bufnr(name); "
+                    "    local win = vim.fn.win_findbuf(buf)[1]; "
+                    "    if not win then return 'missing' end; "
+                    "    local level = vim.api.nvim_get_option_value('conceallevel', { scope = 'local', win = win }); "
+                    "    local cursor = vim.api.nvim_get_option_value('concealcursor', { scope = 'local', win = win }); "
+                    "    return tostring(level) .. ':' .. cursor; "
+                    "  end; "
+                    "  return options('strider://log') .. ',' .. options('strider://StriderQAnswer') "
+                    "end)()"
+                ).split(",")
+                self.assertEqual(["3:nvic", "3:nvic"], opts)
+
     def test_card_keymaps_open_log_and_dismiss(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

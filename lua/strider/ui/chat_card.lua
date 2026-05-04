@@ -1,3 +1,4 @@
+local markdown_render = require("strider.ui.markdown_render")
 local state = require("strider.state")
 
 local M = {}
@@ -21,6 +22,7 @@ local function buffer()
 	vim.bo[buf].bufhidden = "hide"
 	vim.bo[buf].buftype = "nofile"
 	vim.bo[buf].filetype = "markdown"
+	markdown_render.keep_conceal(buf)
 	vim.bo[buf].modifiable = true
 	vim.bo[buf].swapfile = false
 	return buf
@@ -113,6 +115,7 @@ local function configure_window(win)
 	vim.wo[win].foldcolumn = "0"
 	vim.wo[win].cursorline = false
 	vim.wo[win].winhighlight = "NormalFloat:Normal,FloatBorder:FloatBorder"
+	markdown_render.apply_to_window(win)
 end
 
 local function attach(buf)

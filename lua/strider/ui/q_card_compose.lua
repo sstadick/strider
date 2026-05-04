@@ -24,7 +24,7 @@ end
 local function configure_buffer(buf)
 	vim.bo[buf].bufhidden = "hide"
 	vim.bo[buf].buftype = "nofile"
-	vim.bo[buf].filetype = "markdown"
+	vim.bo[buf].filetype = ""
 	vim.bo[buf].swapfile = false
 	vim.bo[buf].modifiable = true
 end
@@ -171,6 +171,8 @@ local function configure_window(win)
 	vim.wo[win].foldcolumn = "0"
 	vim.wo[win].cursorline = false
 	vim.wo[win].winhighlight = "NormalFloat:Normal,FloatBorder:FloatBorder"
+	pcall(vim.api.nvim_set_option_value, "conceallevel", 0, { scope = "local", win = win })
+	pcall(vim.api.nvim_set_option_value, "concealcursor", "", { scope = "local", win = win })
 end
 
 function M.ensure_buffer(card)

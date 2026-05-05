@@ -45,6 +45,7 @@ local compose_working_hl = G.compose_working
 local compose_working_soft_hl = G.compose_working_soft
 local compose_working_shine_hl = G.compose_working_shine
 local close_windows_for_buffer
+local remember_chat_return_focus
 local target_window
 local ensure_log_follow_autocmds = log_follow.ensure_autocmds
 local scroll_log_windows = log_follow.scroll_windows
@@ -801,6 +802,7 @@ end
 
 function M.open_chat_split(on_send)
 	local session = state.get_session("main")
+	remember_chat_return_focus(session)
 	if session then
 		session.chat_collapsed = false
 	end
@@ -856,6 +858,63 @@ local function is_main_chat_surface(session, buf)
 		and ((session.log_buf and buf == session.log_buf) or (compose_buffer_from_session(session) == buf))
 end
 
+local function is_current_tab_regular_window(win)
+	return win
+		and vim.api.nvim_win_is_valid(win)
+		and vim.api.nvim_win_get_config(win).relative == ""
+		and vim.api.nvim_win_get_tabpage(win) == vim.api.nvim_get_current_tabpage()
+end
+
+local function current_is_main_chat_surface(session)
+	local win = vim.api.nvim_get_current_win()
+	if not vim.api.nvim_win_is_valid(win) then
+		return false
+	end
+	return is_main_chat_surface(session, vim.api.nvim_win_get_buf(win))
+end
+
+remember_chat_return_focus = function(session)
+	if not session then
+		return
+	end
+	session.chat_return_win = nil
+	session.chat_return_buf = nil
+	local win = (target_window and target_window()) or vim.api.nvim_get_current_win()
+	if not is_current_tab_regular_window(win) then
+		return
+	end
+	local buf = vim.api.nvim_win_get_buf(win)
+	if is_main_chat_surface(session, buf) then
+		return
+	end
+	session.chat_return_win = win
+	session.chat_return_buf = buf
+end
+
+local function restore_chat_return_focus(session, should_restore)
+	if not session then
+		return false
+	end
+	local win = session.chat_return_win
+	local buf = session.chat_return_buf
+	session.chat_return_win = nil
+	session.chat_return_buf = nil
+	if not should_restore then
+		return false
+	end
+	if is_current_tab_regular_window(win) and pcall(vim.api.nvim_set_current_win, win) then
+		return true
+	end
+	if buf and vim.api.nvim_buf_is_valid(buf) then
+		for _, candidate in ipairs(vim.fn.win_findbuf(buf)) do
+			if is_current_tab_regular_window(candidate) and pcall(vim.api.nvim_set_current_win, candidate) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local function only_main_chat_window(session)
 	local fallback_win
 	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -884,6 +943,7 @@ end
 -- empty buffer behind so Neovim does not strand the user in strider://log.
 function M.hide_chat()
 	local session = state.get_session("main")
+	local restore_focus = current_is_main_chat_surface(session)
 	if session then
 		session.chat_collapsed = true
 	end
@@ -891,6 +951,7 @@ function M.hide_chat()
 	replace_chat_only_window(session)
 	M.hide_compose()
 	M.hide_log()
+	restore_chat_return_focus(session, restore_focus)
 end
 
 function M.should_auto_open_stream_log(lane)

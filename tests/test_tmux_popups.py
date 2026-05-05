@@ -364,6 +364,22 @@ class TmuxPopupTests(unittest.TestCase):
                 h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
                 self.assertFalse(h.lua_bool(card_visible))
 
+    def test_striderchat_hide_restores_previously_focused_window(self) -> None:
+        visible_expr = "require('strider.ui').chat_is_visible()"
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("edit src/main.tsx")
+                h.ex("botright vsplit src/App.tsx")
+                h.ex("wincmd h")
+                self.assertTrue(h.current_state()["buf"].endswith("src/main.tsx"))
+
+                h.ex("StriderChat")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+                h.ex("StriderChat")
+                h.wait_until(lambda: not h.lua_bool(visible_expr), timeout=3.0)
+
+                self.assertTrue(h.current_state()["buf"].endswith("src/main.tsx"))
+
     def test_striderchat_hide_from_chat_only_windows_lands_on_empty_buffer(self) -> None:
         visible_expr = "require('strider.ui').chat_is_visible()"
         window_names = "map(getwininfo(), {_, v -> bufname(v.bufnr)})"

@@ -11,6 +11,8 @@ function M.new(cwd, lane)
 		chunk_lines = {},
 		chunk_path = nil,
 		chat_read_only = false,
+		chat_return_buf = nil,
+		chat_return_win = nil,
 		comment_buffers = {},
 		compose_buf = nil,
 		cwd = cwd,

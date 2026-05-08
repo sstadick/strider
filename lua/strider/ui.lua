@@ -934,6 +934,9 @@ local function replace_chat_only_window(session)
 	if not win or not vim.api.nvim_win_is_valid(win) then
 		return
 	end
+	-- Changing the log window's buffer does not fire WinClosed, so close
+	-- any pinned user prompt before reusing the window as the fallback.
+	log_pin.close_for_window(win)
 	local buf = vim.api.nvim_create_buf(true, false)
 	vim.api.nvim_set_current_win(win)
 	vim.api.nvim_win_set_buf(win, buf)

@@ -407,6 +407,54 @@ class TmuxPopupTests(unittest.TestCase):
                 self.assertEqual("", h.expr("&buftype"))
                 self.assertEqual([""], h.json_expr(window_names))
 
+    def test_striderchat_hide_from_chat_only_log_closes_pinned_prompt(self) -> None:
+        visible_expr = "require('strider.ui').chat_is_visible()"
+        pin_visible = (
+            "(function() "
+            "  for _, win in ipairs(vim.api.nvim_list_wins()) do "
+            "    if vim.api.nvim_win_is_valid(win) then "
+            "      local buf = vim.api.nvim_win_get_buf(win); "
+            "      if vim.b[buf].strider_log_pin then return true end "
+            "    end "
+            "  end; "
+            "  return false "
+            "end)()"
+        )
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+                h.lua(
+                    "(function() "
+                    "  local ui = require('strider.ui'); "
+                    "  ui.append_block('user', 'why is the prompt still pinned?', 'main'); "
+                    "  for i = 1, 80 do ui.append({'assistant ' .. i}, 'main') end; "
+                    "  return true "
+                    "end)()"
+                )
+                h.wait_until(lambda: h.lua_bool(pin_visible), timeout=3.0)
+                h.lua(
+                    "(function() "
+                    "  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do "
+                    "    if vim.api.nvim_win_get_config(win).relative == '' then "
+                    "      local name = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)); "
+                    "      if not name:match('strider://log$') then "
+                    "        pcall(vim.api.nvim_win_close, win, true); "
+                    "      end "
+                    "    end "
+                    "  end; "
+                    "  return true "
+                    "end)()"
+                )
+                h.wait_until(lambda: h.lua_bool(visible_expr), timeout=3.0)
+                self.assertTrue(h.lua_bool(pin_visible))
+
+                h.ex("StriderChat")
+                h.wait_until(lambda: not h.lua_bool(visible_expr), timeout=3.0)
+
+                self.assertEqual("", h.current_state()["buf"])
+                self.assertFalse(h.lua_bool(pin_visible))
+
     def test_collapsed_chat_does_not_reopen_log_on_first_stream(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

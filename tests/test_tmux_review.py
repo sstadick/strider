@@ -38,6 +38,8 @@ class TmuxReviewTests(unittest.TestCase):
             self.assertEqual("0", h.expr("exists(':StriderQCard')"))
             self.assertEqual("2", h.expr("exists(':StriderLogQ')"))
             self.assertEqual("2", h.expr("exists(':StriderLogPatch')"))
+            self.assertEqual("2", h.expr("exists(':StriderPatches')"))
+            self.assertEqual("2", h.expr("exists(':StriderPatchLatest')"))
             self.assertEqual("2", h.expr("exists(':StriderCards')"))
             self.assertEqual("2", h.expr("exists(':StriderQs')"))
             self.assertEqual("2", h.expr("exists(':StriderCardsClear')"))

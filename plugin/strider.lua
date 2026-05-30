@@ -34,6 +34,14 @@ vim.api.nvim_create_user_command("StriderPatch", function(opts)
 	require("strider").patch(opts.args, opts)
 end, { nargs = "*", range = true, desc = "Open the Strider patch editor for a selection or active review item" })
 
+vim.api.nvim_create_user_command("StriderPatches", function()
+	require("strider").patches()
+end, { desc = "Pick a Strider patch summary" })
+
+vim.api.nvim_create_user_command("StriderPatchLatest", function()
+	require("strider").patch_latest()
+end, { desc = "Open the latest Strider patch summary" })
+
 vim.api.nvim_create_user_command("StriderComment", function(opts)
 	require("strider").comment(opts.args, opts)
 end, { nargs = "*", range = true, desc = "Leave a Strider review comment on the current item or visual selection" })
@@ -89,7 +97,7 @@ end, {
 
 vim.api.nvim_create_user_command("StriderCards", function()
 	require("strider").cards()
-end, { desc = "Pick a Strider card" })
+end, { desc = "Pick a Strider surface" })
 
 vim.api.nvim_create_user_command("StriderQs", function()
 	require("strider").q_cards()
@@ -101,7 +109,7 @@ end, { desc = "Open the latest StriderQ answer" })
 
 vim.api.nvim_create_user_command("StriderCardsClear", function(opts)
 	require("strider").cards_clear(opts)
-end, { bang = true, desc = "Dismiss completed Strider cards; ! includes running cards" })
+end, { bang = true, desc = "Dismiss completed Strider surfaces; ! includes running surfaces" })
 
 vim.api.nvim_create_user_command("StriderRetry", function()
 	require("strider").retry()

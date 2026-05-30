@@ -220,7 +220,7 @@ local function folded_row(ui_height, stack_index)
 	local step = FOLDED_HEIGHT + 2 + STACK_GAP
 	return math.max(ui_height - FOLDED_HEIGHT - STACK_MARGIN_BOTTOM - step * (stack_index - 1), 0)
 end
-local lane_stack_rank = { flow = 1, q = 2, patch = 3 }
+local lane_stack_rank = { flow = 1, q = 2 }
 local function expanded_height(info)
 	return math.max(FOLDED_HEIGHT, info.height - EXPANDED_BOTTOM_MARGIN - 1)
 end
@@ -422,9 +422,6 @@ local function card_winbar(card, lane)
 		local text = card.title or "Strider flow"
 		if card.kind == "q" then
 			text = card.status == "success" and "StriderQ answer ready" or "StriderQ stopped"
-		end
-		if card.kind == "patch" then
-			text = card.status == "success" and "StriderPatch complete" or "StriderPatch stopped"
 		end
 		local hint = card.kind == "q" and "a follow-up · q close · d dismiss · o log" or "q/Esc fold · d/:q dismiss"
 		return escape_status_text(text) .. (expanded and "%=" .. escape_status_text(hint) or "")

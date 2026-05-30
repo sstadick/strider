@@ -3,7 +3,8 @@ local state = require("strider.state")
 
 local M = {}
 
-local flow_order = { q = 1, patch = 2, flow = 3 }
+local flow_order = { q = 1, flow = 2 }
+local patch_rank = 3
 
 local function status_text(card)
 	if card.status == "running" then
@@ -68,28 +69,46 @@ local function chat_item()
 	}
 end
 
-local function flow_items(opts)
-	local items = {}
+local function add_flow_items(items, opts)
 	for _, lane in ipairs(state.lanes()) do
 		local session = state.get_session(lane)
 		for _, card in ipairs(session and session.flow_cards or {}) do
-			if not card.dismissed and (not opts.kind or opts.kind == card.kind) then
+			if card.kind ~= "patch" and not card.dismissed and (not opts.kind or opts.kind == card.kind) then
 				local model = card.kind == "q" and card.model_label and (" · " .. card.model_label) or ""
 				table.insert(items, {
 					label = string.format("%s%s · %s", card_names.for_card(card), model, status_text(card)),
 					order = card.started_at or 0,
 					rank = flow_order[card.kind] or 9,
-					value = {
-						type = "flow",
-						id = card.id,
-						kind = card.kind,
-						lane = lane,
-						name = card_names.for_card(card),
-					},
+					value = { type = "flow", id = card.id, kind = card.kind, lane = lane, name = card_names.for_card(card) },
 				})
 			end
 		end
 	end
+end
+
+local function add_patch_items(items, opts)
+	if opts.kind and opts.kind ~= "patch" then
+		return
+	end
+	for _, lane in ipairs(state.lanes()) do
+		local session = state.get_session(lane)
+		for _, summary in ipairs(session and session.patch_summaries or {}) do
+			if not summary.dismissed then
+				table.insert(items, {
+					label = string.format("%s · %s", summary.name or "StriderPatch", status_text(summary)),
+					order = summary.started_at or 0,
+					rank = patch_rank,
+					value = { type = "patch", id = summary.id, kind = "patch", lane = lane, name = summary.name },
+				})
+			end
+		end
+	end
+end
+
+local function surface_items(opts)
+	local items = {}
+	add_flow_items(items, opts)
+	add_patch_items(items, opts)
 	table.sort(items, function(a, b)
 		if a.order == b.order then
 			return a.rank < b.rank
@@ -108,7 +127,7 @@ function M.items(opts)
 			table.insert(items, chat)
 		end
 	end
-	vim.list_extend(items, flow_items(opts))
+	vim.list_extend(items, surface_items(opts))
 	return items
 end
 

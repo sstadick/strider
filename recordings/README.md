@@ -70,7 +70,7 @@ VHS_BIN=/opt/homebrew/bin/vhs recordings/vhs/render-all.sh
 - `review-selection.gif` — ask about a visual range inside an active review
 - `review-comment.gif` — leave a multi-line comment with the `:StriderComment` editor
 - `review-popup.gif` — `:StriderReview` with no args opens the floating editor; first word picks the scope, then a follow-up shows the in-review question editor
-- `patch.gif` — `:StriderPatch` on a visual-line selection
+- `patch.gif` — `:StriderPatch` on a visual-line selection, then `:StriderPatchLatest` to pull up the summary
 - `chat-review.gif` — `:StriderChat` followed by reviewing the resulting diff
 - `chat-readonly.gif` — `:StriderChatReadOnly` adds an `RO` badge and read-only prompt guard for chat
 - `reasoning-log.gif` — a chat turn showing faint reasoning text, compact tool output, inline diff rows, and the final answer

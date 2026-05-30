@@ -3,14 +3,14 @@
 ## Proposal
 
 - Date proposed: 2026-04-27
-- Implementation status: Q answer cards, Q-card follow-up compose, bare `:StriderQ` card toggle, and patch cards are implemented in-process
+- Implementation status: Q answer cards, Q-card follow-up compose, bare `:StriderQ` card toggle, and background patch summaries are implemented in-process
 
 ## Goal
 
 Turn the current single `strider://StriderQAnswer` surface into a reusable
-**flow card** system for flow-worker work (`Q`, patch, and later search). Flow
-cards should make flow-worker results visible without forcing the user into the
-full worker transcript.
+**flow card** system for Q-worker work (and later possibly search). Patch work
+uses background summaries instead of card containers so patch results remain
+visible on demand without adding right-edge chrome.
 
 The working model:
 
@@ -18,17 +18,18 @@ The working model:
   and one Q worker per StriderQ card (`q`, `q-2`, `q-3`, ...).
 - `:StriderLogFlow`, `:StriderLogQ`/`strider://StriderLogQ-N`, and
   `:StriderLogPatch` are the complete audit/debug transcripts.
-- Each completed or running flow request gets a compact card on the right.
-- Cards stay folded until the user focuses/selects one.
-- Focusing a card expands it into a near full-height right-side panel.
-- Expanded cards remain open when focus returns to code.
-- Pressing `q` or `<Esc>` in a card folds it back down; bare `:StriderQ` toggles
-  the latest Q card up/down when a card exists.
+- Each completed or running Q request gets a compact card on the right.
+- Q cards stay folded until the user focuses/selects one.
+- Focusing a Q card expands it into a near full-height right-side panel.
+- Expanded Q cards remain open when focus returns to code.
+- Pressing `q` or `<Esc>` in a Q card folds it back down; bare `:StriderQ`
+  toggles the latest Q card up/down when a card exists.
 - Expanded Q cards open a separate follow-up compose float under the answer;
   `<C-s>` submits that draft on the same card's Q worker.
-- Compact Q/Patch cards share the same right-edge stack slots so compact
-  surfaces do not overlap. Main chat hides its split surfaces without leaving a
-  compact placeholder.
+- Patch requests run in the background like Qs and create pull-up summaries;
+  `:StriderPatches`/`:StriderPatchLatest` open them in normal splits instead of
+  right-edge card containers. Main chat hides its split surfaces without leaving
+  a compact placeholder.
 
 ## Target UX
 
@@ -104,17 +105,13 @@ Expanded body:
 
 `:StriderLogQ` still contains the full Q transcript.
 
-### Patch card
+### Patch summary
 
 Purpose: make completed patch work reviewable without opening the full flow log.
+Patch summaries are recorded in the background and opened on demand in normal
+splits.
 
-Folded body:
-
-- one-line preview of the patch request
-- divider
-- `Patch running…`, `Patch complete — focus to expand`, or error/cancel status
-
-Expanded body, v1 target:
+Summary body:
 
 - patch request and target range/file
 - files touched
@@ -122,16 +119,17 @@ Expanded body, v1 target:
 - final assistant summary
 - enough tool/log context to understand what changed
 
-Implemented decision: patch cards use a **curated patch log**. They include the
-request, target, inspected/touched files, edit activity, diff blocks, and final
-summary. Thinking, verbose read output, and full tool details remain in
+Implemented decision: patch summaries use a **curated patch log**. They include
+the request, target, inspected/touched files, edit activity, diff blocks, and
+final summary. Thinking, verbose read output, and full tool details remain in
 `:StriderLogPatch`.
 
 ### Search card (later)
 
-Search already has picker/quickfix surfaces, so defer this unless Q/Patch cards
-feel good. If added, a search card should show query, result count, and top
-matches, with focus opening the picker or expanding a result summary.
+Search already has picker/quickfix surfaces, so defer this unless Q cards and
+patch summaries feel good. If added, a search card should show query, result
+count, and top matches, with focus opening the picker or expanding a result
+summary.
 
 ## State Model
 
@@ -237,19 +235,19 @@ Implemented:
    through the pending request's `card_id`/`card_lane`.
 5. Bare `:StriderQ` toggles the latest card; `:StriderQ!` opens a new prompt.
 6. `:StriderQs` opens a Q-only picker, and `:StriderCards` opens a
-   telescope/fzf/`vim.ui.select` picker for all named cards.
+   telescope/fzf/`vim.ui.select` picker for named cards/summaries.
 7. Card-local `d` dismisses a card and `o` opens its worker log.
 
-### Phase 3 — Patch cards
+### Phase 3 — Patch summaries
 
 Status: implemented in-process for `:StriderPatch`.
 
-1. A patch card is created when `:StriderPatch` submits.
-2. The pending patch request stores the card id in metadata.
+1. A background patch summary is created when `:StriderPatch` submits.
+2. The pending patch request stores the summary id in metadata.
 3. Tool-end events record inspected/touched files and edit diff blocks on the
-   card.
-4. Message completion finalizes the card with success/error/cancel state and the
-   assistant summary.
+   summary.
+4. Message completion finalizes the summary with success/error/cancel state and
+   the assistant summary.
 5. Verbose read output and reasoning stay in `:StriderLogPatch`.
 
 ### Phase 4 — Navigation and history controls
@@ -259,9 +257,9 @@ Implemented:
 - bare `:StriderQ` — toggles/focuses the latest Q card, or folds it when already
   expanded; if no card exists it opens the original Q prompt.
 - `:StriderQs` — picker for named StriderQ cards.
-- `:StriderCards` — picker for all named card surfaces.
-- `:StriderCardsClear[!]` — dismiss completed cards; bang includes running
-  cards.
+- `:StriderCards` — picker for all named card/surface records.
+- `:StriderCardsClear[!]` — dismiss completed surfaces; bang includes running
+  surfaces.
 - Card-buffer mappings:
   - `q` / `<Esc>`: fold focused card
   - `d`: dismiss card
@@ -287,10 +285,11 @@ Add tmux tests around the card manager:
    - Assert expanded card contains assistant answer.
    - Assert expanded card does not contain thinking/tool text.
    - Assert `:StriderLogQ` still contains full transcript.
-4. Patch card completion.
+4. Patch summary completion.
    - Run a selection-scoped patch.
-   - Assert a folded patch card appears.
-   - Focus it and assert request, target, diff rows, and summary are visible.
+   - Assert no card-styled patch window appears.
+   - Open `:StriderPatchLatest` and assert request, target, diff rows, and
+     summary are visible in a normal split.
    - Assert `:StriderLogPatch` still contains full patch transcript.
 5. Stop behavior.
    - Start a slow Q/Patch fake backend request.
@@ -305,13 +304,14 @@ Add tmux tests around the card manager:
 Update:
 
 - `docs/usage.md`
-  - Describe flow cards as the visible result surface for Q/Patch.
+  - Describe Q cards and on-demand patch summaries as flow-worker result
+    surfaces.
   - Clarify that worker logs are still the complete transcripts.
 - `docs/architecture.md`
   - Add `flow_cards` as flow-worker UI state.
   - Explain card lifecycle and relationship to pending requests.
 - `README.md`
-  - Mention flow cards briefly in the feature list once patch cards land.
+  - Mention Q cards and patch summaries briefly in the feature list.
 
 ## Open Questions
 

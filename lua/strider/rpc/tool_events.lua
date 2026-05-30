@@ -23,18 +23,18 @@ local function finish_tool_path(session, event)
 	return path
 end
 
-local function patch_card_id(lane)
+local function patch_summary_id(lane)
 	local pending = state.peek_pending_request(lane)
 	if not pending or pending.operation ~= "patch" then
 		return nil
 	end
-	return pending.metadata and pending.metadata.card_id
+	return pending.metadata and pending.metadata.summary_id
 end
 
 local function record_patch_tool(lane, tool)
-	local id = patch_card_id(lane)
+	local id = patch_summary_id(lane)
 	if id then
-		ui.record_patch_card_tool(id, tool, lane)
+		ui.record_patch_summary_tool(id, tool, lane)
 	end
 end
 

@@ -2,7 +2,6 @@ local M = {}
 
 local labels = {
 	flow = "StriderFlow",
-	patch = "StriderPatch",
 	q = "StriderQ",
 }
 

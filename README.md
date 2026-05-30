@@ -88,7 +88,7 @@ versus a steer for an in-flight turn.
 - Scoped guardrails: review/search/plan are read-only; patch prompts are
   selection-scoped and intended for small local edits.
 - Native Neovim UI: split chat log/compose, on-demand split Q answers,
-  compact Q/Patch cards, quickfix/pickers, inline review annotations,
+  background patch summaries, quickfix/pickers, inline review annotations,
   comments, and touched-file
   navigation. Prompt markers distinguish normal prompts (`›`), steers (`»`),
   and Q follow-ups (`↳`).
@@ -179,8 +179,10 @@ panes:
 | `:StriderQ[!] [--fast\|--deep] [prompt]` | Quick side question; choose fast/deep model before submit |
 | `:StriderQs` | Pick a completed/running StriderQ answer and open it in a split |
 | `:StriderQLatest` | Open the newest StriderQ answer directly in a split |
-| `:StriderCards` | Pick an existing Chat/Q/Patch card |
-| `:StriderCardsClear[!]` | Dismiss completed cards; `!` includes running cards |
+| `:StriderPatches` | Pick a completed/running patch summary and open it in a split |
+| `:StriderPatchLatest` | Open the newest patch summary directly in a split |
+| `:StriderCards` | Pick an existing Chat/Q/Patch surface |
+| `:StriderCardsClear[!]` | Dismiss completed surfaces; `!` includes running surfaces |
 | `:'<,'>StriderPatch [prompt]` | Selection-scoped patch |
 | `:StriderNext` / `:StriderPrev` | Move through review stops |
 | `:StriderReviewSummary` | Edit/confirm the completed review summary before forwarding |

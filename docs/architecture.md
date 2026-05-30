@@ -127,11 +127,12 @@ Important UX rule:
 3. plugin opens the floating patch editor, prefilled when inline args were given
 4. on submit, plugin sends `/patch ...` with file, line range, and excerpt context
    on the dedicated patch worker process
-5. a non-focus-stealing patch flow card opens in the bottom-right
-6. tool events update the card with inspected/touched files and diff blocks
-7. full transcript lands in `:StriderLogPatch`
-8. tool events update the file jump and edit highlighting
-9. edited ranges remain highlighted after the patch
+5. a background patch summary is recorded without opening a patch window
+6. tool events update the summary with inspected/touched files and diff blocks
+7. `:StriderPatchLatest`/`:StriderPatches` open summaries on demand in normal splits
+8. full transcript lands in `:StriderLogPatch`
+9. tool events update the file jump and edit highlighting
+10. edited ranges remain highlighted after the patch
 
 ### Tangent
 
@@ -226,13 +227,14 @@ Purpose:
 - toggled via `:StriderChat` along with compose; main chat uses a right-side
   split log/compose stack and leaves an empty buffer behind when hiding from a
   chat-only layout
-- compact Q/Patch cards reserve shared right-edge stack slots
+- compact Q cards reserve shared right-edge stack slots with collapsed chat
 - `:StriderQs` picks named Q answers and opens them in normal splits;
+  `:StriderPatches` picks patch summaries and opens them in normal splits;
   `:StriderCards` picks all named Chat/Q/Patch surfaces through
   telescope/fzf/`vim.ui.select`
-- picked or focused patch cards expand as right-edge cards; picked Q answers use
-  normal windows
-- `:StriderCardsClear` and card-local `d` dismiss completed card surfaces
+- picked Q answers and patch summaries use normal windows rather than patch
+  card containers
+- `:StriderCardsClear` and surface-local `d` dismiss completed surfaces
 - tail new output only while the log window is already at the bottom;
   scrolling up pauses follow-mode until the user jumps back to the tail
 - keep the latest user prompt available as a small pinned preview when
@@ -400,8 +402,9 @@ Working today:
   `:StriderQLatest`/`:StriderQs` open answers on demand in normal splits, and
   split-local follow-ups reuse the same Q worker/record while full transcripts
   land in worker logs (`:StriderLogQ`, `:StriderLogPatch`, `:StriderLogFlow`);
-  patch results still use compact flow cards, and `:StriderCardsClear`/`d`
-  dismiss cards when the stack gets noisy
+  patch summaries stay in the background until `:StriderPatches` or
+  `:StriderPatchLatest` opens them in normal splits, and
+  `:StriderCardsClear`/`d` dismiss completed surfaces when history gets noisy
 - clarify and plan-proposal flows rendered inline in the chat log with
   compose-buffer hijack for replies (`[Clarify]` badge while active)
 - `:StriderStatus` for a compact lane/status/control summary

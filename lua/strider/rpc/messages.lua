@@ -255,6 +255,8 @@ local function notify_turn_done(pending, lane)
 		if op == "q" then
 			local model = pending.metadata and pending.metadata.model_label
 			message = message .. (model and (" · " .. model) or "") .. " · :StriderQs"
+		elseif op == "patch" then
+			message = message .. " · :StriderPatches"
 		end
 		ui.notify_flow_done(message, {
 			notify = not ui.log_is_visible(lane),
@@ -312,7 +314,7 @@ local function handle_message_end(event, lane)
 			ui.finish_q_answer(reason, "error", meta.card_lane or lane, meta.card_id)
 		elseif pending and pending.operation == "patch" then
 			local status = stop_reason == "aborted" and "cancelled" or "error"
-			ui.finish_patch_card(pending.metadata and pending.metadata.card_id, status, {
+			ui.finish_patch_summary(pending.metadata and pending.metadata.summary_id, status, {
 				assistant_summary = reason,
 			}, lane)
 		end
@@ -352,7 +354,7 @@ local function handle_message_end(event, lane)
 			local meta = pending.metadata or {}
 			ui.finish_q_answer(nil, "success", meta.card_lane or lane, meta.card_id)
 		elseif pending and pending.operation == "patch" then
-			ui.finish_patch_card(pending.metadata and pending.metadata.card_id, "success", {
+			ui.finish_patch_summary(pending.metadata and pending.metadata.summary_id, "success", {
 				assistant_summary = "Patch completed with no final summary.",
 			}, lane)
 		end
@@ -385,7 +387,7 @@ local function handle_message_end(event, lane)
 		local meta = pending.metadata or {}
 		ui.finish_q_answer(text, "success", meta.card_lane or lane, meta.card_id)
 	elseif pending and pending.operation == "patch" then
-		ui.finish_patch_card(pending.metadata and pending.metadata.card_id, "success", {
+		ui.finish_patch_summary(pending.metadata and pending.metadata.summary_id, "success", {
 			assistant_summary = text,
 		}, lane)
 	end

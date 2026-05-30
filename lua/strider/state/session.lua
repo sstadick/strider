@@ -26,6 +26,8 @@ function M.new(cwd, lane)
 		log_buf = nil,
 		pending_request = nil,
 		progress = nil,
+		patch_summaries = {},
+		patch_summary_seq = 0,
 		active_flow_card_id = nil,
 		flow_cards = {},
 		flow_card_seq = 0,

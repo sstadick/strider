@@ -43,8 +43,11 @@ Enter
 Sleep 900ms
 Ctrl+S
 
-# Wait for the fake pi to apply the edit and the buffer to refresh.
+# Wait for the fake pi to apply the edit, then pull up the patch summary.
 Sleep 4500ms
+Type ":StriderPatchLatest"
+Enter
+Sleep 3000ms
 
 # Leave nvim.
 Type ":qall!"

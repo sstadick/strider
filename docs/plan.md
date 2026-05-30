@@ -17,11 +17,11 @@ Supporting UX:
 - local review comments summarized back to the agent at review end
 - accepted review stops via `:StriderNext!` without adding another
   top-level review command
-- separate flow-worker processes for search, Q, and patch; Q answers and patch
-  summaries open in non-focus-stealing bottom-right flow cards that stay compact
-  until focused, then stay expanded until explicitly folded with `q` or `<Esc>`;
-  full transcripts remain in worker logs (`:StriderLogFlow`, `:StriderLogQ`,
-  `:StriderLogPatch`)
+- separate flow-worker processes for search, Q, and patch; Q answers notify and
+  open on demand via `:StriderQs`/`:StriderQLatest`, while patch summaries stay
+  in the background until `:StriderPatches`/`:StriderPatchLatest` opens them in
+  normal splits; full transcripts remain in worker logs (`:StriderLogFlow`,
+  `:StriderLogQ`, `:StriderLogPatch`)
 - clarify and plan-proposal flows in the chat log (no popups);
   compose hijacked for replies with a `[Clarify]` badge
 - `:StriderStatus` for a compact lane/status/control summary

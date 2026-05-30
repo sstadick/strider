@@ -153,7 +153,7 @@ local function send(command, user_text, opts)
 	local metadata = opts.metadata or {}
 	state.clear_error(lane)
 	if operation == "patch" then
-		metadata.card_id = ui.open_patch_card(user_text, { target = metadata.target }, lane)
+		metadata.summary_id = ui.create_patch_summary(user_text, { target = metadata.target }, lane)
 	elseif operation == "q" then
 		metadata.card_lane = metadata.card_lane or Q_LANE
 		ensure_session(metadata.card_lane)
@@ -180,7 +180,7 @@ local function send(command, user_text, opts)
 		if operation == "q" then
 			ui.finish_q_answer("Strider request failed to start", "error", metadata.card_lane or lane, metadata.card_id)
 		elseif operation == "patch" then
-			ui.finish_patch_card(metadata.card_id, "error", {
+			ui.finish_patch_summary(metadata.summary_id, "error", {
 				assistant_summary = "Strider request failed to start",
 			}, lane)
 		end
@@ -939,6 +939,8 @@ local function pick_cards(title, opts)
 			else
 				ui.focus_flow_card(value.id, value.lane)
 			end
+		elseif value.type == "patch" then
+			ui.open_patch_summary_split(value.id, value.lane)
 		end
 	end)
 end
@@ -960,9 +962,23 @@ function M.q_latest()
 	return true
 end
 
+function M.patches()
+	return pick_cards("Strider patches", { kind = "patch" })
+end
+
+function M.patch_latest()
+	local win = ui.open_patch_summary_split(nil, PATCH_LANE)
+	if not win then
+		ui.notify("No Strider patches yet", vim.log.levels.INFO)
+		return false
+	end
+	return true
+end
+
 function M.cards_clear(opts)
-	local count = ui.clear_flow_cards({ all = opts and opts.bang }) or 0
-	ui.notify(string.format("Dismissed %d Strider card%s", count, count == 1 and "" or "s"), vim.log.levels.INFO)
+	local clear_opts = { all = opts and opts.bang }
+	local count = (ui.clear_flow_cards(clear_opts) or 0) + (ui.clear_patch_summaries(clear_opts) or 0)
+	ui.notify(string.format("Dismissed %d Strider surface%s", count, count == 1 and "" or "s"), vim.log.levels.INFO)
 	return count
 end
 
@@ -1277,6 +1293,7 @@ function M.patch(prompt, opts)
 		hint_lines = {
 			string.format("Patch target: %s", range_pointer(range)),
 			"Keep changes local to this range.",
+			"Runs in the background; use :StriderPatches to review it.",
 		},
 		prefill = prompt ~= "" and prompt or nil,
 	})

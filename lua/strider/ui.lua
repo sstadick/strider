@@ -7,7 +7,7 @@ local log_pin = require("strider.log_pin")
 local log_follow = require("strider.ui.log_follow")
 local live_block = require("strider.ui.live_block")
 local markdown_render = require("strider.ui.markdown_render")
-local patch_cards = require("strider.ui.patch_cards")
+local patch_summaries = require("strider.ui.patch_summaries")
 local marks = require("strider.ui.marks")
 local prompt_editor = require("strider.ui.prompt_editor")
 local tool_log = require("strider.ui.tool_log")
@@ -1436,16 +1436,24 @@ function M.clear_flow_cards(opts)
 	return flow_cards.clear_completed(opts)
 end
 
-function M.open_patch_card(prompt, opts, lane)
-	return patch_cards.open(prompt, opts, lane)
+function M.create_patch_summary(prompt, opts, lane)
+	return patch_summaries.create(prompt, opts, lane)
 end
 
-function M.record_patch_card_tool(id, tool, lane)
-	return patch_cards.record_tool(id, tool, lane)
+function M.open_patch_summary_split(id, lane)
+	return patch_summaries.open_split(id, lane)
 end
 
-function M.finish_patch_card(id, status, fields, lane)
-	return patch_cards.finish(id, status, fields, lane)
+function M.record_patch_summary_tool(id, tool, lane)
+	return patch_summaries.record_tool(id, tool, lane)
+end
+
+function M.finish_patch_summary(id, status, fields, lane)
+	return patch_summaries.finish(id, status, fields, lane)
+end
+
+function M.clear_patch_summaries(opts)
+	return patch_summaries.clear_completed(opts)
 end
 
 function M.refresh_q_answer_winbar(lane)

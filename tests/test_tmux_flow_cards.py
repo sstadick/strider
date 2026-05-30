@@ -1,4 +1,4 @@
-"""Tests for flow-card behavior shared by StriderQ and patch."""
+"""Tests for StriderQ flow cards and background patch summaries."""
 import unittest
 from pathlib import Path
 
@@ -11,37 +11,30 @@ class TmuxFlowCardTests(unittest.TestCase):
         self.repo_root = Path(__file__).resolve().parents[1]
         self.project_root = self.repo_root / "tests" / "fixtures" / "app"
 
-    def test_patch_card_opens_without_focus_and_shows_patch_summary(self) -> None:
+    def test_patch_runs_in_background_and_opens_latest_in_split(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("edit src/App.tsx")
                 h.ex("1,3StriderPatch change the greeting literal")
                 h.submit_popup()
 
-                card_names_expr = (
-                    "filter(map(getwininfo(), {_, v -> bufname(v.bufnr)}), "
-                    "{_, n -> stridx(n, 'strider://flow-card/patch/') == 0})"
+                patch_name = "strider://patch/1"
+                window_names = "map(getwininfo(), {_, v -> bufname(v.bufnr)})"
+                h.wait_until(
+                    lambda: h.lua_bool(
+                        "(function() local s = require('strider.state').get_session('patch'); "
+                        "return s and s.patch_summaries[1] and s.patch_summaries[1].status ~= 'running' end)()"
+                    ),
+                    timeout=5.0,
                 )
-                h.wait_until(lambda: len(h.json_expr(card_names_expr)) == 1, timeout=3.0)
-                card_name = h.json_expr(card_names_expr)[0]
-                self.assertNotEqual(card_name, h.expr("bufname('%')"))
+                self.assertEqual("0", h.expr(f"bufexists({patch_name!r})"))
+                self.assertNotIn(patch_name, h.json_expr(window_names))
 
-                h.wait_until(lambda: "Patch complete" in "\n".join(h.buffer_lines(card_name)), timeout=5.0)
-                folded = "\n".join(h.buffer_lines(card_name))
-                self.assertIn("change the greeting literal", folded)
-                self.assertIn("Patch complete", folded)
-                self.assertNotIn("Hello from patched fixture app", folded)
-
-                h.lua(
-                    "(function() "
-                    f"  local buf = vim.fn.bufnr({card_name!r}); "
-                    "  local win = vim.fn.win_findbuf(buf)[1]; "
-                    "  vim.api.nvim_set_current_win(win); "
-                    "  require('strider.ui').refresh_q_answer_layouts(); "
-                    "  return true "
-                    "end)()"
-                )
-                expanded = "\n".join(h.buffer_lines(card_name))
+                h.ex("StriderPatchLatest")
+                h.wait_until(lambda: h.expr("bufname('%')") == patch_name, timeout=3.0)
+                self.assertTrue(h.lua_bool("vim.api.nvim_win_get_config(0).relative == ''"))
+                expanded = "\n".join(h.buffer_lines(patch_name))
+                self.assertIn("change the greeting literal", expanded)
                 self.assertIn("Target: src/App.tsx:1-3", expanded)
                 self.assertIn("Files touched", expanded)
                 self.assertIn("src/App.tsx", expanded)
@@ -53,7 +46,7 @@ class TmuxFlowCardTests(unittest.TestCase):
                 self.assertIn("Applied the requested local patch.", patch_log)
                 self.assertIn("Hello from patched fixture app", patch_log)
 
-    def test_chat_q_and_patch_cards_stack_without_overlap(self) -> None:
+    def test_chat_and_q_cards_stack_without_patch_surface(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 rows = h.lua(
@@ -64,7 +57,7 @@ class TmuxFlowCardTests(unittest.TestCase):
                     "  state.ensure_session('q', vim.fn.getcwd()); "
                     "  state.ensure_session('patch', vim.fn.getcwd()); "
                     "  ui.show_chat_card(); "
-                    "  ui.open_patch_card('change the greeting', { target = { path = vim.fn.getcwd() .. '/src/App.tsx', startLine = 1, endLine = 3 } }, 'patch'); "
+                    "  ui.create_patch_summary('change the greeting', { target = { path = vim.fn.getcwd() .. '/src/App.tsx', startLine = 1, endLine = 3 } }, 'patch'); "
                     "  ui.open_q_answer('where does this render?', 'q'); "
                     "  require('strider.ui.flow_cards').refresh_layouts(); "
                     "  local function row(name) "
@@ -72,12 +65,13 @@ class TmuxFlowCardTests(unittest.TestCase):
                     "    local cfg = vim.api.nvim_win_get_config(win); "
                     "    return type(cfg.row) == 'table' and (cfg.row[false] or cfg.row[1]) or cfg.row "
                     "  end; "
-                    "  return string.format('%d,%d,%d', row('strider://StriderChatCard'), row('strider://StriderQAnswer'), row('strider://flow-card/patch/1')); "
+                    "  local windows = table.concat(vim.tbl_map(function(info) return vim.fn.bufname(info.bufnr) end, vim.fn.getwininfo()), '\\n'); "
+                    "  return string.format('%d,%d,%s', row('strider://StriderChatCard'), row('strider://StriderQAnswer'), windows); "
                     "end)()"
-                ).split(",")
-                chat_row, q_row, patch_row = map(int, rows)
+                ).split(",", 2)
+                chat_row, q_row = map(int, rows[:2])
                 self.assertGreater(chat_row, q_row)
-                self.assertGreater(q_row, patch_row)
+                self.assertNotIn("strider://patch/1", rows[2])
 
     def test_q_and_patch_use_distinct_workers(self) -> None:
         with FixtureProject(self.project_root) as project_root:
@@ -157,7 +151,7 @@ class TmuxFlowCardTests(unittest.TestCase):
     def test_card_picker_items_have_card_names(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
-                labels, q_labels = h.lua(
+                labels, q_labels, patch_labels = h.lua(
                     "(function() "
                     "  local state = require('strider.state'); "
                     "  local ui = require('strider.ui'); "
@@ -166,19 +160,22 @@ class TmuxFlowCardTests(unittest.TestCase):
                     "  state.ensure_session('patch', vim.fn.getcwd()); "
                     "  ui.show_chat_card(); "
                     "  ui.open_q_answer('why is this named?', 'q', { new = true }); "
-                    "  ui.open_patch_card('change the greeting', { target = { path = vim.fn.getcwd() .. '/src/App.tsx', startLine = 1, endLine = 3 } }, 'patch'); "
+                    "  ui.create_patch_summary('change the greeting', { target = { path = vim.fn.getcwd() .. '/src/App.tsx', startLine = 1, endLine = 3 } }, 'patch'); "
                     "  local picker = require('strider.ui.card_picker'); "
                     "  local labels = vim.tbl_map(function(item) return item.label end, picker.items()); "
                     "  local q_labels = vim.tbl_map(function(item) return item.label end, picker.items({ kind = 'q' })); "
-                    "  return table.concat(labels, '\\n') .. '\\f' .. table.concat(q_labels, '\\n') "
+                    "  local patch_labels = vim.tbl_map(function(item) return item.label end, picker.items({ kind = 'patch' })); "
+                    "  return table.concat(labels, '\\n') .. '\\f' .. table.concat(q_labels, '\\n') .. '\\f' .. table.concat(patch_labels, '\\n') "
                     "end)()"
                 ).split("\f")
                 labels = labels.split("\n")
                 q_labels = q_labels.split("\n")
+                patch_labels = patch_labels.split("\n")
                 self.assertIn("StriderChat · collapsed", labels)
                 self.assertIn("StriderQ #1: why is this named? · running", labels)
                 self.assertIn("StriderPatch #1: change the greeting · running", labels)
                 self.assertEqual(["StriderQ #1: why is this named? · running"], q_labels)
+                self.assertEqual(["StriderPatch #1: change the greeting · running"], patch_labels)
 
     def test_q_picker_opens_selected_answer_as_normal_split(self) -> None:
         with FixtureProject(self.project_root) as project_root:
@@ -270,7 +267,7 @@ class TmuxFlowCardTests(unittest.TestCase):
                 )
                 self.assertEqual("", labels)
 
-    def test_strider_cards_clear_dismisses_completed_cards(self) -> None:
+    def test_strider_cards_clear_dismisses_completed_surfaces(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:
                 h.ex("StriderQ clear me later")
@@ -279,9 +276,21 @@ class TmuxFlowCardTests(unittest.TestCase):
                     lambda: "Answer ready" in "\n".join(h.buffer_lines("strider://StriderQAnswer")),
                     timeout=5.0,
                 )
+                h.lua(
+                    "(function() "
+                    "  local state = require('strider.state'); local ui = require('strider.ui'); "
+                    "  state.ensure_session('patch', vim.fn.getcwd()); "
+                    "  local id = ui.create_patch_summary('clear patch too', {}, 'patch'); "
+                    "  ui.finish_patch_summary(id, 'success', { assistant_summary = 'done' }, 'patch'); "
+                    "  return true "
+                    "end)()"
+                )
                 h.ex("StriderCardsClear")
                 h.wait_until(
-                    lambda: h.lua("(function() return tostring(#require('strider.ui.card_picker').items({ kind = 'q' })) end)()") == "0",
+                    lambda: h.lua(
+                        "(function() local picker = require('strider.ui.card_picker'); "
+                        "return tostring(#picker.items({ kind = 'q' })) .. ',' .. tostring(#picker.items({ kind = 'patch' })) end)()"
+                    ) == "0,0",
                     timeout=3.0,
                 )
                 self.assertNotIn("strider://StriderQAnswer", h.json_expr("map(getwininfo(), {_, v -> bufname(v.bufnr)})"))

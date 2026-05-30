@@ -28,8 +28,10 @@ README.
 | `:'<,'>StriderQ [--fast\|--deep] [prompt]` | Open the StriderQ popup with a selection-scoped Q-worker question |
 | `:StriderQs` | Pick a StriderQ answer and open it in a normal split |
 | `:StriderQLatest` | Open the newest StriderQ answer directly in a normal split |
-| `:StriderCards` | Pick an existing named Chat/Q/Patch card with telescope/fzf fallback |
-| `:StriderCardsClear[!]` | Dismiss completed cards; `!` also dismisses running cards |
+| `:StriderPatches` | Pick a patch summary and open it in a normal split |
+| `:StriderPatchLatest` | Open the newest patch summary directly in a normal split |
+| `:StriderCards` | Pick an existing named Chat/Q/Patch surface with telescope/fzf fallback |
+| `:StriderCardsClear[!]` | Dismiss completed surfaces; `!` also dismisses running surfaces |
 | `:StriderChat` | Toggle the chat log + compose split; collapsed state leaves a compact card |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:StriderChatReadOnly [on\|off\|toggle]` | Toggle the chat-only read-only prompt guard; compose shows an `RO` badge |
@@ -51,21 +53,23 @@ right-side split log/compose stack. Toggling it closed hides those surfaces; if
 chat was the only visible normal window, Strider leaves you in a new empty
 buffer. Use `:StriderChatReadOnly` (or `gR` in normal mode / `<C-g>r` in insert
 mode inside `strider://compose`) to toggle a chat-only read-only guard; the
-compose winbar shows `RO` while enabled. Compact Q and Patch cards share the
-same right-edge stack instead of overlapping.
+compose winbar shows `RO` while enabled. Compact Q cards share right-edge
+stack slots with the collapsed chat card; patch summaries stay in the background
+until you pull them up.
 `:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on separate flow-worker
 processes, so Q and patch can proceed independently of each other and main chat.
 Each new StriderQ answer gets its own Q worker process. Search transcript lives
 in `:StriderLogFlow`, the latest Q worker in `:StriderLogQ`, and patch in
 `:StriderLogPatch`. `:StriderQ` records answers without opening a card or split;
 completion leaves a low-disruption cue, and `:StriderQs` opens a picker for
-ready/running Q answers. Selecting a Q opens its answer in a normal split. Use
-`q` to close that split, `d` to dismiss the Q record, `o` to open its worker
-log, or `[c`/`]c` to move between Q records in that lane. `:StriderPatch` still
-uses non-focus-stealing flow cards for patch summaries. Reasoning, tool calls,
-and full tool output remain in the operation's log. When flow-worker operations
-finish, Strider always leaves a bottom-left green-dot completion cue; if that
-worker's log is hidden, it also sends a notification.
+ready/running Q answers. Selecting a Q opens its answer in a normal split.
+`:StriderPatch` records a patch summary without opening a card or split;
+`:StriderPatches` and `:StriderPatchLatest` open patch summaries in normal
+splits. Use `q` to close those splits, `d` to dismiss the record, `o` to open
+its worker log, or `[c`/`]c` to move between records in that lane. Reasoning,
+tool calls, and full tool output remain in the operation's log. When flow-worker
+operations finish, Strider always leaves a bottom-left green-dot completion cue;
+if that worker's log is hidden, it also sends a notification.
 `:StriderStopFlow` aborts active flow-worker turns. `:StriderReview` runs on a
 dedicated review lane whose transcript lives in `:StriderLogReview`; that review
 log is manual/diagnostic and does not open on review start or review end.
@@ -280,6 +284,7 @@ that answer's worker log (`:StriderLogQ` for the first Q,
 `:StriderPatch` is for hyper-local edits: one function or region at a time. It
 requires a visual range or an active review item, embeds the excerpt and range
 in the prompt, and instructs the model to stay inside the selection. Patch runs
-on the dedicated patch worker and opens a compact flow card; focusing it shows
-the patch request, target, touched files, diff blocks, and final summary while
-the full transcript remains in `:StriderLogPatch`.
+on the dedicated patch worker and records a background summary. Use
+`:StriderPatchLatest` or `:StriderPatches` to open the patch request, target,
+touched files, diff blocks, and final summary in a normal split; the full
+transcript remains in `:StriderLogPatch`.

@@ -19,7 +19,7 @@ end, {
 	complete = function()
 		return { "on", "off", "toggle" }
 	end,
-	desc = "Toggle read-only instructions for Strider chat prompts",
+	desc = "Toggle read-only instructions and edit/write blocking for Strider chat prompts",
 })
 
 vim.api.nvim_create_user_command("StriderSearch", function(opts)

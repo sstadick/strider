@@ -122,7 +122,7 @@ def prompt_thinking(_message: str) -> str:
 
 def prompt_response(message: str) -> str:
     if "Read-only chat mode is enabled." in message:
-        return "Read-only prompt received. No changes were made."
+        return "Read-only prompt received. Edit/write tools are blocked; no changes were made."
 
     if "compact tool output" in message.lower():
         emit_tool_output("grep", {"pattern": "fixture", "path": "src"}, "# heading-like output\nsrc/App.tsx:1:export function App() {")

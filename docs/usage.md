@@ -34,7 +34,7 @@ README.
 | `:StriderCardsClear[!]` | Dismiss completed surfaces; `!` also dismisses running surfaces |
 | `:StriderChat` | Toggle the chat log + compose split; collapsed state leaves a compact card |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
-| `:StriderChatReadOnly [on\|off\|toggle]` | Toggle the chat-only read-only prompt guard; compose shows an `RO` badge |
+| `:StriderChatReadOnly [on\|off\|toggle]` | Toggle chat read-only prompting plus edit/write tool blocking; compose shows an `RO` badge |
 | `:StriderStop` | Abort the current main-lane turn |
 | `:StriderStopFlow` | Abort active Q/Search/Patch worker turns |
 | `:StriderStatus` | Open the current lane/status/control summary |
@@ -52,10 +52,12 @@ review context and copying the current main chat transcript as background.
 right-side split log/compose stack. Toggling it closed hides those surfaces; if
 chat was the only visible normal window, Strider leaves you in a new empty
 buffer. Use `:StriderChatReadOnly` (or `gR` in normal mode / `<C-g>r` in insert
-mode inside `strider://compose`) to toggle a chat-only read-only guard; the
-compose winbar shows `RO` while enabled. Compact Q cards share right-edge
-stack slots with the collapsed chat card; patch summaries stay in the background
-until you pull them up.
+mode inside `strider://compose`) to toggle chat read-only mode; the compose
+winbar shows `RO` while enabled. The mode is mirrored into pi so edit
+and write tool calls are blocked immediately, including later tool attempts in
+an already-running chat turn. Compact Q cards share right-edge stack slots with
+the collapsed chat card; patch summaries stay in the background until you pull
+them up.
 `:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on separate flow-worker
 processes, so Q and patch can proceed independently of each other and main chat.
 Each new StriderQ answer gets its own Q worker process. Search transcript lives

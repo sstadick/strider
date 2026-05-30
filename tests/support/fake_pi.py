@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import sys
+import threading
 import time
 
 from fake_pi_events import (
@@ -23,6 +24,7 @@ from fake_pi_responses import (
 # Simulated user messages available for forking.
 _fork_messages = []
 _fork_seq = 0
+_chat_read_only = False
 
 
 def record_user_message(message: str) -> str:
@@ -112,12 +114,35 @@ def handle_command(payload: dict) -> None:
         emit(response_ok(req_id, cmd_type))
 
 
+def handle_chat_read_only_command(payload: dict, message: str) -> None:
+    global _chat_read_only
+    value = message.removeprefix("/strider_chat_read_only").strip().lower()
+    if value in ("", "toggle"):
+        _chat_read_only = not _chat_read_only
+    else:
+        _chat_read_only = value in ("on", "true", "1", "enable", "enabled")
+    emit(response_ok(payload.get("id"), "prompt"))
+
+
+def emit_delayed_readonly_write_attempt() -> None:
+    time.sleep(0.5)
+    if _chat_read_only:
+        emit(assistant_message("Blocked edit because Strider chat read-only mode is active"))
+    else:
+        emit(assistant_message("Write slipped through chat read-only mode"))
+
+
 def handle_prompt(payload: dict) -> None:
     req_id = payload.get("id")
     message = payload.get("message", "")
+    if message.startswith("/strider_chat_read_only"):
+        handle_chat_read_only_command(payload, message)
+        return
     record_user_message(message)
     emit(response_ok(req_id, "prompt"))
-    if message.startswith("/search "):
+    if "__strider_attempt_write_after_readonly__" in message:
+        threading.Thread(target=emit_delayed_readonly_write_attempt, daemon=True).start()
+    elif message.startswith("/search "):
         emit(assistant_message(search_response(message)))
     elif message.startswith("/review "):
         emit_streaming_thinking("Tracing the active stop and checking the nearby code before explaining it.")

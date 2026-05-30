@@ -1,12 +1,17 @@
 import json
 import sys
+import threading
 import uuid
 from pathlib import Path
 
 
+_EMIT_LOCK = threading.Lock()
+
+
 def emit(payload: dict) -> None:
-    sys.stdout.write(json.dumps(payload) + "\n")
-    sys.stdout.flush()
+    with _EMIT_LOCK:
+        sys.stdout.write(json.dumps(payload) + "\n")
+        sys.stdout.flush()
 
 
 def assistant_message(text: str) -> dict:

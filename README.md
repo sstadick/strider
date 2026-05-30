@@ -173,7 +173,7 @@ panes:
 | Command | Purpose |
 |---|---|
 | `:StriderChat [prompt]` | Main chat log + compose; bare command toggles the compact card |
-| `:StriderChatReadOnly [on\|off\|toggle]` | Toggle chat-only read-only prompting; compose shows `RO` |
+| `:StriderChatReadOnly [on\|off\|toggle]` | Toggle chat read-only prompting and edit/write tool blocking; compose shows `RO` |
 | `:StriderReview [prompt]` | Planned review walkthrough or current-stop question |
 | `:StriderSearch {prompt}` | Structured code search |
 | `:StriderQ[!] [--fast\|--deep] [prompt]` | Quick side question; choose fast/deep model before submit |

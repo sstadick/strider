@@ -1,5 +1,5 @@
-# Strider chat read-only demo — toggle chat-only read-only mode, then send a
-# prompt that is guarded against file changes.
+# Strider chat read-only demo — toggle chat read-only mode, then send a
+# prompt with prompt instructions plus pi-side edit/write blocking active.
 # Run:   vhs recordings/vhs/chat-readonly.tape
 
 Output recordings/chat-readonly.gif
@@ -22,7 +22,7 @@ Show
 
 Sleep 1800ms
 
-# Open chat, then enable the chat-only read-only guard. The compose winbar shows RO.
+# Open chat, then enable the chat read-only guard. The compose winbar shows RO.
 Type ":StriderChat"
 Sleep 1200ms
 Enter
@@ -32,8 +32,8 @@ Sleep 1700ms
 Enter
 Sleep 1200ms
 
-# Ask for an explanation while preserving the working tree.
-Type "explain this component without changing files"
+# Ask for a change while read-only mode keeps the working tree untouched.
+Type "change the greeting literal, but stay read-only"
 Sleep 1800ms
 Ctrl+S
 Sleep 4500ms

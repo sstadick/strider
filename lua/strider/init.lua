@@ -120,6 +120,10 @@ local function read_only_chat_prompt(text)
 	return string.format("/prompt %s\n\nUser request:\n%s", CHAT_READ_ONLY_INSTRUCTIONS, text)
 end
 
+local function sync_chat_read_only_to_pi()
+	return rpc.set_chat_read_only(chat_read_only_enabled(), MAIN_LANE)
+end
+
 local function warn_if_lane_busy(lane)
 	lane = state.normalize_lane(lane)
 	local pending = state.peek_pending_request(lane)
@@ -142,6 +146,9 @@ local function send(command, user_text, opts)
 	end
 	if not ensure_backend(lane) then
 		return false
+	end
+	if lane == MAIN_LANE and opts.operation == "prompt" then
+		sync_chat_read_only_to_pi()
 	end
 	if opts.open_log then
 		-- Don't steal focus from whatever the user is currently doing (e.g.
@@ -525,6 +532,7 @@ local function set_chat_read_only(enabled, opts)
 	session.chat_read_only = enabled == true
 	ui.refresh_compose_winbar(MAIN_LANE)
 	ui.refresh_compose_hint()
+	sync_chat_read_only_to_pi()
 	if opts.notify ~= false then
 		ui.notify(
 			string.format("Strider chat read-only %s", session.chat_read_only and "enabled" or "disabled"),

@@ -154,6 +154,21 @@ class TmuxPopupTests(unittest.TestCase):
                 self.assertIn("explain without edits", log_text)
                 self.assertNotIn("Read-only chat mode is enabled.", log_text)
 
+    def test_chat_read_only_blocks_current_turn_write_attempt(self) -> None:
+        with FixtureProject(self.project_root) as project_root:
+            with TmuxNvimHarness(self.repo_root, project_root) as h:
+                h.ex("StriderChat")
+                h.wait_until(lambda: h.current_state()["buf"] == "strider://compose", timeout=3.0)
+
+                h.send("__strider_attempt_write_after_readonly__", "C-s", pause=0.1)
+                h.ex("StriderChatReadOnly on")
+                h.wait_until(
+                    lambda: "Blocked edit because Strider chat read-only mode is active" in "\n".join(h.log_lines()),
+                    timeout=5.0,
+                )
+                log_text = "\n".join(h.log_lines())
+                self.assertNotIn("Write slipped through", log_text)
+
     def test_chat_read_only_keymaps_toggle_mode(self) -> None:
         with FixtureProject(self.project_root) as project_root:
             with TmuxNvimHarness(self.repo_root, project_root) as h:

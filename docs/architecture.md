@@ -59,7 +59,7 @@ Owns:
 - the `strider_vim` tool, an always-available raw Lua bridge into the live
   Neovim client; the extension declares the tool and uses the RPC UI channel as
   transport, while Lua executes the code in-process
-- read-only guardrails for plan / review / search
+- read-only guardrails for plan / review / search, plus chat read-only edit/write blocking
 - widget/status updates for Neovim (model, context usage, running cost)
 - `/models` and `/tree` commands that drive fuzzy pickers via
   `ctx.ui.select` to switch models or jump through the session tree

@@ -252,21 +252,48 @@ function M.abort(lane)
 	return true
 end
 
-function M.send_prompt(arg1, arg2)
-	local lane, message = resolve_lane_and_payload(arg1, arg2)
+local function send_prompt_payload(lane, message, callback)
 	local session = state.get_session(lane)
 	if not session or not session.job_id then
 		ui.notify("Strider backend is not running", vim.log.levels.WARN)
 		return false
 	end
 
+	local req_id = state.next_request_id(lane)
+	if callback then
+		messages.register_callback(req_id, callback)
+	end
 	local payload = {
-		id = state.next_request_id(lane),
+		id = req_id,
 		message = message,
 		type = "prompt",
 	}
 	vim.fn.chansend(session.job_id, vim.json.encode(payload) .. "\n")
 	return true
+end
+
+function M.send_prompt(arg1, arg2)
+	local lane, message = resolve_lane_and_payload(arg1, arg2)
+	return send_prompt_payload(lane, message)
+end
+
+function M.send_extension_command(arg1, arg2, callback)
+	local lane, message = resolve_lane_and_payload(arg1, arg2)
+	return send_prompt_payload(lane, message, callback or function() end)
+end
+
+function M.set_chat_read_only(enabled, lane)
+	lane = normalize_lane(lane)
+	local session = state.get_session(lane)
+	if not session or not session.job_id then
+		return false
+	end
+	local value = enabled and "on" or "off"
+	return M.send_extension_command(lane, "/strider_chat_read_only " .. value, function(event)
+		if not event.success then
+			ui.notify("Failed to sync Strider chat read-only mode to pi", vim.log.levels.WARN)
+		end
+	end)
 end
 
 -- Steer an already-running turn with additional user input. Pi inserts

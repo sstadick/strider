@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { CHAT_READ_ONLY_COMMAND, isWriteTool, parseChatReadOnlyArg, readOnlyGuard, type OperationKind } from "./readonly-guard.js";
 import { browseSessions, resumeSession, sessionIdentity } from "./session-switching.js";
 import { registerStriderTools } from "./strider-tools.js";
 import {
@@ -9,13 +10,14 @@ import {
 	searchPrompt,
 } from "./strider-prompts.js";
 
-type OperationKind = "search" | "review" | "patch" | "prompt" | "plan";
-
 type StriderState = {
 	activeOperation?: OperationKind;
 	// Budget: at most one strider_clarify call per user request. Reset in
 	// startOperation so the next /prompt or /patch starts fresh.
 	clarifyCount: number;
+	// Chat read-only is controlled by the Neovim client and mirrored here
+	// so tool_call can block writes immediately, even mid-turn.
+	chatReadOnly: boolean;
 	// Accumulated cost ($) across assistant turns in this session. Pi
 	// reports per-turn cost on `message.usage.cost.total`; we sum it so
 	// the log widget shows running total. Reset on session_start.
@@ -24,6 +26,7 @@ type StriderState = {
 
 function emptyState(): StriderState {
 	return {
+		chatReadOnly: false,
 		clarifyCount: 0,
 		sessionCost: 0,
 	};
@@ -190,14 +193,6 @@ export default function (pi: ExtensionAPI) {
 		pi.sendUserMessage(message);
 	}
 
-	function readOnlyOperation(): boolean {
-		return (
-			state.activeOperation === "review" ||
-			state.activeOperation === "search" ||
-			state.activeOperation === "plan"
-		);
-	}
-
 	pi.on("session_start", async (event: any, ctx: any) => {
 		state = emptyState();
 		// Start with Strider's op-scoped tools hidden. They'll be turned
@@ -210,12 +205,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event: any, ctx: any) => {
-		if (readOnlyOperation()) {
-			if (event.toolName === "edit" || event.toolName === "write") {
-				ctx.ui.notify(`Blocked write tool in ${state.activeOperation} mode: ${event.toolName}`, "warning");
-				return { block: true, reason: `Strider ${state.activeOperation} mode is read-only. Do not edit or write files.` };
+		const guard = readOnlyGuard(state);
+		if (guard) {
+			if (isWriteTool(event.toolName)) {
+				ctx.ui.notify(`Blocked ${event.toolName} because ${guard.label} is active`, "warning");
+				return { block: true, reason: `${guard.label} is active. Do not edit or write files.` };
 			}
-			if (event.toolName === "bash" && !isSafeReadOnlyBash(event.input?.command)) {
+			if (guard.blocksBash && event.toolName === "bash" && !isSafeReadOnlyBash(event.input?.command)) {
 				ctx.ui.notify(`Blocked unsafe bash command in ${state.activeOperation} mode`, "warning");
 				return {
 					block: true,
@@ -238,6 +234,19 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	registerStriderTools(pi, () => state);
+
+	pi.registerCommand(CHAT_READ_ONLY_COMMAND, {
+		description: "Mirror Strider chat read-only mode into the pi extension",
+		handler: async (args: any, ctx: any) => {
+			const enabled = parseChatReadOnlyArg(args, state.chatReadOnly);
+			if (enabled === undefined) {
+				ctx.ui.notify(`Usage: /${CHAT_READ_ONLY_COMMAND} [on|off|toggle]`, "warning");
+				return;
+			}
+			state.chatReadOnly = enabled;
+			updateWidget(ctx);
+		},
+	});
 
 	pi.registerCommand("plan", {
 		description: "Produce a Strider review plan",

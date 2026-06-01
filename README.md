@@ -9,65 +9,123 @@ prompt templates, project instructions, session tree, and cost tracking.
 
 ## Examples
 
-Search the codebase without opening the main chat:
+Each example pairs commands with the rendered recording under
+[`recordings/`](recordings/), so the demo GIFs are pulled into this README.
+
+### Search the codebase without opening the main chat
 
 ```vim
 :StriderSearch where is the main entrypoint?
-:StriderSearch all websocket entrypoints
 ```
 
-Start a planned code walkthrough:
+![Search demo](recordings/search.gif)
+
+### Start a planned file walkthrough
 
 ```vim
-:StriderReview walk me through the authentication flow
-:StriderReview walk through the changes on this branch vs main
-:'<,'>StriderReview explain what this block does
+:StriderReview file
+:StriderNext!
+:StriderStatus
+:StriderPrev
 ```
 
-Ask about the current review stop:
+![Planned file review demo](recordings/review-file.gif)
+
+### Review a diff
 
 ```vim
-:StriderReview why does this block matter?
-:'<,'>StriderReview what assumption breaks here?
+:StriderReview diff
 ```
 
-Leave review comments:
+![Diff review demo](recordings/review-diff.gif)
+
+### Chain search results into a review
 
 ```vim
-:'<,'>StriderComment this branch needs a clearer name
+:StriderSearch show all entry roots
+:StriderReview searches
+```
+
+![Search-to-review demo](recordings/review-searches.gif)
+
+### Use the review popup flow
+
+```vim
+:StriderReview
+" type file, then submit
+:StriderReview
+" type why does this mount App?, then submit
+```
+
+![Review popup demo](recordings/review-popup.gif)
+
+### Ask about the current review stop
+
+```vim
+:StriderReview file
+:'<,'>StriderReview why does this block matter?
+```
+
+![Selection-scoped review question demo](recordings/review-selection.gif)
+
+### Leave review comments
+
+```vim
+:StriderReview file
 :'<,'>StriderComment
+" This branch needs a clearer name
+" Maybe mention root rendering too
 ```
 
-Patch a small selected range:
+![Review comment demo](recordings/review-comment.gif)
+
+### Patch a small selected range
 
 ```vim
 :'<,'>StriderPatch change the greeting literal from hi to hello
+:StriderPatchLatest
 ```
 
-Ask a side question on a dedicated Q worker, then open the latest answer when the low-key completion cue appears:
+![Patch demo](recordings/patch.gif)
 
-```vim
-:StriderQ --fast what does this flag actually do?
-:'<,'>StriderQ --deep why is this loop written this way?
-:StriderQLatest
-:StriderQs
-```
-
-Browse or resume pi sessions:
-
-```vim
-:StriderSessions
-:StriderResume 0196f3a
-:StriderResume ./some-session.jsonl
-```
-
-Work, then review the diff:
+### Ask a side question on a dedicated Q worker
 
 ```vim
 :StriderChat add loading states to the lobby flow
-:StriderReview walk through the diff on this branch
+:StriderQ what does the App component even do here?
+:StriderQ
+```
+
+![StriderQ tangent demo](recordings/tangent.gif)
+
+### Work in chat, then review the diff
+
+```vim
+:StriderChat add loading states to the lobby flow
+:StriderReview walk me through the diff on this branch
+:'<,'>StriderComment this branch needs a clearer empty state
 :StriderNext
 ```
+
+![Chat-to-review demo](recordings/chat-review.gif)
+
+### Keep chat read-only
+
+```vim
+:StriderChat
+:StriderChatReadOnly on
+" change the greeting literal, but stay read-only
+```
+
+![Read-only chat demo](recordings/chat-readonly.gif)
+
+### Inspect reasoning and tool output in the chat log
+
+```vim
+:StriderChat add a banner
+```
+
+![Reasoning log demo](recordings/reasoning-log.gif)
 
 Most popup commands submit with `<C-s>` and cancel with `<Esc><Esc>`. When
 starting a new `:StriderReview`, `<C-g>c` toggles whether that review starts

@@ -265,6 +265,40 @@ panes:
 See [docs/usage.md](docs/usage.md) for the full command list and workflow
 details.
 
+## Suggested keybinds
+
+These are the maintainer's Strider mappings, with `<leader>` set to Space.
+They keep all Strider actions under `<leader>s`:
+
+```lua
+vim.g.mapleader = " "
+
+vim.keymap.set({ "n", "v" }, "<leader>sc", ":StriderChat<CR>")
+vim.keymap.set({ "n", "v" }, "<leader>ss", ":StriderSearch<CR>")
+vim.keymap.set({ "n", "v" }, "<leader>sr", ":StriderReview<CR>")
+vim.keymap.set({ "n", "v" }, "<leader>sp", ":StriderPatch<CR>")
+vim.keymap.set({ "n", "v" }, "<leader>sq", ":StriderQ<CR>")
+vim.keymap.set("n", "<leader>sQ", ":StriderQs<CR>")
+vim.keymap.set("n", "<leader>so", ":StriderQLatest<CR>")
+vim.keymap.set("n", "<leader>sb", ":StriderCards<CR>")
+vim.keymap.set("n", "<leader>sd", ":StriderCardsClear<CR>")
+vim.keymap.set("n", "<leader>sD", ":StriderCardsClear!<CR>")
+vim.keymap.set("n", "<leader>sC", ":StriderComment<CR>")
+vim.keymap.set("v", "<leader>sC", ":StriderComment ")
+vim.keymap.set("n", "<leader>sm", ":StriderComments<CR>")
+vim.keymap.set("n", "<leader>sn", ":StriderNext<CR>")
+vim.keymap.set("n", "<leader>sa", ":StriderNext!<CR>")
+vim.keymap.set("n", "<leader>sN", ":StriderPrev<CR>")
+vim.keymap.set("n", "<leader>si", ":StriderReviewItems<CR>")
+vim.keymap.set("n", "<leader>sl", ":StriderLogFlow<CR>")
+vim.keymap.set("n", "<leader>sS", ":StriderSearches<CR>")
+vim.keymap.set("n", "<leader>st", ":StriderStatus<CR>")
+vim.keymap.set("n", "<leader>sx", ":StriderStop<CR>")
+vim.keymap.set("n", "<leader>sX", ":StriderStopFlow<CR>")
+vim.keymap.set("n", "<leader>sR", ":StriderRetry<CR>")
+vim.keymap.set("n", "<leader>sh", ":StriderSessions<CR>")
+```
+
 ## Session storage
 
 Strider uses pi's existing JSONL session files. To keep sessions repo-local,

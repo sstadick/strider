@@ -7,7 +7,7 @@ Strider is built around five primary user flows:
 - `:StriderSearch {prompt}`
 - `:StriderReview [scope] [prompt]`
 - `:'<,'>StriderPatch {prompt}`
-- `:StriderQ [prompt]` — tangent that branches off the session tree
+- `:StriderQ [prompt]` — one-off side question on a dedicated Q worker
 - `:StriderChat [prompt]`
 
 Supporting navigation and control:
@@ -17,6 +17,15 @@ Supporting navigation and control:
 - `:StriderComment {text}`
 - `:StriderComments`
 - `:StriderReviewItems`
+- `:StriderReviewSummary`
+- `:StriderSearches`
+- `:StriderCards` / `:StriderCardsClear[!]`
+- `:StriderPatches` / `:StriderPatchLatest`
+- `:StriderQs` / `:StriderQLatest`
+- `:StriderLogFlow` / `:StriderLogQ` / `:StriderLogPatch` / `:StriderLogReview`
+- `:StriderChatReadOnly [on|off|toggle]`
+- `:StriderSessions` / `:StriderResume [id-or-path]`
+- `:StriderRetry`
 - `:StriderStop` — abort the main-lane in-flight turn (maps to pi's `abort` RPC)
 - `:StriderStopFlow` — abort active Q/Search/Patch flow-worker turns
 
@@ -227,12 +236,12 @@ Purpose:
 - toggled via `:StriderChat` along with compose; main chat uses a right-side
   split log/compose stack and leaves an empty buffer behind when hiding from a
   chat-only layout
-- compact Q cards reserve shared right-edge stack slots with collapsed chat
+- hidden chat, Q, and patch records remain discoverable through `:StriderCards`
 - `:StriderQs` picks named Q answers and opens them in normal splits;
   `:StriderPatches` picks patch summaries and opens them in normal splits;
   `:StriderCards` picks all named Chat/Q/Patch surfaces through
   telescope/fzf/`vim.ui.select`
-- picked Q answers and patch summaries use normal windows rather than patch
+- picked Q answers and patch summaries use normal windows rather than floating
   card containers
 - `:StriderCardsClear` and surface-local `d` dismiss completed surfaces
 - tail new output only while the log window is already at the bottom;

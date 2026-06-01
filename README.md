@@ -1,5 +1,11 @@
 # strider
 
+> [!WARNING]
+> This plugin has been largely vibe-coded. If you are not comfortable with that (I'm not totally sure I am either), move along.
+
+> [!IMPORTANT]
+> This project was written for me, to be useful for me. PRs are welcome, but they will be strictly gated to not add feature bloat.
+
 Strider is a Neovim-first interface for a pi-backed coding workflow. It keeps
 main chat, flow work, and review on dedicated lanes, with scoped commands for
 search, patch, side questions, and walkthroughs.
@@ -93,7 +99,7 @@ Each example pairs commands with the rendered recording under
 ```vim
 :StriderChat add loading states to the lobby flow
 :StriderQ what does the App component even do here?
-:StriderQ
+:StriderQLatest
 ```
 
 ![StriderQ tangent demo](recordings/tangent.gif)
@@ -230,10 +236,13 @@ panes:
 
 | Command | Purpose |
 |---|---|
-| `:StriderChat [prompt]` | Main chat log + compose; bare command toggles the compact card |
+| `:StriderChat [prompt]` | Main chat log + compose; bare command toggles the split surfaces |
 | `:StriderChatReadOnly [on\|off\|toggle]` | Toggle chat read-only prompting and edit/write tool blocking; compose shows `RO` |
 | `:StriderReview [prompt]` | Planned review walkthrough or current-stop question |
+| `:StriderReviewItems` | Pick any stop from the active review plan |
+| `:StriderReviewSummary` | Edit/confirm the completed review summary before forwarding |
 | `:StriderSearch {prompt}` | Structured code search |
+| `:StriderSearches` | Reopen recent search result sets |
 | `:StriderQ[!] [--fast\|--deep] [prompt]` | Quick side question; choose fast/deep model before submit |
 | `:StriderQs` | Pick a completed/running StriderQ answer and open it in a split |
 | `:StriderQLatest` | Open the newest StriderQ answer directly in a split |
@@ -243,9 +252,11 @@ panes:
 | `:StriderCardsClear[!]` | Dismiss completed surfaces; `!` includes running surfaces |
 | `:'<,'>StriderPatch [prompt]` | Selection-scoped patch |
 | `:StriderNext` / `:StriderPrev` | Move through review stops |
-| `:StriderReviewSummary` | Edit/confirm the completed review summary before forwarding |
 | `:StriderComment [text]` | Record a review comment |
+| `:StriderComments` | Browse recorded review comments |
+| `:StriderLogFlow` / `:StriderLogQ` / `:StriderLogPatch` / `:StriderLogReview` | Toggle lane diagnostic logs |
 | `:StriderStatus` | Show lane/status/control summary |
+| `:StriderRetry` | Re-dispatch a stalled review plan turn |
 | `:StriderStop` | Abort the main-lane turn |
 | `:StriderStopFlow` | Abort active Q/Search/Patch worker turns |
 | `:StriderSessions` | Browse saved pi sessions for this project |
@@ -269,8 +280,8 @@ add a pi project settings file:
 Then `/sessions` or `:StriderSessions` browses saved sessions in that directory,
 and `/resume <id-or-path>` or `:StriderResume <id-or-path>` resumes one directly.
 Session files can contain prompts, file contents, command output, and secrets, so
-`.pi/sessions/` should usually be added to `.gitignore` unless you explicitly
-want to share them.
+this repo's `.gitignore` excludes `.pi/sessions/` by default. Keep that ignore
+rule unless you explicitly want to share sessions.
 
 ## Development
 

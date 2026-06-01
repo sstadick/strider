@@ -76,8 +76,7 @@
     - The flow at the end of the review could still use a bit of work / messaging, it's not clear what is about to happen when you ht the end / how the end works, and that comments and a summary.
     - I don't think we need to put that in the side bar, but maybe we need a "final buffer" or something that says review end, and shows the summary in-buffer. Give the user a shot to edit that in the buffer, and then send it to the main flow?
 - I think we lost the "Search/Patch/Q" done green dot in the bottom left, open to other ways to indicate doneness though.
-    - at a minimum the message is getting burried, or not showing for some reason?
-okay first, updat my ~/aihome/dotfiles with
+    - at a minimum the message is getting buried, or not showing for some reason?
 - Update Strider’s prompt rendering so steering prompts and follow-up prompts each have their own distinct colored line-start indicator, separate from normal user prompts. Include tests/docs if the rendering behavior is user-visible.
-- Sometimes the Chat/Log uis get weird if I open a file in them
-- Add a note in the compose box about toggling ReadONly
+- Sometimes the Chat/Log UIs get weird if I open a file in them
+- Add a note in the compose box about toggling ReadOnly

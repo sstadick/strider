@@ -74,7 +74,7 @@ VHS_BIN=/opt/homebrew/bin/vhs recordings/vhs/render-all.sh
 - `chat-review.gif` — `:StriderChat` followed by reviewing the resulting diff
 - `chat-readonly.gif` — `:StriderChatReadOnly` adds an `RO` badge, read-only prompt instructions, and chat edit/write tool blocking
 - `reasoning-log.gif` — a chat turn showing faint reasoning text, compact tool output, inline diff rows, and the final answer
-- `tangent.gif` — `:StriderQ` asks a side question, records the answer for `:StriderQs`, and keeps the main chat surfaces out of the way
+- `tangent.gif` — `:StriderQ` asks a side question, then `:StriderQLatest` opens the answer on demand while main chat stays out of the way
 
 ## How it works
 

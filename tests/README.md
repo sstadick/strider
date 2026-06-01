@@ -51,7 +51,7 @@ python3 tests/run_tmux_session.py --project tests/fixtures/app
 Real pi backend against another project:
 
 ```bash
-python3 tests/run_tmux_session.py --project ../punked --real-pi
+python3 tests/run_tmux_session.py --project ../some-project --real-pi
 ```
 
 Then attach with:

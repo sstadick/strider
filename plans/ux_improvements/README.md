@@ -3,13 +3,15 @@
 ## Proposal
 
 - Date proposed: 2026-04-23
-- Implementation status: partial
+- Implementation status: partial; the review-end summary surface and
+  `:StriderStatus` shipped, while the remaining items below are backlog.
 
-## Priority Now
+## Shipped from this list
 
-1. Make `:StriderNext` end behavior clearer with a final finish-review card before summary generation.
-2. Keep the review API minimal: no new command; reuse `:StriderNext` / `:StriderNext!` for finish confirmation.
-3. Show accepted, reviewed, and commented counts on the finish-review card so the user knows what will be summarized.
+- `:StriderNext` end behavior now lands in a completed review state, and the
+  editable summary confirmation is available through `:StriderReviewSummary`.
+- `:StriderStatus` shows lane, model, thinking, context, pending request,
+  review progress, and last error.
 
 ## Backlog
 
@@ -22,5 +24,4 @@
 7. Inline annotation affordances: distinguish the planned stop annotation from a ranged follow-up answer.
 8. Search result confidence: mark exact, likely, and weak matches in picker or quickfix labels.
 9. Patch preview and confirm: require explicit acceptance when a patch escapes the selected range.
-10. Model and context affordance: provide a `:StriderStatus` command for lane, model, thinking, context, pending request, and last error.
-11. Session tree ergonomics: make `/tree` labels clearer for branches, forks, and the current leaf.
+10. Session tree ergonomics: make `/tree` labels clearer for branches, forks, and the current leaf.

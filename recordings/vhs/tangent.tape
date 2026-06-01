@@ -1,5 +1,5 @@
-# StriderQ demo — :StriderQ opens a side-question card and keeps the main chat
-# surfaces out of the way.
+# StriderQ demo — :StriderQ runs a side question on a Q worker, then
+# :StriderQLatest opens the answer on demand.
 # Run:   vhs recordings/vhs/tangent.tape
 
 Output recordings/tangent.gif
@@ -22,7 +22,7 @@ Show
 
 Sleep 2000ms
 
-# Kick off a regular chat turn so there is a leaf to branch from.
+# Kick off a regular chat turn, then show that Q stays separate.
 Type ":StriderChat add loading states to the lobby flow"
 Sleep 2400ms
 Enter
@@ -38,14 +38,13 @@ Enter
 Sleep 900ms
 Ctrl+S
 
-# Wait for the Q answer to stream into its card.
+# Wait for the Q answer to be ready, then open the latest answer on demand.
 Sleep 3500ms
 
-# Hide the Q card by re-invoking :StriderQ with no args.
-Type ":StriderQ"
+Type ":StriderQLatest"
 Sleep 2200ms
 Enter
-Sleep 2000ms
+Sleep 2500ms
 
 Type ":qall!"
 Enter

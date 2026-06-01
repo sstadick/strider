@@ -75,14 +75,10 @@ summarized and whether the summary was forwarded into the main chat transcript.
 - `python3 -m unittest tests.test_tmux_popups`
 - `python3 -m unittest tests.test_tmux_log_rendering`
 
-## Future Enhancement
+## Follow-up Shipped
 
-Consider an editable final summary surface before forwarding to main chat:
-
-- `strider://review-final` or a modifiable final mode inside `strider://review`.
-- The agent-generated summary lands there first.
-- `<C-s>` forwards the edited summary to the main chat transcript.
-- Cancel leaves it in the review pane without forwarding.
-
-This is intentionally separate from the first implementation chunk so the log
-behavior and final-state messaging can land independently.
+The editable final summary surface has shipped as `strider://review-summary`.
+When the agent-generated summary is ready, Strider shows it in the review pane
+and opens an editable confirmation popup. `<C-s>` forwards the edited summary to
+the main chat transcript; dismissing the popup leaves the summary available via
+`:StriderReviewSummary`.

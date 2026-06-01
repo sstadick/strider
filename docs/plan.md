@@ -6,8 +6,7 @@ Primary flows:
 - `:StriderSearch`
 - `:StriderReview` (pre-planned walkthrough — see `docs/review-mode.md`)
 - `:StriderPatch`
-- `:StriderQ` (tangent that branches off the session tree and drops
-  from the active path on end)
+- `:StriderQ` (side question on its own Q worker, kept out of the main chat path)
 - `:StriderChat`
 
 Supporting UX:
@@ -26,6 +25,8 @@ Supporting UX:
   compose hijacked for replies with a `[Clarify]` badge
 - `:StriderStatus` for a compact lane/status/control summary
 - `:StriderStop` / `:StriderStopFlow` to abort in-flight turns (pi `abort` RPC)
+- session management with `/sessions`, `/resume`, `/switch_session`,
+  `:StriderSessions`, and `:StriderResume`
 - inline red `[error]` blocks surface provider / model / transport
   errors that used to silently hang the log
 - `<S-Tab>` in compose cycles the pi thinking level; active level
@@ -106,10 +107,11 @@ STRIDER_TEST_REAL_PI=1 python3 -m unittest tests.test_real_pi_smoke
 Goal: stay under a minute; cover at least review + patch on the bundled
 fixture project.
 
-## Deferred: Saved sessions
+## Saved sessions
 
-See `docs/saved-sessions.md` — full design, kept ready to execute if
-we decide resumption is worth the context drift.
+Saved-session browsing and resume are implemented. See
+`docs/saved-sessions.md` for repo-local session setup, commands, and current
+restore limits.
 
 ## Non-goals right now
 

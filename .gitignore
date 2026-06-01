@@ -1,5 +1,9 @@
 .DS_Store
 *.log
+.env
+.env.*
+!.env.example
+.pi/sessions/
 node_modules/
 dist/
 .tmp/

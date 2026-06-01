@@ -32,7 +32,7 @@ README.
 | `:StriderPatchLatest` | Open the newest patch summary directly in a normal split |
 | `:StriderCards` | Pick an existing named Chat/Q/Patch surface with telescope/fzf fallback |
 | `:StriderCardsClear[!]` | Dismiss completed surfaces; `!` also dismisses running surfaces |
-| `:StriderChat` | Toggle the chat log + compose split; collapsed state leaves a compact card |
+| `:StriderChat` | Toggle the chat log + compose split; closing hides the split surfaces |
 | `:[range]StriderChat [prompt]` | Open chat with the compose buffer prefilled from the range/prompt |
 | `:StriderChatReadOnly [on\|off\|toggle]` | Toggle chat read-only prompting plus edit/write tool blocking; compose shows an `RO` badge |
 | `:StriderStop` | Abort the current main-lane turn |
@@ -55,8 +55,8 @@ buffer. Use `:StriderChatReadOnly` (or `gR` in normal mode / `<C-g>r` in insert
 mode inside `strider://compose`) to toggle chat read-only mode; the compose
 winbar shows `RO` while enabled. The mode is mirrored into pi so edit
 and write tool calls are blocked immediately, including later tool attempts in
-an already-running chat turn. Compact Q cards share right-edge stack slots with
-the collapsed chat card; patch summaries stay in the background until you pull
+an already-running chat turn. Hidden chat, Q, and patch records stay available
+through `:StriderCards`; patch summaries stay in the background until you pull
 them up.
 `:StriderQ`, `:StriderSearch`, and `:StriderPatch` run on separate flow-worker
 processes, so Q and patch can proceed independently of each other and main chat.
@@ -199,7 +199,7 @@ Because Strider starts pi with the project as the working directory, pi will
 create and list sessions there. Use `/sessions` or `:StriderSessions` to browse
 saved sessions, and `/resume <id-or-path>` or `:StriderResume <id-or-path>` to
 resume directly. Session JSONL can include prompts, file contents, tool output,
-and secrets, so `.pi/sessions/` should usually be gitignored.
+and secrets, so this repo's `.gitignore` excludes `.pi/sessions/` by default.
 
 ## Review Flow
 

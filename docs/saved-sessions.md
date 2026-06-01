@@ -21,11 +21,8 @@ session directory is used. If users pass an explicit `--session-dir` via
 `pi_cmd`, Strider uses the active pi session manager's directory.
 
 Session JSONL can contain prompts, file contents, tool output, logs, and secrets.
-Unless you explicitly want to commit or share sessions, add this to `.gitignore`:
-
-```gitignore
-.pi/sessions/
-```
+This repo's root `.gitignore` excludes `.pi/sessions/` by default; keep that
+rule unless you explicitly want to commit or share sessions.
 
 ## Commands
 

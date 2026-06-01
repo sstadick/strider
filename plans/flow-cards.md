@@ -3,7 +3,10 @@
 ## Proposal
 
 - Date proposed: 2026-04-27
-- Implementation status: Q answer cards, Q-card follow-up compose, bare `:StriderQ` card toggle, and background patch summaries are implemented in-process
+- Implementation status: partially superseded. Named Q records and background
+  patch summaries shipped, but Q answers now open on demand in normal splits via
+  `:StriderQLatest`/`:StriderQs` instead of auto-visible right-edge cards. The
+  card-stack UX below is preserved as design history.
 
 ## Goal
 
@@ -12,24 +15,21 @@ Turn the current single `strider://StriderQAnswer` surface into a reusable
 uses background summaries instead of card containers so patch results remain
 visible on demand without adding right-edge chrome.
 
-The working model:
+The shipped model:
 
 - Flow work runs on dedicated worker lanes: search (`flow`), patch (`patch`),
-  and one Q worker per StriderQ card (`q`, `q-2`, `q-3`, ...).
+  and one Q worker per StriderQ answer (`q`, `q-2`, `q-3`, ...).
 - `:StriderLogFlow`, `:StriderLogQ`/`strider://StriderLogQ-N`, and
   `:StriderLogPatch` are the complete audit/debug transcripts.
-- Each completed or running Q request gets a compact card on the right.
-- Q cards stay folded until the user focuses/selects one.
-- Focusing a Q card expands it into a near full-height right-side panel.
-- Expanded Q cards remain open when focus returns to code.
-- Pressing `q` or `<Esc>` in a Q card folds it back down; bare `:StriderQ`
-  toggles the latest Q card up/down when a card exists.
-- Expanded Q cards open a separate follow-up compose float under the answer;
-  `<C-s>` submits that draft on the same card's Q worker.
+- Q answers do not auto-open UI; completion leaves a low-disruption cue.
+  `:StriderQLatest` and `:StriderQs` open answer records in normal splits.
+- In an answer split, `a` opens a follow-up prompt on the same Q worker.
 - Patch requests run in the background like Qs and create pull-up summaries;
   `:StriderPatches`/`:StriderPatchLatest` open them in normal splits instead of
   right-edge card containers. Main chat hides its split surfaces without leaving
-  a compact placeholder.
+  a visible compact placeholder.
+
+Historical target UX:
 
 ## Target UX
 
@@ -214,29 +214,33 @@ functions plus a plugin-prefixed augroup are the normal pattern.
    - `create_card(kind, opts, lane)`
    - `update_card(id, fields, lane)`
    - `reflow(lane)`
-3. Preserve current Q behavior exactly:
+3. Preserve the then-current Q-card behavior during the refactor:
    - bottom-right folded card
    - answer-only expanded Q card
    - flow-log transcript unchanged
    - `:StriderStopFlow` winbar hint
 
-### Phase 2 — Multiple Q cards
+### Phase 2 — Multiple Q records
 
-Status: partially implemented for named StriderQ card history.
+Status: implemented, with answer display moved to normal splits.
 
 Implemented:
 
-1. Each submitted `:StriderQ` prompt creates a named card instead of reusing the
-   previous card.
-2. The first card keeps the compatibility buffer `strider://StriderQAnswer`;
-   later cards use `strider://flow-card/q/N`.
-3. Folded Q cards stack in the shared right-edge stack.
-4. Each new Q card gets its own worker lane; text deltas and final text route
+1. Each submitted `:StriderQ` prompt creates a named answer record instead of
+   reusing the previous answer.
+2. The first record keeps the compatibility buffer `strider://StriderQAnswer`;
+   later records use `strider://flow-card/q/N`.
+3. Q records do not auto-open UI; completion leaves a low-disruption cue.
+4. Each new Q record gets its own worker lane; text deltas and final text route
    through the pending request's `card_id`/`card_lane`.
-5. Bare `:StriderQ` toggles the latest card; `:StriderQ!` opens a new prompt.
-6. `:StriderQs` opens a Q-only picker, and `:StriderCards` opens a
-   telescope/fzf/`vim.ui.select` picker for named cards/summaries.
-7. Card-local `d` dismisses a card and `o` opens its worker log.
+5. `:StriderQ` opens the Q prompt editor; `:StriderQ!` is equivalent and kept
+   for muscle memory.
+6. `:StriderQLatest` opens the newest answer directly, `:StriderQs` opens a
+   Q-only picker, and `:StriderCards` opens a telescope/fzf/`vim.ui.select`
+   picker for named records/summaries.
+7. In an answer split, `a` opens a follow-up prompt, `q` closes the split, `d`
+   dismisses the record, `o` opens its worker log, and `[c`/`]c` navigate Q
+   records.
 
 ### Phase 3 — Patch summaries
 
@@ -254,75 +258,48 @@ Status: implemented in-process for `:StriderPatch`.
 
 Implemented:
 
-- bare `:StriderQ` — toggles/focuses the latest Q card, or folds it when already
-  expanded; if no card exists it opens the original Q prompt.
-- `:StriderQs` — picker for named StriderQ cards.
-- `:StriderCards` — picker for all named card/surface records.
+- `:StriderQLatest` — opens the newest StriderQ answer in a normal split.
+- `:StriderQs` — picker for named StriderQ answers.
+- `:StriderCards` — picker for all named chat/Q/patch records.
 - `:StriderCardsClear[!]` — dismiss completed surfaces; bang includes running
   surfaces.
-- Card-buffer mappings:
-  - `q` / `<Esc>`: fold focused card
-  - `d`: dismiss card
-  - `o`: open the card's worker log
-  - `]c` / `[c`: focus next/previous card in the lane
+- Answer-split mappings:
+  - `a`: ask a follow-up on the same Q worker
+  - `q`: close the split
+  - `d`: dismiss the record
+  - `o`: open the record's worker log
+  - `]c` / `[c`: open next/previous Q record
 
 ## Tests
 
-Add tmux tests around the card manager:
+Current coverage lives in:
 
-1. Q cards stack.
-   - Run two Q requests sequentially.
-   - Assert two card buffers/windows exist.
-   - Assert both are folded and newest is lower/rightmost in the stack.
-2. Q focus expands and stays pinned.
-   - Focus a folded Q card or run bare `:StriderQ` after a card exists.
-   - Assert height is near full editor height.
-   - Move focus away and assert it remains expanded.
-   - Press `q` / `<Esc>` or run bare `:StriderQ` again and assert it folds back.
-   - Type a Q-card follow-up and assert `<C-s>` sends it on that card's Q worker.
-3. Q answer remains answer-only.
-   - Assert folded card only previews readiness.
-   - Assert expanded card contains assistant answer.
-   - Assert expanded card does not contain thinking/tool text.
-   - Assert `:StriderLogQ` still contains full transcript.
-4. Patch summary completion.
-   - Run a selection-scoped patch.
-   - Assert no card-styled patch window appears.
-   - Open `:StriderPatchLatest` and assert request, target, diff rows, and
-     summary are visible in a normal split.
-   - Assert `:StriderLogPatch` still contains full patch transcript.
-5. Stop behavior.
-   - Start a slow Q/Patch fake backend request.
-   - Run `:StriderStopFlow`.
-   - Assert the active card shows cancelled/stopped state.
-6. Resize/reflow.
-   - Trigger a resize or call reflow directly.
-   - Assert cards remain anchored to the right edge and do not steal focus.
+1. `tests/test_tmux_tangent.py`
+   - Q answers do not auto-open UI.
+   - `:StriderQs`/`:StriderQLatest` open answers in normal splits.
+   - Follow-ups reuse the same Q worker and render with the `↳` marker.
+2. `tests/test_tmux_flow_cards.py`
+   - Named card/record picker behavior and dismissal.
+3. `tests/test_tmux_popups.py`
+   - Q prompt editor and model-toggle behavior.
+4. `tests/test_tmux_log_rendering.py`
+   - Worker logs retain full reasoning/tool transcripts.
+5. Patch summary coverage
+   - `:StriderPatchLatest`/`:StriderPatches` open request, target, diff rows,
+     and summary in normal splits while `:StriderLogPatch` keeps the transcript.
 
 ## Documentation
 
-Update:
-
-- `docs/usage.md`
-  - Describe Q cards and on-demand patch summaries as flow-worker result
-    surfaces.
-  - Clarify that worker logs are still the complete transcripts.
-- `docs/architecture.md`
-  - Add `flow_cards` as flow-worker UI state.
-  - Explain card lifecycle and relationship to pending requests.
-- `README.md`
-  - Mention Q cards and patch summaries briefly in the feature list.
+Current user-facing docs are in `README.md`, `docs/usage.md`, and
+`docs/architecture.md`. The split-answer follow-up design is tracked in
+`plans/q-followups-in-splits.md`.
 
 ## Open Questions
 
-1. How many folded cards should remain visible before older cards collapse into
-   history? Initial guess: fit as many 3-line cards as the editor height allows,
-   but cap at 5–7 to avoid visual clutter.
-2. Should card state persist across Neovim restarts? Recommendation: no for v1.
-3. Should expanded cards stay floats, or should focusing a card eventually snap
-   into a real right-side split/drawer? Recommendation: float first; split mode
-   later only if the float feels unstable.
-4. Should search use cards, or are picker/quickfix enough?
+1. Should Q answer state persist across Neovim restarts? Recommendation: no for
+   v1; pi session history remains the durable transcript.
+2. Should `:StriderQs` eventually become an inbox buffer instead of a picker?
+3. Should search grow a persistent result surface, or are picker/quickfix enough?
 
 ## Validation Commands
 

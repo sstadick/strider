@@ -379,14 +379,20 @@ function M.consume_pending_request(lane)
 	return pending
 end
 
--- Pending clarify: when the model calls strider_clarify (question kind),
--- the plugin stashes the extension_ui_request id + title here and
--- routes the next compose send back as the clarify reply. Cleared by
--- dispatch_compose (on answer) or by <Esc><Esc> in compose (on reject).
-function M.set_pending_clarify(id, title, lane)
+-- Pending clarify: when the model calls strider_clarify, the plugin
+-- stashes the extension_ui_request id + title here and routes the next
+-- compose send back as the clarify reply. Cleared by dispatch_compose
+-- (on answer) or by <Esc><Esc> in compose (on reject).
+function M.set_pending_clarify(id, title, lane, opts)
 	local session = M.get_session(lane)
 	if session then
-		session.pending_clarify = { id = id, title = title or "" }
+		opts = opts or {}
+		session.pending_clarify = {
+			id = id,
+			kind = opts.kind or "question",
+			prefill = opts.prefill,
+			title = title or "",
+		}
 	end
 end
 

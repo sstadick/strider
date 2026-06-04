@@ -21,6 +21,9 @@ local function session_status(session)
 		return "stopped"
 	end
 	if session.pending_clarify then
+		if session.pending_clarify.kind == "plan_proposal" then
+			return "waiting for plan approval"
+		end
 		return "waiting for clarify"
 	end
 	if session.progress then
@@ -45,6 +48,9 @@ function M.pending_action(lane)
 		return nil
 	end
 	if session.pending_clarify then
+		if session.pending_clarify.kind == "plan_proposal" then
+			return "<C-s> approves the plan text in compose; <Esc><Esc> rejects it"
+		end
 		return "<C-s> sends your clarify answer; <Esc><Esc> rejects it"
 	end
 	local pending = session.pending_request

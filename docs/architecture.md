@@ -347,10 +347,10 @@ item.
       `extension_ui_response{value}`, `<Esc><Esc>` sends `cancelled`.
       `[Clarify]` badge on the compose winbar marks the state.
     - **Plan proposal** (title prefixed `[strider-plan-proposal]`):
-      body rendered as a `[plan]` block, then `vim.ui.select` offers
-      Accept / Modify / Reject. Accept sends the body back as-is;
-      Modify seeds compose with the body and hijacks it same as a
-      plain clarify; Reject sends `cancelled`.
+      on main chat, the body renders as a `[plan]` block and seeds
+      compose. Submitting the unchanged body accepts it; editing before
+      submit modifies it; `<Esc><Esc>` sends `cancelled`. Flow lanes keep
+      the popup Accept / Modify / Reject picker.
   - `confirm` — yes/no picker via `vim.ui.select`; plugin replies with
     `{confirmed: bool}` or `{cancelled: true}`.
   - `select` — fuzzy picker via telescope / fzf-lua / `vim.ui.select`

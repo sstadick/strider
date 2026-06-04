@@ -43,6 +43,37 @@ class ReviewPlanningFlowTests(unittest.TestCase):
     # The picker contract: caller receives "accept", "modify", or nil.
     # Body/id routing is rpc.lua's job; the picker is intentionally dumb.
 
+    def test_main_plan_proposal_uses_compose_instead_of_picker(self) -> None:
+        project = self.repo_root / "tests" / "fixtures" / "app"
+        with TmuxNvimHarness(self.repo_root, project) as h:
+            h.lua(
+                "(function() "
+                "  _G.strider_plan_select_called = false; "
+                "  _G.strider_plan_response_called = false; "
+                "  vim.ui.select = function(_, _, cb) "
+                "    _G.strider_plan_select_called = true; "
+                "    if cb then cb('Accept') end; "
+                "  end; "
+                "  require('strider.state').ensure_session('main', vim.fn.getcwd()); "
+                "  require('strider.rpc.extension_ui').handle({ "
+                "    method = 'editor', "
+                "    id = 'plan-1', "
+                "    title = '[strider-plan-proposal] Review this plan', "
+                "    prefill = '1. Inspect\\n2. Patch' "
+                "  }, 'main', function() _G.strider_plan_response_called = true end); "
+                "  vim.wait(200); "
+                "  return true "
+                "end)()"
+            )
+
+            self.assertFalse(h.lua_bool("_G.strider_plan_select_called"))
+            self.assertFalse(h.lua_bool("_G.strider_plan_response_called"))
+            pending = self._lua_json(h, "require('strider.state').get_session('main').pending_clarify")
+            self.assertEqual("plan-1", pending["id"])
+            self.assertEqual("plan_proposal", pending["kind"])
+            self.assertEqual("1. Inspect\n2. Patch", pending["prefill"])
+            self.assertEqual(["1. Inspect", "2. Patch"], h.buffer_lines("strider://compose"))
+
     def test_plan_proposal_accept_delivers_accept_choice(self) -> None:
         project = self.repo_root / "tests" / "fixtures" / "app"
         with TmuxNvimHarness(self.repo_root, project) as h:

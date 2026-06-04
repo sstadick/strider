@@ -115,6 +115,16 @@ Each example pairs commands with the rendered recording under
 
 ![Chat-to-review demo](recordings/chat-review.gif)
 
+### Approve a plan in chat
+
+```vim
+:StriderChat
+" propose a plan before changing files
+" review/edit the compose-seeded plan, then submit
+```
+
+![Chat plan approval demo](recordings/chat-plan.gif)
+
 ### Keep chat read-only
 
 ```vim

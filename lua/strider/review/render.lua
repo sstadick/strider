@@ -444,7 +444,11 @@ local function append_controls(lines, review)
 		elseif review.summary_confirming then
 			table.insert(actions, 2, "- Edit/confirm the popped-up summary to forward it to main chat.")
 		elseif review.summary and review.summary ~= "" then
-			table.insert(actions, 2, "- Summary is ready here; `:StriderReviewSummary` reopens the editor to forward it.")
+			table.insert(
+				actions,
+				2,
+				"- Summary is ready here; `:StriderReviewSummary` reopens the editor to forward it."
+			)
 		end
 		append_section(lines, "Next actions", actions)
 		return

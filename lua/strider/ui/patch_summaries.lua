@@ -398,7 +398,11 @@ function M.record_tool(id, tool, lane)
 	if tool.diff and tool.diff ~= "" then
 		table.insert(diffs, { path = tool.path, diff = tool.diff })
 	end
-	return update_summary(id, { diff_blocks = diffs, edited_files = edited, inspected_files = inspected, tool_lines = lines }, lane)
+	return update_summary(
+		id,
+		{ diff_blocks = diffs, edited_files = edited, inspected_files = inspected, tool_lines = lines },
+		lane
+	)
 end
 
 function M.finish(id, status, fields, lane)

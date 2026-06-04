@@ -115,25 +115,18 @@ local function handle_flow_editor(id, title, prefill, plan_prefix, respond, lane
 	})
 end
 
-local function handle_main_plan_editor(id, display_title, prefill, respond, lane)
+local function handle_main_plan_editor(id, display_title, prefill, _respond, lane)
 	local body = prefill ~= "" and prefill or "(empty proposal)"
 	ui.append_block("plan", string.format("%s\n\n%s", display_title, body), lane)
-	ui.clarify_plan_proposal_picker(function(choice)
-		if choice == "accept" then
-			ui.append_block("user", prefill ~= "" and prefill or "(accepted)", lane)
-			respond(id, { value = prefill }, lane)
-		elseif choice == "modify" then
-			state.set_pending_clarify(id, display_title, lane)
-			state.set_status("strider-clarify", "clarify", lane)
-			ui.refresh_compose_winbar(lane)
-			ui.refresh_compose_hint()
-			require("strider").open_compose_for_clarify()
-			ui.seed_compose(prefill)
-		else
-			ui.append({ "[strider] plan proposal rejected" }, lane)
-			respond(id, { cancelled = true }, lane)
-		end
-	end)
+	state.set_pending_clarify(id, display_title, lane, {
+		kind = "plan_proposal",
+		prefill = prefill,
+	})
+	state.set_status("strider-clarify", "plan", lane)
+	ui.refresh_compose_winbar(lane)
+	ui.refresh_compose_hint()
+	require("strider").open_compose_for_clarify()
+	ui.seed_compose(prefill)
 end
 
 local function handle_main_clarify_editor(id, title, prefill, lane)

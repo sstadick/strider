@@ -173,9 +173,13 @@ local function compose_status_line(progress, lane)
 	local session = state.get_session(lane)
 	local statuses = session and session.status or {}
 	local clarify_badge = statuses["strider-clarify"]
+	local pending_clarify = session and session.pending_clarify
 	local prefix = session and session.chat_read_only and lane == "main" and "[RO] " or ""
 	local idle_msg = nil
-	if clarify_badge and clarify_badge ~= "" then
+	if pending_clarify and pending_clarify.kind == "plan_proposal" then
+		prefix = prefix .. "[Plan] "
+		idle_msg = "Review the plan text in compose — <C-s> approves, <Esc><Esc> rejects."
+	elseif clarify_badge and clarify_badge ~= "" then
 		prefix = prefix .. "[Clarify] "
 		idle_msg = "Strider is asking — type your answer (<Esc><Esc> to reject)."
 	end
@@ -537,7 +541,11 @@ end
 local function compose_hint_text()
 	local session = state.get_session("main")
 	local prefix = session and session.chat_read_only and "RO · " or ""
-	if state.peek_pending_clarify() then
+	local pending_clarify = state.peek_pending_clarify()
+	if pending_clarify and pending_clarify.kind == "plan_proposal" then
+		return prefix .. "Approve/edit plan · <C-s> send · <Esc><Esc> reject"
+	end
+	if pending_clarify then
 		return prefix .. "Answer clarify · <C-s> send · <Esc><Esc> reject"
 	end
 	if state.peek_pending_request() then
@@ -854,8 +862,7 @@ function M.chat_is_visible()
 end
 
 local function is_main_chat_surface(session, buf)
-	return session
-		and ((session.log_buf and buf == session.log_buf) or (compose_buffer_from_session(session) == buf))
+	return session and ((session.log_buf and buf == session.log_buf) or (compose_buffer_from_session(session) == buf))
 end
 
 local function is_current_tab_regular_window(win)

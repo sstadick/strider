@@ -98,14 +98,10 @@ Execute:
   return `{ output: reply ?? "[cancelled]", details: {cancelled: !reply} }`.
 - `plan_proposal` → extension tags the title with a
   `[strider-plan-proposal]` sentinel and calls `ctx.ui.editor`. Lua
-  strips the sentinel and routes to a three-step flow:
-  1. Read-only floating preview of the proposal.
-  2. `vim.ui.select({"Accept", "Modify", "Reject"})`.
-  3. Accept → return the plan text as-is. Modify → open the standard
-     clarify editor prefilled for in-place edits; submit returns the
-     edited text. Reject → return cancellation.
-  Separates reading (wide preview pane) from authoring (compose editor)
-  rather than cramming both into one small box.
+  strips the sentinel. On main chat, the plan renders inline as a
+  `[plan]` block and the compose buffer is seeded with the proposal:
+  submit unchanged to accept, edit and submit to modify, or reject with
+  `<Esc><Esc>`. Flow lanes keep the popup Accept / Modify / Reject path.
 - `confirm` → `const ok = await ctx.ui.confirm(title, body)` →
   return `{ output: ok ? "yes" : "no" }`.
 

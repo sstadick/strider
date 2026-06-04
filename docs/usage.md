@@ -254,14 +254,12 @@ clarifying question, propose a plan, or confirm a destructive action via the
 `strider_clarify` tool.
 
 On main chat, questions and plan bodies render inline in the chat log and the
-compose buffer is used for the reply. `<C-s>` submits and `<Esc><Esc>` rejects.
+compose buffer is used for the reply. For plan proposals, Strider seeds compose
+with the proposed plan: submit it unchanged to accept, edit and submit to
+modify, or press `<Esc><Esc>` to reject.
 
 On flow workers (`:StriderQ`, `:StriderSearch`, `:StriderPatch`), clarify
 prompts stay popup-based and their transcript lands in that worker's log.
-
-Plan proposals pair the `[plan]` body block with an Accept / Modify / Reject
-picker. Modify seeds the chat compose buffer with the proposal body so the user
-can edit and send it in place; Reject sends cancellation.
 
 ## StriderQ And Patch
 

@@ -79,7 +79,13 @@ local function add_flow_items(items, opts)
 					label = string.format("%s%s · %s", card_names.for_card(card), model, status_text(card)),
 					order = card.started_at or 0,
 					rank = flow_order[card.kind] or 9,
-					value = { type = "flow", id = card.id, kind = card.kind, lane = lane, name = card_names.for_card(card) },
+					value = {
+						type = "flow",
+						id = card.id,
+						kind = card.kind,
+						lane = lane,
+						name = card_names.for_card(card),
+					},
 				})
 			end
 		end

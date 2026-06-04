@@ -25,6 +25,7 @@ from fake_pi_responses import (
 _fork_messages = []
 _fork_seq = 0
 _chat_read_only = False
+_pending_plan_proposal_id = None
 
 
 def record_user_message(message: str) -> str:
@@ -132,6 +133,36 @@ def emit_delayed_readonly_write_attempt() -> None:
         emit(assistant_message("Write slipped through chat read-only mode"))
 
 
+def emit_plan_proposal_demo() -> None:
+    global _pending_plan_proposal_id
+    _pending_plan_proposal_id = "fake-plan-proposal-1"
+    emit_streaming_thinking("The request is broad enough that I should propose a small plan before changing files.")
+    emit({
+        "type": "extension_ui_request",
+        "method": "editor",
+        "id": _pending_plan_proposal_id,
+        "title": "[strider-plan-proposal] Approve plan",
+        "prefill": "\n".join([
+            "1. Inspect the current greeting flow.",
+            "2. Make the smallest scoped change.",
+            "3. Report exactly what changed.",
+        ]),
+    })
+
+
+def handle_extension_ui_response(payload: dict) -> None:
+    global _pending_plan_proposal_id
+    if payload.get("id") != _pending_plan_proposal_id:
+        emit(response_ok(payload.get("id"), "extension_ui_response"))
+        return
+    _pending_plan_proposal_id = None
+    if payload.get("cancelled"):
+        emit(assistant_message("Plan rejected. No changes made."))
+        return
+    value = payload.get("value") or "(empty plan)"
+    emit(assistant_message("Plan accepted from chat compose.\n\nApproved plan:\n" + value))
+
+
 def handle_prompt(payload: dict) -> None:
     req_id = payload.get("id")
     message = payload.get("message", "")
@@ -142,6 +173,8 @@ def handle_prompt(payload: dict) -> None:
     emit(response_ok(req_id, "prompt"))
     if "__strider_attempt_write_after_readonly__" in message:
         threading.Thread(target=emit_delayed_readonly_write_attempt, daemon=True).start()
+    elif "propose a plan before changing files" in message.lower():
+        emit_plan_proposal_demo()
     elif message.startswith("/search "):
         emit(assistant_message(search_response(message)))
     elif message.startswith("/review "):
@@ -172,6 +205,8 @@ def main() -> int:
         cmd_type = payload.get("type", "")
         if cmd_type == "prompt":
             handle_prompt(payload)
+        elif cmd_type == "extension_ui_response":
+            handle_extension_ui_response(payload)
         elif cmd_type in ("steer", "follow_up"):
             emit(response_ok(payload.get("id"), cmd_type))
             emit(assistant_message("Fake pi response"))

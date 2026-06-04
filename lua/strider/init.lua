@@ -841,7 +841,11 @@ function M.cancel_pending_clarify_if_any()
 	ui.refresh_compose_winbar(MAIN_LANE)
 	ui.refresh_compose_hint()
 	cancel_clarify(pending)
-	ui.append({ "[strider] clarify cancelled" }, MAIN_LANE)
+	if pending.kind == "plan_proposal" then
+		ui.append({ "[strider] plan proposal rejected" }, MAIN_LANE)
+	else
+		ui.append({ "[strider] clarify cancelled" }, MAIN_LANE)
+	end
 	return true
 end
 

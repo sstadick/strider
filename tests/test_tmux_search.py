@@ -25,6 +25,15 @@ class TmuxSearchTests(unittest.TestCase):
             self.assertIn("Strider search: 1 match", log_text)
             self.assertNotIn(":6:1,4,", log_text)
 
+            h.wait_until(lambda: "TelescopeResults" in h.window_filetypes())
+            h.send("Enter")
+
+            def jumped_to_main() -> bool:
+                state = h.current_state()
+                return state["buf"].endswith("src/main.tsx") and state["line"] == 6
+
+            h.wait_until(jumped_to_main)
+
     def test_search_multiple_results_populates_picker_and_quickfix(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("StriderSearch show all entry roots")

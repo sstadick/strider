@@ -30,12 +30,6 @@ local function telescope_select(title, items, on_select)
 		end,
 	})
 
-	local labels = to_labels(items)
-	local lookup = {}
-	for _, item in ipairs(items) do
-		lookup[item.label] = item
-	end
-
 	local finders = require("telescope.finders")
 	local conf = require("telescope.config").values
 	local actions = require("telescope.actions")
@@ -44,7 +38,16 @@ local function telescope_select(title, items, on_select)
 	pickers
 		.new({}, {
 			prompt_title = title,
-			finder = finders.new_table({ results = labels }),
+			finder = finders.new_table({
+				results = items,
+				entry_maker = function(item)
+					return {
+						value = item,
+						display = item.label,
+						ordinal = item.label,
+					}
+				end,
+			}),
 			layout_strategy = "vertical",
 			layout_config = {
 				height = 0.9,
@@ -53,12 +56,10 @@ local function telescope_select(title, items, on_select)
 			sorter = conf.generic_sorter({}),
 			attach_mappings = function(prompt_bufnr)
 				actions.select_default:replace(function()
-					actions.close(prompt_bufnr)
 					local selection = action_state.get_selected_entry()
-					local label = selection and selection[1]
-					local item = label and lookup[label]
-					if item then
-						on_select(item)
+					actions.close(prompt_bufnr)
+					if selection and selection.value then
+						on_select(selection.value)
 					end
 				end)
 				return true

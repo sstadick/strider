@@ -1,4 +1,5 @@
 import json
+import shutil
 import shlex
 import subprocess
 import tempfile
@@ -18,7 +19,7 @@ class TmuxNvimHarness:
         self.init_path = self.repo_root / "tests" / "support" / "minimal_init.lua"
         self.nvim_data_home = self.repo_root / "tests" / ".nvim-data"
         self.nvim_cache_home = self.repo_root / "tests" / ".nvim-cache"
-        self.nvim_state_home = self.repo_root / "tests" / ".nvim-state"
+        self.nvim_state_home = Path(tempfile.mkdtemp(prefix=f"{self.session_name}-state-"))
 
     def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         return subprocess.run(args, capture_output=True, text=True, check=check)
@@ -56,6 +57,7 @@ class TmuxNvimHarness:
                 self.socket_path.unlink()
         except FileNotFoundError:
             pass
+        shutil.rmtree(self.nvim_state_home, ignore_errors=True)
 
     def wait_for_server(self, timeout: float = 20.0) -> None:
         deadline = time.time() + timeout
@@ -97,6 +99,22 @@ class TmuxNvimHarness:
     def send(self, *keys: str, pause: float = 0.2) -> None:
         self.send_keys(*keys)
         time.sleep(pause)
+
+    def open_oil_like_buffer(self) -> None:
+        lua_src = (
+            "(function() "
+            "  local buf = vim.api.nvim_create_buf(true, false); "
+            "  vim.api.nvim_buf_set_name(buf, 'oil://' .. vim.fn.getcwd() .. '/'); "
+            "  vim.bo[buf].buftype = 'acwrite'; "
+            "  vim.bo[buf].filetype = 'oil'; "
+            "  vim.bo[buf].bufhidden = 'hide'; "
+            "  vim.bo[buf].swapfile = false; "
+            "  vim.api.nvim_win_set_buf(0, buf); "
+            "  return true "
+            "end)()"
+        )
+        if not self.lua_bool(lua_src):
+            raise RuntimeError("failed to open fake oil buffer")
 
     def window_filetypes(self):
         return self.json_expr('map(getwininfo(), {_, v -> getbufvar(v.bufnr, "&filetype")})')

@@ -1640,22 +1640,39 @@ function M.open_prompt_editor(label, on_submit, opts)
 	return prompt_editor.open_prompt_editor(label, on_submit, opts)
 end
 
-local function is_normal_window(win)
-	if not vim.api.nvim_win_is_valid(win) then
+local function is_strider_buffer(buf)
+	return buf
+		and vim.api.nvim_buf_is_valid(buf)
+		and vim.startswith(vim.api.nvim_buf_get_name(buf), "strider://")
+end
+
+local function is_file_browser_buffer(buf)
+	if not buf or not vim.api.nvim_buf_is_valid(buf) then
+		return false
+	end
+	local name = vim.api.nvim_buf_get_name(buf)
+	return vim.bo[buf].filetype == "oil" or vim.startswith(name, "oil://")
+end
+
+local function is_file_target_window(win)
+	if not is_current_tab_regular_window(win) then
 		return false
 	end
 	local buf = vim.api.nvim_win_get_buf(win)
-	return vim.bo[buf].buftype == ""
+	if is_strider_buffer(buf) then
+		return false
+	end
+	return vim.bo[buf].buftype == "" or is_file_browser_buffer(buf)
 end
 
 target_window = function()
 	local current = vim.api.nvim_get_current_win()
-	if is_normal_window(current) then
+	if is_file_target_window(current) then
 		return current
 	end
 
 	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-		if is_normal_window(win) then
+		if is_file_target_window(win) then
 			return win
 		end
 	end
@@ -1673,6 +1690,22 @@ close_windows_for_buffer = function(buf)
 	end
 end
 
+local function open_file_in_window(win, path, existing_buf)
+	if existing_buf > 0 then
+		local ok, err = pcall(vim.api.nvim_win_set_buf, win, existing_buf)
+		if not ok then
+			return nil, err
+		end
+		return existing_buf
+	end
+
+	local ok, err = pcall(vim.cmd, "silent edit " .. vim.fn.fnameescape(path))
+	if not ok then
+		return nil, err
+	end
+	return vim.api.nvim_get_current_buf()
+end
+
 function M.hide_review()
 	local session = state.get_session("review")
 	close_windows_for_buffer(session and session.review_buf)
@@ -1682,7 +1715,7 @@ function M.hide_review()
 end
 
 function M.jump_to_file(path, line)
-	if not state.get_config().auto_jump or path == "" then
+	if not state.get_config().auto_jump or not path or path == "" then
 		return
 	end
 
@@ -1694,14 +1727,13 @@ function M.jump_to_file(path, line)
 	end
 
 	vim.api.nvim_set_current_win(win)
-	if buf > 0 then
-		vim.api.nvim_win_set_buf(win, buf)
-		marks.refresh_buffer(buf)
-	else
-		pcall(vim.cmd, "silent edit " .. vim.fn.fnameescape(path))
-		buf = vim.api.nvim_get_current_buf()
-		marks.refresh_buffer(buf)
+	local err
+	buf, err = open_file_in_window(win, path, buf)
+	if not buf then
+		notify("Could not open " .. path .. ": " .. tostring(err), vim.log.levels.WARN)
+		return
 	end
+	marks.refresh_buffer(buf)
 
 	local target = tonumber(line) or 1
 	local max_line = math.max(vim.api.nvim_buf_line_count(buf), 1)

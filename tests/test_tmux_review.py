@@ -305,6 +305,19 @@ class TmuxReviewTests(unittest.TestCase):
             item_path = h.lua("require('strider.state').get_session('review').review.items[1].path")
             self.assertTrue(item_path.endswith("src/main.tsx"), item_path)
 
+    def test_file_review_first_stop_jumps_from_oil_buffer(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.open_oil_like_buffer()
+            self._submit_review(h, "StriderReview explain src/main.tsx")
+            h.wait_until(lambda: h.lua_bool("require('strider.review').has_active_review()"))
+            h.wait_until(lambda: not h.lua_bool("require('strider.review').is_planning()"), timeout=8.0)
+
+            def jumped_to_main() -> bool:
+                state = h.current_state()
+                return state["buf"].endswith("src/main.tsx") and state["line"] == 1
+
+            h.wait_until(jumped_to_main)
+
 
 if __name__ == "__main__":
     unittest.main()

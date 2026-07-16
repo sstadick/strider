@@ -34,6 +34,21 @@ class TmuxSearchTests(unittest.TestCase):
 
             h.wait_until(jumped_to_main)
 
+    def test_search_picker_selection_jumps_from_oil_buffer(self) -> None:
+        with TmuxNvimHarness(self.repo_root, self.project_root) as h:
+            h.open_oil_like_buffer()
+            h.ex("StriderSearch where is the main entrypoint?")
+
+            h.wait_until(lambda: len(h.current_state()["qf"]["items"]) == 1)
+            h.wait_until(lambda: "TelescopeResults" in h.window_filetypes())
+            h.send("Enter")
+
+            def jumped_to_main() -> bool:
+                state = h.current_state()
+                return state["buf"].endswith("src/main.tsx") and state["line"] == 6
+
+            h.wait_until(jumped_to_main)
+
     def test_search_multiple_results_populates_picker_and_quickfix(self) -> None:
         with TmuxNvimHarness(self.repo_root, self.project_root) as h:
             h.ex("StriderSearch show all entry roots")

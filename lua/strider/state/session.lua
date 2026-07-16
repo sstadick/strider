@@ -10,7 +10,7 @@ function M.new(cwd, lane)
 		model_profile_override = false,
 		chunk_lines = {},
 		chunk_path = nil,
-		chat_read_only = false,
+		chat_read_only = true,
 		chat_return_buf = nil,
 		chat_return_win = nil,
 		comment_buffers = {},

@@ -236,7 +236,8 @@ panes:
 
 - Neovim 0.12+
 - Git, used by Neovim's built-in `vim.pack`
-- `pi` on `$PATH` with at least one model/provider configured
+- `pi` 1.3.0+ on `$PATH` with at least one model/provider configured
+  (Strider uses `agent_settled` for run completion)
 - `nvim-treesitter` with `markdown`, `markdown_inline`, and language parsers
   for files you expect to inspect
 - `render-markdown.nvim`

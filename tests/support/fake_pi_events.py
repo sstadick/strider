@@ -24,6 +24,14 @@ def assistant_message(text: str) -> dict:
     }
 
 
+def emit_assistant_reply(text: str) -> None:
+    """Finish a canned run using the real pi settlement boundary."""
+    message = assistant_message(text)
+    emit(message)
+    emit({"type": "agent_end", "messages": [message["message"]], "willRetry": False})
+    emit({"type": "agent_settled", "aborted": False})
+
+
 def emit_session_start(reason: str) -> None:
     emit({"type": "session_start", "reason": reason})
     emit({
@@ -61,7 +69,7 @@ def emit_streaming_thinking(text: str) -> None:
 
 
 def emit_streaming_assistant(text: str) -> None:
-    """Emit message_update text_delta events followed by message_end."""
+    """Emit text deltas followed by the final message and run settlement."""
     chunk_size = max(len(text) // 3, 1)
     for offset in range(0, len(text), chunk_size):
         delta = text[offset : offset + chunk_size]
@@ -73,7 +81,7 @@ def emit_streaming_assistant(text: str) -> None:
             },
             "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": delta},
         })
-    emit(assistant_message(text))
+    emit_assistant_reply(text)
 
 
 def fixture_path(relative: str) -> str:

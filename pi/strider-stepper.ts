@@ -229,8 +229,12 @@ export default function (pi: ExtensionAPI) {
 		if (typeof cost === "number" && Number.isFinite(cost)) {
 			state.sessionCost += cost;
 		}
+		updateWidget(ctx);
+	});
+
+	// Keep guards and operation tools through retries, recovery, and queued work.
+	pi.on("agent_settled", async (_event: any, ctx: any) => {
 		if (state.activeOperation) finishOperation(ctx);
-		else updateWidget(ctx);
 	});
 
 	registerStriderTools(pi, () => state);

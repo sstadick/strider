@@ -288,12 +288,18 @@ item.
   - the live block mechanism is shared: `start_live_block` (force-create,
     used by thinking) vs `ensure_live_block` (idempotent, used by text)
 - `message_end`
-  - capture assistant text
-  - update log
-  - update review pane when the response belongs to review
-  - when `message.stopReason == "error"` or `"aborted"`, render the
-    reason as an `[error]` block (red header / red-tinted background),
-    consume the pending request, and stop the activity spinner
+  - render completed assistant text or an error in the log immediately
+  - retain the latest non-tool assistant result (including errors from partial
+    tool-call streams) without releasing the pending request
+  - user messages, tool rounds, and retryable errors do not end the operation
+- `agent_settled`
+  - pi has finished retries, recovery, and queued work; `agent_end` alone is
+    not sufficient
+  - the extension releases operation guards and plan-tool visibility before
+    pi forwards this event to the client
+  - Lua consumes the pending request, finalizes review/Q/patch/search results,
+    stops activity, and dispatches the first review only after plan settlement
+  - `aborted = true` cancels the operation even without an assistant message
 - `extension_error` — runtime failure the extension can't recover from
   (e.g. "No API key found for <provider>", provider 4xx before the
   stream opens). The preceding `response` may be `success: true`
@@ -380,9 +386,9 @@ request and start `Working` indicators in the compose and log winbars until the
   turn's tool calls complete. Slash-commands are rejected as steers
   (pi forbids them).
 - `abort` — cancel the in-flight turn. No body (`{"type":"abort"}`).
-  Pi finishes the current model stream and emits a `message_end` with
-  `stopReason = "aborted"`, which renders as a cancel-flavored
-  `[error]` block. Driven by `:StriderStop` for main and
+  Pi emits `agent_settled` with `aborted = true`; an optional preceding
+  `message_end` with `stopReason = "aborted"` supplies the error detail.
+  Cancellation is finalized at settlement. Driven by `:StriderStop` for main and
   `:StriderStopFlow` for flow workers.
 - `extension_ui_response` — reply to an awaiting `extension_ui_request`
   (carries the request `id` plus `value` / `confirmed` / `cancelled`)

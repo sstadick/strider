@@ -99,6 +99,10 @@ local function dispatch(event, lane)
 		messages.handle_message_end(event, lane)
 		return
 	end
+	if event.type == "agent_settled" then
+		messages.handle_agent_settled(event, lane)
+		return
+	end
 	if event.type == "tool_execution_start" then
 		tool_events.handle_tool_start(event, lane)
 		return
@@ -237,9 +241,8 @@ function M.stop(lane)
 end
 
 -- Abort the current in-flight turn. Pi's RPC layer handles the rest:
--- it cancels the provider stream and emits a final `message_end` with
--- `stopReason = "aborted"`, which `handle_message_end` already renders
--- as a cancel-flavored `[error]` block and clears pending state.
+-- it cancels active work and emits `agent_settled` with `aborted = true`,
+-- which clears pending state, even without a final assistant message.
 -- No-op when no turn is in flight (still sends the RPC; pi answers
 -- with success=true either way, costs nothing).
 function M.abort(lane)
@@ -299,7 +302,7 @@ end
 -- Steer an already-running turn with additional user input. Pi inserts
 -- the steer message mid-stream; the model sees it and adjusts without
 -- a new turn being started. No new pending_request is created — the
--- existing one continues to resolve on the next message_end.
+-- existing one resolves only once pi emits agent_settled.
 function M.send_steer(arg1, arg2)
 	local lane, message = resolve_lane_and_payload(arg1, arg2)
 	local session = state.get_session(lane)

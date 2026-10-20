@@ -30,6 +30,18 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 
 These fake-backend tmux tests should stay cheap to run: seconds, not minutes.
 
+## Fast lifecycle regressions (no providers)
+
+```bash
+python3 -m unittest tests.test_stepper_lifecycle tests.test_rpc_lifecycle tests.test_readonly_guard
+```
+
+The Node harness executes the actual extension registration and handlers with
+stubbed pi/context services. The headless-Neovim harness exercises RPC dispatch
+and lane state with stubbed presentation. They cover message/tool/retry boundaries,
+settlement, read-only guards, error/cancellation, and plan-to-review dispatch.
+They do not exercise real providers or pre-run model/auth startup rejection.
+
 ## Optional real-pi smoke test
 
 Uses the bundled zero-dependency `fixtures/python_app` project and covers:

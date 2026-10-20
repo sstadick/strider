@@ -47,7 +47,7 @@ local function handle_response(event, lane)
 
 	if event.success then
 		-- Raw RPC commands (new_session, compact, export_html, etc.) don't
-		-- trigger LLM turns, so no message_end will follow. Consume the
+		-- trigger LLM runs, so no agent_settled will follow. Consume the
 		-- pending request now to clear the activity spinner and unblock the
 		-- next send. Prompt-routed extension commands may also use operation
 		-- "command"; they get the generic completion label.
@@ -273,9 +273,28 @@ local function notify_turn_done(pending, lane)
 	-- Review pops up on its own, no notify needed.
 end
 
+local function message_error(message)
+	local reason = message and message.stopReason
+	if reason == "error" or reason == "aborted" then
+		return message.errorMessage or (reason == "aborted" and "Turn aborted" or "Model request failed")
+	end
+end
+
+local function render_message(message, pending, lane)
+	local reason = message_error(message)
+	local text = strip_strider_footer(text_content(message))
+	if reason then
+		ui.append_block("error", reason, lane)
+	elseif text and (not pending or pending.operation ~= "search") then
+		if pending and pending.operation == "plan" then
+			review.capture_plan_message(text)
+		end
+		ui.append_block("assistant", text, lane)
+	end
+end
+
 local function handle_message_end(event, lane)
 	local message = event.message
-	local text = strip_strider_footer(text_content(message))
 	local pending = state.peek_pending_request(lane)
 	local session = state.get_session(lane)
 
@@ -283,29 +302,44 @@ local function handle_message_end(event, lane)
 	ui.finalize_live_block(nil, nil, lane)
 	session.message_text = nil
 
-	-- Do not consume pending on tool-call turns or user messages.
-	-- Only the final text-bearing assistant message should consume it.
-	if has_tool_use(message) then
-		return
-	end
 	if not message or message.role ~= "assistant" then
 		return
 	end
+	-- Render now, but keep the lane busy through retries and queued work.
+	-- A later tool round invalidates an earlier candidate final answer.
+	-- Failed streams may contain partial tool calls: retain their error.
+	local completed = message_error(message) or not has_tool_use(message)
+	if pending then
+		pending.result_message = completed and message or nil
+	end
+	if completed then
+		render_message(message, pending, lane)
+	end
+end
 
-	pending = state.consume_pending_request(lane)
+local function handle_agent_settled(event, lane)
+	local pending = state.peek_pending_request(lane)
+	if not pending or pending.operation == "command" then
+		return
+	end
+	state.consume_pending_request(lane)
+	local session = state.get_session(lane)
+	local message = pending.result_message or {}
+	local text = strip_strider_footer(text_content(message))
+	flush_all_thinking(session, pending, lane)
+	ui.finalize_live_block(nil, nil, lane)
+	session.message_text = nil
 	session.assistant_text = nil
 	session.assistant_thinking = {}
 
-	-- Model/provider errors land here: pi emits a final message_end whose
-	-- message.stopReason is "error" (or "aborted" for user-canceled
-	-- turns), with the human-readable reason in message.errorMessage.
-	-- Surface it into the log so the user sees why the turn failed
-	-- instead of wondering why nothing streamed back. Short-circuit the
-	-- normal plan/search/assistant branches — there's no usable text.
-	local stop_reason = message.stopReason
+	-- Errors can be retried. Only settlement makes one terminal; abort may
+	-- settle without any assistant message (e.g. during startup/backoff).
+	local stop_reason = event.aborted and "aborted" or message.stopReason
 	if stop_reason == "error" or stop_reason == "aborted" then
-		local reason = message.errorMessage or (stop_reason == "aborted" and "Turn aborted" or "Model request failed")
-		ui.append_block("error", reason, lane)
+		local reason = message_error(message) or "Turn aborted"
+		if not message_error(message) then
+			ui.append_block("error", reason, lane)
+		end
 		state.set_error(reason, lane)
 		local level = stop_reason == "aborted" and "cancel" or "error"
 		ui.finish_activity(reason, level, lane)
@@ -324,15 +358,9 @@ local function handle_message_end(event, lane)
 		return
 	end
 
-	-- Plan turns: success depends on whether the plan tool landed a plan,
-	-- not on whether the model produced trailing prose. Handle before the
-	-- "no text" early return so empty plan-turn replies still dispatch the
-	-- first /review.
+	-- A tool-only plan can succeed. Dispatch its first review only after pi
+	-- has settled and the extension has released its operation guard.
 	if pending and pending.operation == "plan" then
-		if text and text ~= "" then
-			review.capture_plan_message(text)
-			ui.append_block("assistant", text, lane)
-		end
 		if review.has_active_review() and review.is_planning() then
 			ui.notify("Strider could not produce a plan — try rephrasing.", vim.log.levels.ERROR)
 			ui.finish_activity("Strider plan failed", "error", lane)
@@ -373,7 +401,6 @@ local function handle_message_end(event, lane)
 	end
 
 	state.set_summary(text:gsub("\n", " "), lane)
-	ui.append_block("assistant", text, lane)
 	local completing_review_summary = lane == "review"
 		and pending
 		and pending.operation == "review"
@@ -407,6 +434,7 @@ M.handle_response = handle_response
 M.handle_extension_error = handle_extension_error
 M.handle_message_update = handle_message_update
 M.handle_message_end = handle_message_end
+M.handle_agent_settled = handle_agent_settled
 
 function M.register_callback(id, callback)
 	response_callbacks[id] = callback

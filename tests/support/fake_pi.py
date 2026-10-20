@@ -5,8 +5,8 @@ import threading
 import time
 
 from fake_pi_events import (
-    assistant_message,
     emit,
+    emit_assistant_reply,
     emit_session_start,
     emit_streaming_assistant,
     emit_streaming_thinking,
@@ -128,9 +128,9 @@ def handle_chat_read_only_command(payload: dict, message: str) -> None:
 def emit_delayed_readonly_write_attempt() -> None:
     time.sleep(0.5)
     if _chat_read_only:
-        emit(assistant_message("Blocked edit because Strider chat read-only mode is active"))
+        emit_assistant_reply("Blocked edit because Strider chat read-only mode is active")
     else:
-        emit(assistant_message("Write slipped through chat read-only mode"))
+        emit_assistant_reply("Write slipped through chat read-only mode")
 
 
 def emit_plan_proposal_demo() -> None:
@@ -157,10 +157,10 @@ def handle_extension_ui_response(payload: dict) -> None:
         return
     _pending_plan_proposal_id = None
     if payload.get("cancelled"):
-        emit(assistant_message("Plan rejected. No changes made."))
+        emit_assistant_reply("Plan rejected. No changes made.")
         return
     value = payload.get("value") or "(empty plan)"
-    emit(assistant_message("Plan accepted from chat compose.\n\nApproved plan:\n" + value))
+    emit_assistant_reply("Plan accepted from chat compose.\n\nApproved plan:\n" + value)
 
 
 def handle_prompt(payload: dict) -> None:
@@ -176,7 +176,7 @@ def handle_prompt(payload: dict) -> None:
     elif "propose a plan before changing files" in message.lower():
         emit_plan_proposal_demo()
     elif message.startswith("/search "):
-        emit(assistant_message(search_response(message)))
+        emit_assistant_reply(search_response(message))
     elif message.startswith("/review "):
         emit_streaming_thinking("Tracing the active stop and checking the nearby code before explaining it.")
         emit_streaming_assistant(review_response(message))
@@ -184,16 +184,16 @@ def handle_prompt(payload: dict) -> None:
         emit_streaming_thinking("Scanning the repo for a few useful walkthrough stops before laying out the plan.")
         emit_streaming_assistant(plan_response(message))
     elif message.startswith("/patch "):
-        emit(assistant_message(patch_response(message)))
+        emit_assistant_reply(patch_response(message))
     elif message.startswith(("/sessions", "/resume", "/switch_session")):
         emit_session_start("resume")
     elif message.startswith("/prompt "):
         if "__strider_stream_delay__" in message:
             time.sleep(0.8)
         emit_streaming_thinking(prompt_thinking(message))
-        emit(assistant_message(prompt_response(message)))
+        emit_assistant_reply(prompt_response(message))
     else:
-        emit(assistant_message("Fake pi response"))
+        emit_assistant_reply("Fake pi response")
 
 
 def main() -> int:
@@ -209,7 +209,7 @@ def main() -> int:
             handle_extension_ui_response(payload)
         elif cmd_type in ("steer", "follow_up"):
             emit(response_ok(payload.get("id"), cmd_type))
-            emit(assistant_message("Fake pi response"))
+            emit_assistant_reply("Fake pi response")
         else:
             handle_command(payload)
     return 0
